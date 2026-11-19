@@ -7,11 +7,13 @@ export function worldURL(href) {
   return url;
 }
 export function selectedWorld(href){
-  return new URL(href).searchParams.get('monde')==='enfer'?'enfer':'paris';
+  const q=new URL(href).searchParams;
+  if(q.get('monde')==='enfer')return 'enfer';
+  return q.get('monde')==='paris'||(q.has('lon')&&q.has('lat'))?'paris':'enfer';
 }
 export function switchWorldURL(href,map){
   const url=worldURL(href);url.hash='';
   for(const key of ['lon','lat','lieu','halte','monde'])url.searchParams.delete(key);
-  if(map==='enfer')url.searchParams.set('monde','enfer');
+  if(map==='paris')url.searchParams.set('monde','paris');
   return url.href;
 }

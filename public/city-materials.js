@@ -58,6 +58,7 @@ export function cityMaterials(enfer=false){
   for(let i=0;i<shopCloths.length;i++)material['shop'+i]=lambert(shopTile(i));
   if(enfer)for(let i=0;i<enferStyles.length;i++){
     const art=enferWall(i);material['enfer'+i]=lambert(tile(art.width,art.height,c=>c.drawImage(art,0,0)));
+    if(i<3){const door=enferWall(i,1,true);material['enferEntry'+i]=lambert(tile(door.width,door.height,c=>c.drawImage(door,0,0)));}
   }
   return material;
 }

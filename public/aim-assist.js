@@ -4,11 +4,24 @@ export function traceShot(position,angle,muzzle,range,targets,contact,melee=fals
   const x=position.x+dx*muzzle,y=position.y+dy*muzzle;
   let hit=null,length=range;
   for(const target of targets){
-    const ox=target.x-x,oy=target.y-y;
-    const front=ox*dx+oy*dy,side=Math.abs(ox*dy-oy*dx);
-    const radius=(target.r||.4)+(melee ? .35 : 0);
-    if(front<=0||front>range+radius||side>radius)continue;
-    const entry=Math.max(.025,front-Math.sqrt(Math.max(0,radius*radius-side*side)));
+    let entry;
+    if(target.isCar&&target.halfLength&&target.halfWidth){
+      const c=Math.cos(target.angle||0),s=Math.sin(target.angle||0),ox=x-target.x,oy=y-target.y;
+      let near=0,far=range;
+      for(const [at,velocity,limit] of [[ox*c+oy*s,dx*c+dy*s,target.halfLength],[-ox*s+oy*c,-dx*s+dy*c,target.halfWidth]]){
+        if(Math.abs(velocity)<1e-7){if(Math.abs(at)>limit){far=-1;break;}continue;}
+        const a=(-limit-at)/velocity,b=(limit-at)/velocity;
+        near=Math.max(near,Math.min(a,b));far=Math.min(far,Math.max(a,b));
+      }
+      if(near>far||far<.025)continue;
+      entry=Math.max(.025,near);
+    }else{
+      const ox=target.x-x,oy=target.y-y;
+      const front=ox*dx+oy*dy,side=Math.abs(ox*dy-oy*dx);
+      const radius=(target.r||.4)+(melee ? .35 : 0);
+      if(front<=0||front>range+radius||side>radius)continue;
+      entry=Math.max(.025,front-Math.sqrt(Math.max(0,radius*radius-side*side)));
+    }
     if(entry<length){length=entry;hit=target;}
   }
   // The target's own collider is the endpoint. All intervening scenery and traffic still stop the shot.

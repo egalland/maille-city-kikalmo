@@ -2,7 +2,7 @@ import {hitSeverity, woundDuration, activeBleeding} from '../public/bleeding.js'
 import {weaponCatalog} from '../public/weapon-catalog.js';
 import {propMaxHealth, vehiclePropDamage} from '../public/prop-damage.js';
 import {isVehicleType,vehicleSpec} from '../public/vehicle-types.js';
-import {chassisDamage} from '../public/vehicle-damage.js';
+import {chassisDamage,partMask,vehicleBurnDelay} from '../public/vehicle-damage.js';
 import {meleeMoves} from '../public/melee-moves.js';
 import {cleanTrafficPacket} from '../public/traffic-sync.js';
 import {normalizeAppearance} from '../public/kikalmo-schema.js';
@@ -90,10 +90,10 @@ function pose(source) {
   }
   return copy;
 }
-function vitalityFields(source,now) {
+function vitalityFields(source,now,longRecovery=false) {
   const result={};
   if(Number.isFinite(source.health))result.health=num(source.health,100,0,100);
-  if(Number.isFinite(source.downUntil))result.downUntil=num(source.downUntil,0,0,now+8000);
+  if(Number.isFinite(source.downUntil))result.downUntil=num(source.downUntil,0,0,now+(longRecovery&&source.health===0?30000:8000));
   const wound=activeBleeding(source.bleeding,now);
   if(wound && source.health>0 && !(source.downUntil>now))result.bleeding=wound;
   if(Number.isFinite(source.healthAt))result.healthAt=num(source.healthAt,now,0,now+1000);
@@ -134,8 +134,8 @@ function impactFields(type,d,now){
   if(type!=='destroy')Object.assign(fields,{damage:meleeMoves[kind].damage,force:meleeMoves[kind].force});
   return fields;
 }
-function playerState(raw,now) {
-  const s=dict(raw), result={...pose(s),...vitalityFields(s,now),...movementFields(s,now),...meleeState(s,now)};
+function playerState(raw,now,room) {
+  const s=dict(raw), result={...pose(s),...vitalityFields(s,now,room===worldKeys.enfer),...movementFields(s,now),...meleeState(s,now)};
   const appearance=normalizeAppearance(s.appearance);if(appearance)result.appearance=appearance;
   if (!Number.isFinite(s.x) || !Number.isFinite(s.y)) return {};
   const traffic=cleanTrafficPacket(s.traffic,now);if(traffic)result.traffic=traffic;
@@ -181,6 +181,9 @@ function eventData(type,raw,now) {
         return {...result,id:d.id,started:num(d.started,now,now-120_000,now+2000),level:num(d.level,1,0,5)};
       }
       const state={...result,...vitalityFields(d,now),id:d.id,stunnedUntil:num(d.stunnedUntil,0,0,now+8000)};
+      if(isVehicleType(d.vehicleType))state.vehicleType=d.vehicleType;
+      if(Number.isFinite(d.threatX+d.threatY)){state.threatX=num(d.threatX);state.threatY=num(d.threatY);}
+      if(d.cause==='weapon'||d.cause==='melee')delete state.ragdoll;
       if(d.cause==='melee'){
         const hit=impactFields(type,d,now),{recoil}=recoilState(d.recoil,now);
         if(!hit||!recoil||!Number.isFinite(d.x)||!Number.isFinite(d.y)||!Number.isFinite(d.recoil.fromX)||
@@ -259,7 +262,7 @@ async function join(db,b,now,room) {
        ON CONFLICT (room,id) DO UPDATE SET seen=excluded.seen,name=excluded.name,
        state=CASE WHEN excluded.state='{}' THEN mc_members.state ELSE excluded.state END
        WHERE mc_members.secret=excluded.secret`,
-       room,id,token,name,JSON.stringify(playerState(b.state,now)),now,now),
+       room,id,token,name,JSON.stringify(playerState(b.state,now,room)),now,now),
     q('SELECT 1 AS ok FROM mc_members WHERE room=? AND id=? AND secret=?',room,id,token),
     q(MEMBERS_SQL,room,now-GONE),
     q('SELECT seq,player,name,type,data,at FROM mc_events WHERE room=? AND type=\'chat\' ORDER BY seq DESC LIMIT 30',room),
@@ -272,7 +275,7 @@ async function join(db,b,now,room) {
   if (!results[4].results.length) return json({error:'session'},403);
   const world=shared(results[8].results);
   for(const pickup of results[9].results)world.pickups[pickup.item]=pickup.available;
-  return json({now,...(b.protocol===2?{stateRefs:stateReferences(playerState(b.state,now))}:{}),...rosterPacket(results[5].results,id,{protocol:b.protocol}),history:events(results[6].results.reverse()),
+  return json({now,...(b.protocol===2?{stateRefs:stateReferences(playerState(b.state,now,room))}:{}),...rosterPacket(results[5].results,id,{protocol:b.protocol}),history:events(results[6].results.reverse()),
     cursor:results[7].results[0].last,world});
 }
 const airbornePickup=new Set(['jump','fall','climb','vault']);
@@ -348,21 +351,29 @@ function npcHitStatement(q,{room,id,op,name,data,now},guard) {
 // A start and its single contact get stable operation IDs even across network retries.
 const swingOp=started=>'swing-'+started.toString(36);
 function vehicleImpact(raw,actor,previous){
-  const {id,type,cause,weapon,speed,x,y,angle}=dict(raw);
+  const {id,type,cause,weapon,speed,x,y,angle,part:impactPart}=dict(raw);
+  const part=cause==='weapon'&&typeof impactPart==='string'&&Object.hasOwn(partMask,impactPart)?impactPart:'body';
   if(!key(id)||!isVehicleType(type)||![x,y,actor.x,actor.y].every(Number.isFinite))return null;
   const distance=Math.hypot(x-actor.x,y-actor.y);
   if(cause==='weapon'){
     if(!Object.hasOwn(weaponCatalog,weapon)||distance>weaponCatalog[weapon].range+12)return null;
   }else if(cause!=='crash'||distance>15||!(actor.vehicle||previous.vehicle))return null;
-  const damage=chassisDamage(type,{cause,speed,weapon});
-  return damage?{id,type,cause,x:num(x),y:num(y),angle:num(angle,0,-7,7),damage}:null;
+  const damage=chassisDamage(type,{cause,speed,weapon,part});
+  return damage?{id,type,cause,x:num(x),y:num(y),angle:num(angle,0,-7,7),part,damage}:null;
 }
 function vehicleDamageStatement(q,{room,id,op,name,data,now}){
   return q(`WITH prior AS (
-    SELECT coalesce((SELECT json_extract(data,'$.hp') FROM mc_items WHERE room=? AND kind='vehicleDamage' AND item=?),100) AS hp
+    SELECT (SELECT data FROM mc_items WHERE room=? AND kind='vehicleDamage' AND item=?) AS old
+  ), item AS (
+    SELECT old,coalesce(json_extract(old,'$.hp'),100) AS hp,
+      max(0,coalesce(json_extract(old,'$.hp'),100)-?) AS next_hp FROM prior
   ) INSERT OR IGNORE INTO mc_events (room,player,op,name,type,data,at)
-  SELECT ?,?,?,?,'vehicleDamage',json_set(?,'$.hp',max(0,hp-?),'$.damage',min(hp,?)),?
-  FROM prior WHERE hp>0`,room,data.id,room,id,op,name,JSON.stringify(data),data.damage,data.damage,now);
+  SELECT ?,?,?,?,'vehicleDamage',json_set(?,'$.hp',next_hp,'$.damage',hp-next_hp,
+    '$.parts',coalesce(json_extract(old,'$.parts'),0)|?,
+    '$.fireAt',CASE WHEN next_hp<=32 THEN coalesce(nullif(json_extract(old,'$.fireAt'),0),?) ELSE 0 END,
+    '$.explodeAt',CASE WHEN next_hp=0 THEN ? ELSE 0 END),?
+  FROM item WHERE hp>0`,room,data.id,data.damage,room,id,op,name,JSON.stringify(data),
+    partMask[data.part]||0,now,now+vehicleBurnDelay,now);
 }
 function contactGuard(type,data,actor,room,id,now){
   const kind=data.swingKind||data.kind,range=meleeMoves[kind].reach+.5+1.75;
@@ -400,7 +411,7 @@ async function sync(db,b,now,room) {
   });
   if (!member) return json({error:'rejoin'},401);
   const name=clean(b.name,24)||member.name;
-  const rawState=playerState(b.protocol===2?restoreStateFields(b.state,b.keepState,priorState):b.state,now);
+  const rawState=playerState(b.protocol===2?restoreStateFields(b.state,b.keepState,priorState):b.state,now,room);
   const state=Number.isFinite(rawState.x) ? JSON.stringify(rawState) : member.state;
   const actor=Number.isFinite(rawState.x)?rawState:priorState;
   const stmts=[];

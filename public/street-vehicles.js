@@ -1,5 +1,6 @@
 import {appearanceKey,getKikalmoLook,zones} from './kikalmo-avatar.js';
 import {fleetFabric} from './vehicle-fabric.js';
+import {wheelPart} from './vehicle-damage.js';
 import {vehicleSpec} from './vehicle-types.js';
 
 const {ink,thread:cream,tyre:rubber,brass,silver:iron}=fleetFabric;
@@ -274,6 +275,8 @@ export function createStreetVehicle(THREE,art,type,color,seed=0){
     for(const {pivot,spin,w} of wheels){
       pivot.rotation.y=w.front?-steering:0;
       pivot.rotation.x=type==='scooter'?roll:0;
+      const flat=(e.parts&wheelPart(w.front,w.p[2]>0))!==0||(w.p[2]===0&&(e.parts&wheelPart(w.front,true))!==0);
+      pivot.position.y=w.r*(flat?.75:1);pivot.scale.y=flat?.68:1;
       spin.rotation.z=phase/w.r;
     }
     if(model.rider){
@@ -330,7 +333,8 @@ export function drawStreetVehicle(c,e,x,y,height,time=0,viewAngle=0,weave=null){
       let px=ox+ax*cd+d*sd,pz=oz-ax*sd+d*cd,py=oy+by;
       if(body){const tx=px*cp-py*sp;py=px*sp+py*cp+bob;px=tx;}
       const zz=pz*cb+py*sb;py=py*cb-pz*sb;
-      return project(px,py,zz);
+      const flat=section.r&&(e.parts&(section.p[2]===0?wheelPart(section.front,true)|wheelPart(section.front,false):wheelPart(section.front,section.p[2]>0)));
+      return project(px,flat?py*.76:py,zz);
     }
     for(const v of gear?[...section.parts,...gear]:section.parts){
       if(height<22&&((v.kind==='rod'&&v.r*size<.33)||(v.kind==='egg'&&v.size[0]*size<.7)))continue;

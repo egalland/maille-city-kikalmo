@@ -119,7 +119,7 @@ export function createView(canvas,spawn,onNotice) {
       }
       return;
     }
-    if(kind!=='burst'){
+    if(kind!=='burst'&&kind!=='carExplosion'){
       const duration=effectDuration(kind);
       for(const stroke of buildShotEffect(kind,x,y,angle,len,age?age/duration:.5)){
         const points=stroke.points.map(p=>new THREE.Vector3(p.x,terrainHeight(x,y)+lift+p.z,p.y));
@@ -130,14 +130,15 @@ export function createView(canvas,spawn,onNotice) {
       }
       return;
     }
-    const palette=colors.length?colors:['#e69ea7','#ffdc9f','#8fcabf','#d6a787'];
-    for(let i=0;i<7;i++){
-      const m=new THREE.Mesh(new THREE.IcosahedronGeometry(.09+Math.random()*.07),new THREE.MeshBasicMaterial({color:palette[i%palette.length],transparent:true}));
+    const explosion=kind==='carExplosion';
+    const palette=explosion?['#f8bc64','#ec7546','#f2deaa','#88706e']:colors.length?colors:['#e69ea7','#ffdc9f','#8fcabf','#d6a787'];
+    for(let i=0;i<(explosion?18:7);i++){
+      const m=new THREE.Mesh(new THREE.IcosahedronGeometry((explosion?.34:.09)+Math.random()*(explosion?.28:.07)),new THREE.MeshBasicMaterial({color:palette[i%palette.length],transparent:true}));
       m.position.set(x,terrainHeight(x,y)+lift+.3+Math.random()*.5,y);scene.add(m);
-      const a=Math.random()*Math.PI*2,v=1.3+Math.random()*2;
+      const a=Math.random()*Math.PI*2,v=1.3+Math.random()*(explosion?4.8:2);
       const vx=Math.cos(a)*v,vy=2+Math.random()*2.5,vz=Math.sin(a)*v;
       m.position.x+=vx*age;m.position.z+=vz*age;m.position.y+=vy*age-3.5*age*age;
-      effects.push({mesh:m,life:.65-age,max:.65,vx,vy:vy-7*age,vz});
+      effects.push({mesh:m,life:(explosion?1.3:.65)-age,max:explosion?1.3:.65,vx,vy:vy-7*age,vz});
     }
   }
   function render(state,dt,time) {

@@ -9,13 +9,15 @@ const places=[
   ['pontoise','Pontoise-lès-Noyon',3.047439,49.553589,null],
   ['varesnes','Varesnes',3.0604217,49.56658382,null],
   ['salency','Salency',3.053515,49.586347,null],
-  ['behericourt','Béhéricourt',3.06350,49.59670,null]
+  ['behericourt','Béhéricourt',3.06350,49.59670,null],
+  ['trois-ponts','Rue des Trois Ponts',2.99122,49.56178,/rue des 3 ponts/],
+  ['couarcy','Rue de Couarcy',3.04222,49.55129,/rue de couarcy/]
 ];
 export const enferStops=places.map(([key,name,lon,lat,road,targetLabel])=>{
   const [x,y]=enferPoint(lon,lat);
   return [key,name,x,y,road,targetLabel?enferPoint(...targetLabel):[x+24,y]];
 });
-const labels=places.map(([key,name,lon,lat,,,district])=>{
+const labels=places.slice(0,9).map(([key,name,lon,lat,,,district])=>{
   const [x,y]=enferPoint(lon,lat);
   return {x,y,name:district||name,r:key==='noyon'||key==='gare'?870:580};
 });

@@ -1,4 +1,4 @@
-import {worldURL,switchWorldURL} from './world-link.js';
+import {worldURL,selectedWorld} from './world-link.js';
 import {readSectorTransfer,retreatFromSector} from './sector-transfer.js';
 
 const canonical=worldURL(location.href);
@@ -18,7 +18,8 @@ if(canonical.href!==location.href)history.replaceState(history.state,'',canonica
 // The loading scene remains interactive if a module fails on a slow mobile connection.
 const retry=document.getElementById('retryLoad');
 retry.onclick=()=>location.reload();
-if(canonical.searchParams.get('monde')==='enfer'){
+const enfer=selectedWorld(canonical.href)==='enfer';
+if(enfer){
   document.title='Maille City · Enfer · Pays noyonnais';
   document.getElementById('loadingText').textContent='Ouverture du Pays noyonnais en laine…';
   document.getElementById('city').setAttribute('aria-label','Pays noyonnais en laine, monde 3D à la troisième personne');
@@ -36,10 +37,8 @@ try {
   const isGPU=/webgl|context|graphic|gpu/i.test(String(error));
   text.textContent=isGPU?'Le rendu 3D nécessite WebGL 2. Active l’accélération graphique ou essaie un navigateur compatible.':'Le chargement de la ville a été interrompu.';
   const url=new URL(location.href);
-  if(url.searchParams.get('monde')==='enfer'){
+  if(enfer){
     text.textContent='La carte Enfer n’a pas pu être chargée.';
-    const back=document.getElementById('returnToCity');
-    back.href=switchWorldURL(url.href,'paris');back.textContent='Revenir à Paris';back.hidden=false;
   }else if(url.searchParams.has('lon')){
     text.textContent='Le secteur demandé n’a pas pu être chargé. Tu peux réessayer ou revenir sur l’axe du Louvre à La Défense.';
     const back=document.getElementById('returnToCity');

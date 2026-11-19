@@ -254,22 +254,8 @@ export function createPanels({game,net,editLayout,openAvatar,getState,selectWeap
     ring.addEventListener('pointercancel',cancel);ring.addEventListener('lostpointercapture',cancel);
   }
   function mapPanel() {
-    const sheet=frame('map','Plan de ville',isEnfer?'Enfer · Pays noyonnais':metadata.sector?.name||'Paris et petite couronne');
+    const sheet=frame('map','Carte',isEnfer?'Enfer · Pays noyonnais':metadata.sector?.name||'Paris et petite couronne');
     const pad=node('div','mc-body');
-    const worlds=node('nav','world-tabs');worlds.setAttribute('aria-label','Carte à jouer');
-    for(const [key,title,area] of [['paris','Paris','Paris et petite couronne'],['enfer','Enfer','Noyon et vallée de l’Oise']]){
-      const link=node('a');link.href=switchWorldURL(location.href,key);
-      link.append(node('strong','',title),node('small','',area));
-      if((key==='enfer')===isEnfer){
-        link.setAttribute('aria-current','page');
-        link.addEventListener('click',e=>e.preventDefault());
-      }else link.addEventListener('click',e=>{
-        if(e.button!==0||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;
-        e.preventDefault();net.stop();location.assign(link.href);
-      });
-      worlds.append(link);
-    }
-    pad.append(worlds);
     const nav=node('div','gp-mode');nav.setAttribute('role','group');nav.setAttribute('aria-label','Échelle du plan');
     const localButton=button('Plan local','',()=>switchMap('local'));
     const regionButton=button('Grand Paris','',()=>switchMap('region'));

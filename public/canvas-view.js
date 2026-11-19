@@ -14,7 +14,7 @@ import {buildShotEffect,effectDuration} from './weapon-effects.js';
 import { vehicleSpec } from './vehicle-types.js';
 // Perspective software renderer for browsers without a WebGL 2 context.
 // It projects the same metre-space data, props, actors and camera boom as the GPU view.
-import {enferStyle,enferStyles,enferWall} from './enfer-architecture.js';
+import {enferStyle,enferStyles,enferWall,enferRoof,roofPitch} from './enfer-architecture.js';
 import {buildings,streets,water,green,isEnfer} from './paris-data.js';
 import {monuments,cameraDistance,nearbyProps} from './paris-world.js';
 import {drawCanvasPuppet,drawCanvasCar} from './canvas-puppets.js';
@@ -502,7 +502,7 @@ export function createCanvasView(canvas,spawn,onNotice){
     if(surfaceAtlas?.cx===cx&&surfaceAtlas.cy===cy)return surfaceAtlas;
     const canvas=surfaceAtlas?.canvas||makeCanvas(size,size),mask=canvas.getContext('2d',{willReadFrequently:true});
     const left=cx-size/(2*scale),top=cy-size/(2*scale),radius=size/(2*scale)+8;
-    mask.setTransform(scale,0,0,scale,-left*scale,-top*scale);mask.fillStyle='#000';mask.fillRect(left,top,size/scale,size/scale);
+    mask.setTransform(scale,0,0,scale,-left*scale,-top*scale);mask.fillStyle=isEnfer&&spatial.blocks.around(cx,cy,52).filter(o=>Math.hypot(o.bounds.x-cx,o.bounds.y-cy)<55).length<12?'#800000':'#000';mask.fillRect(left,top,size/scale,size/scale);
     function fillArea(list,red){
       mask.fillStyle=red;
       for(const {a,bounds} of list)if(Math.abs(bounds.x-cx)<bounds.r+radius&&Math.abs(bounds.y-cy)<bounds.r+radius){
@@ -626,7 +626,8 @@ export function createCanvasView(canvas,spawn,onNotice){
     const {o,wind,seed,bounds}=item,poly=o.poly,H=Math.max(2.2,o.h||13);
     const enferIndex=isEnfer?enferStyle(o):-1,local=enferStyles[enferIndex];
     const glass=!local&&(H>48||(bounds.x< -135&&bounds.y< -625&&H>24));
-    const eave=glass?H-.7:H>7.5?H-Math.min(3.25,H*.15):H-.65;
+    const pitched=local&&enferRoof(poly,H,enferIndex);
+    const eave=pitched?.wall??(glass?H-.7:H>7.5?H-Math.min(3.25,H*.15):H-.65);
     const top=poly.map(q=>[q[0]+(bounds.x-q[0])*.032,q[1]+(bounds.y-q[1])*.032,H]);
     for(let j=0;j<poly.length;j++){
       const a=poly[j],b=poly[(j+1)%poly.length],dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy);
@@ -646,8 +647,13 @@ export function createCanvasView(canvas,spawn,onNotice){
         fillPath(pp,glass?shade?'#829aa1':'#657b88':tint(local?.wall||stone[seed%8],shade?1.00:.85));
         const topA=top[j],topB=top[(j+1)%top.length],roofColor=local?.roof||roofs[seed%roofs.length];
         const roofFace=[[a[0],a[1],eave],[b[0],b[1],eave],topB,topA];
-        poly3(roofFace,glass?'#a5b8b5':roofColor);
-        if(!glass&&d<115&&length>1.8&&H>7.5){
+        if(pitched){
+          const left=pitched.ridge(a),right=pitched.ridge(b),rim=[[...b,pitched.top(b)]];
+          if(left*right<0){const t=left/(left-right);rim.push([a[0]+dx*t,a[1]+dy*t,H]);}
+          rim.push([...a,pitched.top(a)]);
+          poly3([[...a,eave],[...b,eave],...rim],tint(local.wall,shade?.91:.78));
+        }else poly3(roofFace,glass?'#a5b8b5':roofColor);
+        if(!pitched&&!glass&&d<115&&length>1.8&&H>7.5){
           const tile=zincCloth(),pic=repeatFacade(tile,clamp(Math.round(length/4),1,9));
           g.save();g.globalAlpha=.32;
           texturedFace(pic,roofFace.map((q,i)=>[...q,i===1||i===2?pic.width:0,i<2?pic.height:0]));
@@ -657,7 +663,7 @@ export function createCanvasView(canvas,spawn,onNotice){
         const bays=clamp(Math.round(length/(local?.bay||6.6)),1,40),count=d>85?Math.min(3,Math.ceil(bays/4)):Math.min(16,bays),floors=clamp(Math.round((eave-3)/3.2),1,10);
         const repeats=clamp(Math.round(bays/count),1,10);
         function picture(k,detail){
-          if(local)return repeatFacade(enferWall(enferIndex,enferIndex===4?1:clamp(Math.round(eave/3),1,10)),repeats);
+          if(local)return repeatFacade(enferWall(enferIndex,enferIndex===4?1:clamp(Math.round(eave/2.75),1,10),k===0&&enferIndex<3&&(seed+j)%3===0&&length>3),repeats);
           const style=detail?(seed+j*3+k*5)%8:seed;
           return repeatFacade(facade(style,floors,shade,glass,detail),repeats);
         }
@@ -696,7 +702,15 @@ export function createCanvasView(canvas,spawn,onNotice){
         }
       }});
     }
-    const rooftop=projectPoly(top);if(rooftop&&H+item.ground<camH)queue.push({z:depth(bounds.x,bounds.y),draw:()=>fillPath(rooftop,local?.roof||roofs[seed%roofs.length])});
+    if(pitched){
+      for(const side of [-1,1]){
+        const facet=roofPitch(poly,pitched.ridge,side),plane=projectPoly(facet.map(p=>[...p,pitched.top(p)]));
+        if(plane&&facet.length>=3&&H+item.ground<camH+.45)
+          queue.push({z:depth(bounds.x,bounds.y),draw:()=>fillPath(plane,tint(local.roof,side>0?1:.86))});
+      }
+    }else{
+      const rooftop=projectPoly(top);if(rooftop&&H+item.ground<camH)queue.push({z:depth(bounds.x,bounds.y),draw:()=>fillPath(rooftop,local?.roof||roofs[seed%roofs.length])});
+    }
   }
   function showProp(o,health){
     if(terracePanels[o.type]){
@@ -847,6 +861,22 @@ export function createCanvasView(canvas,spawn,onNotice){
       ellipseGround(arc.x,arc.y,35.2,.025,'#c4b5a6');
     }
     groundTexture();
+    if(isEnfer)for(const s of visibleWays){
+      if(!s.way.bridge)continue;
+      roadRibbon(s,.95,'#c6ad92',0,s.a,s.b);
+      roadRibbon(s,0,'#746f76',0,s.a,s.b);
+      for(const sign of [-1,1]){
+        const dx=(s.b[0]-s.a[0])/s.len,dy=(s.b[1]-s.a[1])/s.len,edge=sign*(s.w*.5+.74);
+        const a=[s.a[0]-dy*edge,s.a[1]+dx*edge],b=[s.b[0]-dy*edge,s.b[1]+dx*edge];
+        const face=(bottom,top,color)=>poly3([[...a,bottom],[...b,bottom],[...b,top],[...a,top]],color);
+        face(-.51,.27,'#94837d');face(.7,.88,'#4a444e');
+        for(let d=.6;d<s.len;d+=2.7){
+          const x=a[0]+dx*d,y=a[1]+dy*d;
+          const foot=at(x,y,.22),head=at(x,y,.8);
+          if(foot&&head){g.strokeStyle='#514950';g.lineWidth=Math.max(1,w/head.d*.006);g.beginPath();g.moveTo(foot.x,foot.y);g.lineTo(head.x,head.y);g.stroke();}
+        }
+      }
+    }
     occlusion.length=0;
     const range=canvasViewRange(w<h,renderQuality);
     const facadeSet=nearBuildings.filter(item=>seen(item.bounds,range)).sort((a,b)=>depth(a.bounds.x,a.bounds.y)-depth(b.bounds.x,b.bounds.y));
@@ -931,7 +961,7 @@ export function createCanvasView(canvas,spawn,onNotice){
     });
     queue.sort((a,b)=>b.z-a.z);for(const o of queue)o.draw();
     for(let i=effects.length-1;i>=0;i--){const e=effects[i],age=time-e.born;
-      const duration=e.duration??(e.fibers?fiberLifetime:e.kind==='burst'?.55:effectDuration(e.kind));
+      const duration=e.duration??(e.fibers?fiberLifetime:e.kind==='burst'?.55:e.kind==='carExplosion'?1.35:effectDuration(e.kind));
       if(age>duration){effects.splice(i,1);continue;}
       if(e.fibers){
         const height=terrainHeight(e.x,e.y)+e.lift;
@@ -948,6 +978,15 @@ export function createCanvasView(canvas,spawn,onNotice){
           g.quadraticCurveTo(projected[1].x,projected[1].y,projected[2].x,projected[2].y);g.stroke();
         }
         g.restore();
+      }else if(e.kind==='carExplosion'){
+        const pp=at(e.x,e.y,.8+e.lift+age*.65);if(!pp)continue;
+        g.save();g.globalAlpha=Math.min(1,(1.35-age)*2.2);
+        for(let j=0;j<19;j++){
+          const a=j*2.399,spread=(.30+age*(1.9+j%4*.4))*f/pp.d;
+          const r=(.26+age*.72)*f/pp.d;
+          g.fillStyle=age<.42?['#ffe091','#e9874d','#d75343'][j%3]:['#554650','#806765','#6b6067'][j%3];
+          g.beginPath();g.ellipse(pp.x+Math.cos(a)*spread,pp.y+Math.sin(a)*spread*.68,r,r*.82,0,0,tau);g.fill();
+        }g.restore();
       }else if(e.kind==='burst'){
         const pp=at(e.x,e.y,.93+e.lift);if(!pp)continue;
         for(let j=0;j<8;j++){const v=j*2.39+age;g.fillStyle=j%2?'#f0c891':'#94b5a6';g.fillRect(pp.x+Math.cos(v)*age*80,pp.y+Math.sin(v)*age*80,3,3);}

@@ -9,6 +9,7 @@ const furColors={
   bear:{fur:'#aa7857',cream:'#e9c69f',shade:'#795443',inner:'#ce9581'},
   raccoon:{fur:'#a4a3a4',cream:'#eee0c6',shade:'#625967',inner:'#c49899'}
 };
+const skin=['#d8a47e','#8d5a43','#bb805b','#edbd97','#a36b57'];
 const crews={
   police:['cat','#3e596e','#bac9c3'],medic:['rabbit','#ece0bc','#568f85'],
   firefighter:['bear','#874c50','#e8bd68'],swat:['raccoon','#414958','#829895']
@@ -18,9 +19,9 @@ const wildlife=['rabbit','bear','cat','raccoon'];
 export function puppetAppearance(role,color,seed=0){
   const type=role==='player'?'fox':role==='ambulance'?'medic':role==='firetruck'?'firefighter':role;
   const pick=Number.isFinite(seed)?Math.abs(Math.trunc(seed)):motionSeed(seed)%65535;
-  const crew=crews[type],animal=type==='fox'?'fox':crew?.[0]||wildlife[pick%4];
+  const crew=crews[type],animal=type==='fox'?'fox':type==='human'?'human':crew?.[0]||wildlife[pick%4];
   const dye=(pick+(typeof color==='string'?motionSeed(color)%coats.length:0))%coats.length;
-  return {type,pick,animal,pelt:furColors[animal],service:!!crew,
+  return {type,pick,animal,pelt:animal==='human'?{fur:skin[pick%skin.length],cream:'#e7aa8f',shade:'#674c45',inner:'#cb8d75'}:furColors[animal],service:!!crew,
     coat:crew?.[1]||(type==='fox'?'#378784':coats[dye]),
     trim:crew?.[2]||(type==='fox'?yarnPalette.ochre:'#dbc59b')};
 }

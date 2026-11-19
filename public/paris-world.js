@@ -663,6 +663,23 @@ for(const path of ordered){
     }
   }
 }
+// Sample the real IGN woods on a spaced grid. The renderers keep only nearby trees.
+if(isEnfer){
+  const wooded=new Grid(144);
+  for(const area of green){
+    if(!/bois|forêt|peupleraie|verger|haie/i.test(area.kind||''))continue;
+    wooded.insert({...area},bounds(area.poly));
+  }
+  for(let gx=Math.ceil(landBounds.minX/18);gx*18<landBounds.maxX;gx++)
+    for(let gy=Math.ceil(landBounds.minY/18);gy*18<landBounds.maxY;gy++){
+      const seed=hash(gx+','+gy),x=gx*18+((seed%117)/117-.5)*13,y=gy*18+(((seed>>>11)%113)/113-.5)*13;
+      if(!wooded.area(x,y,.05).size||![...wooded.area(x,y,.05)].some(a=>inShape(x,y,a)))continue;
+      if(testPose(x,y,{radius:1.15},false)||[...decor.area(x,y,4)].some(o=>Math.hypot(o.x-x,o.y-y)<4))continue;
+      if([...roadGrid.area(x,y,6)].some(({road,a,b})=>lineDist2(x,y,a,b)<sq(road.w*.5+2)))continue;
+      const r=.38,tree={id:'wood-'+gx+'-'+gy,type:'tree',wooded:true,x,y,r,h:6.5,angle:seed%628/100};
+      props.push(tree);decor.insert(tree,bounds([[x,y]],r));
+    }
+}
 export function nearbyProps(x,y,radius){
   return [...decor.area(x,y,radius)].filter(o=>sq(x-o.x)+sq(y-o.y)<=sq(radius));
 }
@@ -683,7 +700,9 @@ for(const p of routeRecords){
     const key=cellKey(mid.x,mid.y,106),candidates=trafficSeeds.get(key)||[];
     candidates.push({p,rank});trafficSeeds.set(key,candidates);
   }
-  if(!road.bridge&&p.length>15)considerSeed(walkerSeeds,cellKey(mid.x,mid.y,60),p,rank+(road.kind==='path'?60:0));
+  const houses=isEnfer?[...terrain.area(mid.x,mid.y,47)].filter(b=>b.type==='building'&&
+    ['residential','mixed','commercial'].includes(b.kind)&&b.poly.some(([x,y])=>sq(x-mid.x)+sq(y-mid.y)<47*47)).length:5;
+  if(!road.bridge&&p.length>15&&(houses>=2||(houses===1&&p.key%3===0)))considerSeed(walkerSeeds,cellKey(mid.x,mid.y,isEnfer&&houses<5?100:60),p,rank+(road.kind==='path'?60:0)+houses*1.5);
 }
 const circulation=new Grid(96),footPatrol=new Grid(64);
 const seedGroups=[...trafficSeeds.values()].map(group=>group.sort((a,b)=>b.rank-a.rank||a.p.id.localeCompare(b.p.id)).slice(0,4).map(s=>s.p));
@@ -881,7 +900,7 @@ export function routeAgents(x,y,radius=140,epochMs=Date.now()){
       const d=wrap(sec*speed+route.key%period+i*period/route.count,period),ret=d>route.length;
       const pos=alongPath(route,ret?period-d:d);
       if(ret)pos.angle+=Math.PI;
-      const n=(route.key+i*3)>>>0, type=flocks[n%flocks.length];
+      const n=(route.key+i*3)>>>0, type=isEnfer?'human':flocks[n%flocks.length];
       consider(actors,{...pos,id:'n'+route.id+'-'+i,type,kind:type,variant:n%8,color:tintedPeds[n%tintedPeds.length],speed,moving:true,walk:sec*speed*4.6+i});
     }
   }

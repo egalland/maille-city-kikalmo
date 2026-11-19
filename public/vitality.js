@@ -9,7 +9,7 @@ export function impactEvent(at,angle,force,duration,seed){
 }
 export function pedestrianDamage(speed){return clamp(Math.round((Math.abs(speed)-1)*2.9),3,66);}
 export function crashDamage(speed){return clamp(Math.round((Math.abs(speed)-8)*1.65),0,43);}
-export function createVitality(initial,now=Date.now()){
+export function createVitality(initial,now=Date.now(),recoveryDelay=koDurationMs){
   let health,medkits,downUntil,protectedUntil,hitAt,medicAt,lastTick,fall,lifeEvent=null,serial=0;
   let bleeding=null,bleedThrough=0;
   function settleBleeding(clock){
@@ -22,7 +22,7 @@ export function createVitality(initial,now=Date.now()){
   function restore(s,clock){
     const valid=s&&typeof s==='object'?s:{};
     const boundTime=(v,after)=>clamp(finite(v,0),0,clock+after);
-    downUntil=boundTime(valid.downUntil,koDurationMs);
+    downUntil=boundTime(valid.downUntil,recoveryDelay);
     health=clamp(finite(valid.health,100),0,100);
     if(health===0&&!downUntil)health=100;
     medkits=Math.trunc(clamp(finite(valid.medkits,1),0,1));
@@ -56,7 +56,7 @@ export function createVitality(initial,now=Date.now()){
     const severity=hitSeverity(cause,amount,weapon);
     bleeding=down?null:bleedingAfterHit(bleeding,severity,at);
     bleedThrough=severity?at:Math.max(bleedThrough,at);
-    if(down){downUntil=at+koDurationMs;fall=impactEvent(at,angle,Math.max(.75,force),koDurationMs,seed);}
+    if(down){downUntil=at+recoveryDelay;fall=impactEvent(at,angle,Math.max(.75,force),Math.min(recoveryDelay,8000),seed);}
     else if(canFall&&stagger>=.36&&!(fall?.until>at))fall=impactEvent(at,angle,stagger,600+stagger*860,seed);
     report(down?'down':'damage',before-health,cause);return true;
   }

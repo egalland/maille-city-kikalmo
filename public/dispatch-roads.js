@@ -31,7 +31,7 @@ function roadPosition(plan,metres){
   const curb=Math.max(0,line.road.w*.5-spec.halfWidth-.2);
   const lane=Math.min(curb,clamp(line.road.w*.22,.85,3));
   const t=clamp(1-(length-metres)/Math.min(14,length),0,1);
-  const lateral=lane+(curb-lane)*t*t*(3-2*t);
+  const lateral=plan.distant?curb*t*t*(3-2*t):lane+(curb-lane)*t*t*(3-2*t);
   return {x:center.x-Math.sin(angle)*lateral,y:center.y+Math.cos(angle)*lateral};
 }
 
@@ -89,7 +89,7 @@ export function stepDispatch(state,age,dt,clear){
   if(!plan)return null;
   if(state.distance==null){
     // Late joiners see the incident at its current stage; the car still needs a clear footprint.
-    const target=Math.min(plan.length,Math.max(0,age)*5.8);
+    const target=plan.distant?0:Math.min(plan.length,Math.max(0,age)*5.8);
     let d=target;
     while(!clear(dispatchRoadPose(plan,d),plan.spec)){
       if(!d)return null;
@@ -102,7 +102,7 @@ export function stepDispatch(state,age,dt,clear){
   let moved=0;
   if(state.arrived==null){
     const remaining=plan.length-state.distance;
-    const limit=Math.min(6.3,Math.sqrt(2*4*remaining));
+    const limit=Math.min(plan.distant?14:6.3,Math.sqrt(2*4*remaining));
     let speed=clamp(limit,state.speed-8*dt,state.speed+4*dt);
     const sight=Math.min(remaining,.5+speed*.35+speed*speed/12);
     for(let ahead=Math.min(.65,sight);ahead<sight+.65&&sight>0;ahead+=.65){
@@ -117,7 +117,7 @@ export function stepDispatch(state,age,dt,clear){
     if(remaining-moved<.025){state.arrived=age;state.speed=0;}
     // Ambulances can disembark in a queue once the vehicle has come to rest.
     if(state.speed<.15)state.wait=(state.wait||0)+dt;else state.wait=0;
-    if(state.wait>2.4){state.arrived=age;state.speed=0;}
+    if(state.wait>(plan.distant?6.5:2.4)){state.arrived=age;state.speed=0;}
   }
   return {...dispatchRoadPose(plan,state.distance),speed:state.speed,moving:state.speed>.12};
 }
@@ -250,4 +250,68 @@ export function stepDispatchFoot(state,goal,age,stride,walkable,face=goal){
   }
   const moving=walker.next<walker.path.length;
   return {x:walker.x,y:walker.y,angle:moving?walker.angle:Math.atan2(face.y-walker.y,face.x-walker.x),moving,move:moving,speed:moving?stride:0};
+}
+
+// Find a connected approach from beyond the immediate block. Edge directions
+// are reversed for the search so the resulting path can be driven forwards.
+export function planDistantDispatch(scene,type,roads,clear,walkable,from=null){
+  const spec=vehicleSpec(type),nodes=new Map();
+  function node(point){
+    const [x,y]=point,key=Math.round(x*2)+','+Math.round(y*2);
+    if(!nodes.has(key))nodes.set(key,{x,y,back:[]});
+    return nodes.get(key);
+  }
+  for(const road of roads){
+    if(road.w<spec.halfWidth*2+.28)continue;
+    for(let i=1;i<road.path.length;i++){
+      const start=road.path[i-1],end=road.path[i],length=Math.hypot(end[0]-start[0],end[1]-start[1]);
+      const steps=Math.max(1,Math.ceil(length/12));
+      let a=node(start);
+      for(let n=1;n<=steps;n++){
+        const t=n/steps,b=node([start[0]+(end[0]-start[0])*t,start[1]+(end[1]-start[1])*t]),d=distance(a,b);
+        if(d){
+          if(road.oneway!==-1)b.back.push({at:a,d});
+          if(road.oneway!==1)a.back.push({at:b,d});
+        }
+        a=b;
+      }
+    }
+  }
+  const goals=[...nodes.values()].filter(n=>distance(n,scene)<46&&n.back.length);
+  goals.sort((a,b)=>distance(a,scene)-distance(b,scene));
+  for(const goal of goals.slice(0,12)){
+    const frontier=[goal],dist=new Map([[goal,0]]),next=new Map(),closed=new Set();
+    while(frontier.length){
+      frontier.sort((a,b)=>dist.get(b)-dist.get(a));
+      const n=frontier.pop(),travel=dist.get(n);
+      if(closed.has(n))continue;
+      closed.add(n);
+      const spawn=from?distance(n,from)<13:distance(n,scene)>=122;
+      if(spawn&&travel>=10){
+        const points=from?[[from.x,from.y]]:[];
+        for(let p=n;p;p=next.get(p))points.push([p.x,p.y]);
+        const line=streetGeometry({path:points,w:spec.halfWidth*2+.35},scene);
+        const plan={type,spec,line,sign:1,length:line.length,from:0,distant:true};
+        plan.park=dispatchRoadPose(plan,plan.length);
+        const entry=dispatchRoadPose(plan,0);
+        if(clear(entry,spec,false)&&clear(plan.park,spec,true)&&
+            (!from||distance(entry,from)<.7)&&dispatchDoor(plan.park,type,scene,walkable))return plan;
+      }
+      if(travel>430)continue;
+      for(const {at,d} of n.back){
+        if(closed.has(at)||travel+d>=(dist.get(at)??Infinity))continue;
+        next.set(at,n);dist.set(at,travel+d);frontier.push(at);
+      }
+    }
+  }
+  if(!from){
+    for(const node of [...nodes.values()].filter(p=>distance(p,scene)>106&&distance(p,scene)<164)
+      .sort((a,b)=>distance(a,scene)-distance(b,scene)).slice(0,24)){
+      const approach=planDispatch(node,type,roads,clear,walkable);
+      if(!approach)continue;
+      const entry=dispatchRoadPose(approach,0);
+      if(distance(entry,scene)>=105&&distance(approach.park,scene)<distance(entry,scene))return {...approach,distant:true};
+    }
+  }
+  return null;
 }

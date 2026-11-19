@@ -1,3 +1,5 @@
+import {drawCabinDriver} from './cabin-art.js';
+import {appearanceKey} from './kikalmo-avatar.js';
 import {yarnPalette} from './wool-art.js';
 import {puppetAppearance} from './puppet-dyes.js';
 import {puppetKnit} from './puppet-material.js';
@@ -5,7 +7,7 @@ import {motionSeed,sampleLocomotion} from './locomotion-pose.js';
 import * as THREE from './three.js';
 import { createStreetVehicle, isStreetVehicle } from './street-vehicles.js';
 import { vehicleSpec } from './vehicle-types.js';
-import {chassisStage} from './vehicle-damage.js';
+import {chassisStage,wheelPart} from './vehicle-damage.js';
 import {bodyFabric as carPaint,serviceFabric as fleetPaint,fleetFabric as carYarn} from './vehicle-fabric.js';
 import { createRagdollRig } from './ragdoll-render.js';
 
@@ -191,18 +193,23 @@ function makeBody(look,high){
   ball(torso,.015,.26,0,.113,.13,.121,isFox?colors.deepTeal:out[0]);
   ball(torso,.01,-.224,0,.156,.089,.182,'#4d5262');
   ball(head,.005,.124,0,.279,.252,.291,fur);
+  if(animal==='human'){
+    ball(head,-.045,.261,0,.263,.15,.285,pal.shade,0,0,-.17);
+    ball(head,-.166,.179,0,.146,.177,.273,pal.shade);
+    for(const s of [-1,1])ball(head,-.022,.118,s*.275,.087,.10,.052,fur);
+  }
   if(!high){
     for(const s of [-1,1]){
       let y=.145;
       if(animal==='rabbit')ball(head,-.025,.382,s*.170,.065,.183,.066,fur,.16*s);
       else if(animal==='bear')ball(head,-.035,.319,s*.205,.067,.086,.08,fur);
-      else addPart(head,ears[s<0?0:1],-.025,.294,.158*s,.88,.91,.87,fur);
-      ball(head,.155,.078,s*.119,.153,.104,.143,pal.cream);
+      else if(animal!=='human')addPart(head,ears[s<0?0:1],-.025,.294,.158*s,.88,.91,.87,fur);
+      if(animal!=='human')ball(head,.155,.078,s*.119,.153,.104,.143,pal.cream);
       ball(head,.217,y+.018,s*.14,.045,.057,.032,colors.ink);
       ball(core,.039,-.522,s*.115,.128,.144,.075,colors.boot);
       ball(core,-.029,-.313,s*.236,.08,.126,.070,out[0]);
     }
-    ball(head,.309,.094,0,.059,.039,.06,colors.ink);
+    ball(head,.265,.094,0,.057,.046,.07,animal==='human'?pal.inner:colors.ink);
     if(isFox){ball(core,-.254,-.096,.12,.23,.09,.095,fur,.1,.3,.32);ball(core,-.44,-.016,.216,.123,.075,.07,pal.cream);}
     if(service){
       const tone=type==='firefighter'?'#deb05e':type==='medic'?'#efe3c6':cloth;
@@ -220,7 +227,7 @@ function makeBody(look,high){
   }
   // Cheek tufts and double yarn brows give the fox a different profile from the rounder passersby.
   for(const sign of [-1,1]){
-    ball(head,.129,.069,sign*.147,.165,.115,.143,pal.cream,.15*sign,0,-.09);
+    if(animal!=='human')ball(head,.129,.069,sign*.147,.165,.115,.143,pal.cream,.15*sign,0,-.09);
     if(animal==='fox'||animal==='cat'){
       const tuft=taper([[.13,.055,sign*.22],[.10,.07,sign*.284],[.07,.122,sign*.345]],[.069,.051,.002],7);
       addPart(head,tuft,0,0,0,1,1,1,pal.cream);
@@ -229,10 +236,15 @@ function makeBody(look,high){
     const cheekCross=[[.114,.08,.276],[.100,.065,.286],[.08,.091,.289]];
     cord(head,cheekCross.map(([x,y,z])=>[x,y,z*sign]),.006,'#dbad83');
     cord(head,[[.18,.255,.164*sign],[.20,.256,.132*sign],[.231,.243,.098*sign]],.010,pal.shade);
-    earModel(head,sign,animal,pal);
+    if(animal!=='human')earModel(head,sign,animal,pal);
   }
-  ball(head,.250,.074,0,.126,.081,.109,pal.cream);
-  ball(head,.340,.104,0,.062,.042,.072,colors.ink,0,0,.12);
+  if(animal==='human'){
+    ball(head,.267,.108,0,.061,.055,.06,pal.inner);
+    cord(head,[[.262,.048,-.061],[.273,.033,0],[.262,.048,.061]],.009,pal.shade);
+  }else{
+    ball(head,.250,.074,0,.126,.081,.109,pal.cream);
+    ball(head,.340,.104,0,.062,.042,.072,colors.ink,0,0,.12);
+  }
   ball(head,.381,.122,-.015,.016,.01,.022,'#dfbea2',0,0,0,'plain');
   cord(head,[[.333,.079,-.047],[.346,.061,0],[.32,.043,.047]],.007,'#855e55');
   const eyes=joint(head,'eyes',0,.179,0);
@@ -309,7 +321,7 @@ export function createPuppet(type='fox',color,seed=0){
   const look=puppetAppearance(type,color,seed);
   type=look.type;
   const {animal,coat:cloth,pick}=look;
-  const key=type+'|'+animal+'|'+cloth;
+  const key=type+'|'+animal+'|'+cloth+'|'+look.pelt.fur;
   if(!peopleTemplates.has(key)){
     peopleTemplates.set(key,{near:makeBody(look,true),far:bakeStaticHierarchy(makeBody(look,false))});
   }
@@ -770,7 +782,11 @@ function createCarBody(type='car',color,seed=0){
     body.scale.set(1+compression*.12-wear*.019,1-compression*.6-wear*.024,1+compression*.34);
     body.rotation.z=pitch;body.rotation.x=roll;
     spin-=speed*dt/wheelRadius;
-    for(const wheel of wheels){wheel.rotation.order='YXZ';wheel.rotation.y=wheel.userData.front?-steer:0;wheel.rotation.z=spin;}
+    for(const wheel of wheels){
+      const flat=(pose.parts&wheelPart(wheel.userData.front,wheel.position.z>0))!==0;
+      wheel.position.y=wheelRadius*(flat?.73:1);wheel.scale.set(1,flat?.65:1,1);
+      wheel.rotation.order='YXZ';wheel.rotation.y=wheel.userData.front?-steer:0;wheel.rotation.z=spin;
+    }
     if(beacon){
       // The little purls of the beacon breathe without changing anyone else's shared material.
       const flash=pose.siren===false?.18:(Math.sin(t*11.5+variant)>0?1:.45);
@@ -785,16 +801,50 @@ function createCarBody(type='car',color,seed=0){
 }
 
 const frayedChassis=new THREE.MeshLambertMaterial({color:'#493940'});
+const flameYarn=new THREE.MeshBasicMaterial({color:'#f8a451'});
+const cabinPlane=new THREE.PlaneGeometry(1,1);
 const cottonSmoke=new THREE.MeshBasicMaterial({color:'#82747e',transparent:true,opacity:.42,depthWrite:false});
 export function createCar(type='car',color,seed=0){
   const body=createCarBody(type,color,seed),spec=vehicleSpec(type?.type??type);
-  let wear=null;
+  let wear=null,cabin=null;
+  function updateCabin(pose){
+    if(spec.openSeat)return;
+    if(!pose.driver&&!(pose.parts&1)){if(cabin)cabin.group.visible=false;return;}
+    const identity=[pose.driver?appearanceKey(pose.appearance)||pose.id:'',pose.parts&1].join('/');
+    if(!cabin){
+      const canvas=document.createElement('canvas');canvas.width=canvas.height=80;
+      const map=new THREE.CanvasTexture(canvas);map.colorSpace=THREE.SRGBColorSpace;
+      const material=new THREE.MeshBasicMaterial({map,transparent:true,depthWrite:false,side:THREE.DoubleSide});
+      const group=new THREE.Group(),scale=Math.min(.46,spec.height*.28);
+      for(const sign of [-1,1]){
+        const pane=new THREE.Mesh(cabinPlane,material),truck=spec.height>2;
+        pane.position.set(truck?spec.halfLength*.23:.27,spec.height*(truck?.71:.76),sign*spec.halfWidth*.81);
+        pane.rotation.y=sign>0?0:Math.PI;pane.scale.set(scale,scale*.92,1);group.add(pane);
+      }
+      const rear=new THREE.Mesh(cabinPlane,material);
+      rear.position.set(-spec.halfLength*.78,spec.height*.76,.16);rear.rotation.y=-Math.PI/2;
+      rear.scale.set(scale,scale*.9,1);group.add(rear);
+      body.group.add(group);cabin={group,canvas,map,material,identity:null};
+    }
+    cabin.group.visible=true;
+    if(cabin.identity===identity)return;
+    cabin.identity=identity;
+    const c=cabin.canvas.getContext('2d');c.clearRect(0,0,80,80);
+    if(pose.driver)drawCabinDriver(c,pose,80);
+    if(pose.parts&1){
+      c.strokeStyle='#f4e2ca';c.lineWidth=1.7;
+      for(const [x,y] of [[2,32],[22,5],[69,8],[79,47],[51,78]]){
+        c.beginPath();c.moveTo(45,38);c.lineTo((45+x)/2+4,(38+y)/2-2);c.lineTo(x,y);c.stroke();
+      }
+    }
+    cabin.map.needsUpdate=true;
+  }
   function update(pose={},dt,time=0){
-    body.update(pose,dt,time);
+    body.update(pose,dt,time);updateCabin(pose);
     const stage=chassisStage(pose.chassisHp);
     if(!stage){if(wear)wear.group.visible=false;return;}
     if(!wear){
-      const group=new THREE.Group(),marks=[],puffs=[];
+      const group=new THREE.Group(),marks=[],puffs=[],flames=[];
       for(let i=0;i<6;i++){
         const patch=new THREE.Mesh(geo.box,frayedChassis);
         const width=spec.halfWidth*(i%2===0?1:-1);
@@ -803,10 +853,17 @@ export function createCar(type='car',color,seed=0){
         patch.scale.set(spec.halfLength*.20,.041,.027);group.add(patch);marks.push(patch);
       }
       for(let i=0;i<4;i++){const puff=new THREE.Mesh(geo.littleBall,cottonSmoke);group.add(puff);puffs.push(puff);}
-      body.group.add(group);wear={group,marks,puffs};
+      for(let i=0;i<6;i++){const flame=new THREE.Mesh(geo.littleBall,flameYarn);group.add(flame);flames.push(flame);}
+      body.group.add(group);wear={group,marks,puffs,flames};
     }
     wear.group.visible=true;
     wear.marks.forEach((patch,i)=>patch.visible=i<stage*2);
+    wear.flames.forEach((flame,i)=>{
+      const age=(time*3.9+i*.18)%1;
+      flame.visible=!!pose.burning;
+      flame.position.set(spec.halfLength*.67+Math.sin(time*13+i)*.23,spec.height*.52+.9*age,(i-2.5)*.13);
+      flame.scale.set(.21*(1-age*.6),.38*(1-age*.7),.17*(1-age*.6));
+    });
     wear.puffs.forEach((puff,i)=>{
       const age=(time*.94+i*.25)%1;
       puff.visible=stage>=2&&(stage===3||i%2===0);
@@ -814,5 +871,5 @@ export function createCar(type='car',color,seed=0){
       puff.scale.setScalar(.075+.34*age);
     });
   }
-  return {...body,update};
+  return {...body,update,dispose(){if(cabin){cabin.group.removeFromParent();cabin.map.dispose();cabin.material.dispose();}body.dispose();}};
 }

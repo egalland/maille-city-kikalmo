@@ -24,6 +24,8 @@ Pour un quartier choisi ailleurs dans Paris et la petite couronne, le jeu charge
 
 ## Enfer · Pays noyonnais
 
-La carte couvre 55 km² autour de Noyon, jusqu’à la vallée de l’Oise. L’archive `public/map-enfer.gz` embarque les mêmes couches IGN, les noms de voirie et les altitudes des berges disponibles. Les contours sont simplifiés à 22 cm puis quantifiés au décimètre dans le repère local. Le relief est interpolé à partir des altitudes routières sur une grille de 24 m. Les étages, matières, pignons et détails de façade sont interprétés pour Maille City.
+La carte couvre environ 143 km², dont l’intégralité des communes de Noyon et de Pontoise-lès-Noyon (contours administratifs codes INSEE 60471 et 60507). L’archive `public/map-enfer.gz` embarque les mêmes couches IGN, les noms de voirie et les altitudes des berges disponibles et les profils altimétriques des franchissements IGN. Les bois, peupleraies et haies alimentent le placement des arbres. Les contours sont simplifiés à 22 cm puis quantifiés au décimètre dans le repère local. Le relief est interpolé à partir des altitudes routières sur une grille de 24 m. Les étages, matières, pignons et détails de façade sont interprétés pour Maille City.
+
+Les maisons de brique et leurs toits s’inspirent des [Maisons de la reconstruction à Noyon](https://vpah-hauts-de-france.fr/ressources/les-maisons-de-la-reconstruction/) et de [l’Inventaire des maisons et fermes du canton de Noyon](https://inventaire.hautsdefrance.fr/dossier/IA00049486).
 
 Relancer `/usr/bin/python3 scripts/geo-enfer.py` avec GDAL, NumPy et SciPy pour extraire la version courante de ce périmètre.

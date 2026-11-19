@@ -244,12 +244,12 @@ export function createCrowdMotion({blocked = () => false, move = emptyWorld} = {
       state.closeContact = !!goal.closeContact;
       state.nominal = goal.moving === false ? 0 : (goal.speed || 0);
       state.forwardX = Math.cos(goal.angle || 0); state.forwardY = Math.sin(goal.angle || 0);
-      if (goal.stunned || goal.down) {
+      if (goal.stunned || goal.down || goal.braced) {
         Object.assign(state, {x: goal.x, y: goal.y, angle: goal.angle || 0, vx: 0, vy: 0, fresh: false});
         solid.push(asBody(pedestrianBody(goal)));
       }
       return {state, goal};
-    }).filter(e => !e.goal.stunned && !e.goal.down);
+    }).filter(e => !e.goal.stunned && !e.goal.down && !e.goal.braced);
     // Established walkers claim their occupied positions before newcomers are materialized.
     const byId = (a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     solid.sort(byId);

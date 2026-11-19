@@ -21,7 +21,7 @@ const read=(key,defaultValue)=>{try{return localStorage.getItem('maillecity.'+ke
 const write=(key,value)=>{try{localStorage.setItem('maillecity.'+key,value);}catch{}};
 const defaultNames=['Renard','Filou','Roussi','Ficelle','Moka','Capucine','Noisette','Fauve'];
 function guestName(){return defaultNames[Math.floor(Math.random()*defaultNames.length)]+' '+String(Math.floor(Math.random()*900)+100);}
-if(isEnfer)$('#activeWorldLabel').textContent='ENFER · PAYS NOYONNAIS';
+if(!isEnfer)$('#activeWorldLabel').textContent='PARIS · PETITE COURONNE';
 const name=read('name',guestName());
 write('name',name);
 const weapons=weaponList.map(({id,name})=>[id,name]);
@@ -42,7 +42,7 @@ function saveLoadout(list) {
 }
 const weaponNames=new Map(weapons);
 const city=$('#city'),chat=$('#chat'),entry=$('#chatEntry');
-let settingsSound=read('sound','false')==='true',panels=null,game=null, state={weapon:'pistol',ammo:12,health:100,wanted:0,wantedPoints:0,wantedProgress:0,ownedWeapons:loadout,district:isEnfer?'Noyon':'Place de l’Étoile'}, timer=0;
+let settingsSound=read('sound.v2','true')==='true',panels=null,game=null, state={weapon:'pistol',ammo:12,health:100,wanted:0,wantedPoints:0,wantedProgress:0,ownedWeapons:loadout,district:isEnfer?'Noyon':'Place de l’Étoile'}, timer=0;
 let touchAimEnabled=read('touchAimAssist','true')==='true';
 
 const aimMarker=$('#touchAimMarker');
@@ -210,7 +210,7 @@ function onState(next){
 
 }
 function setName(value){const clean=net.setName(value);write('name',clean);$('#playerName').textContent=clean;}
-function setSound(value){settingsSound=Boolean(value);write('sound',String(settingsSound));game?.setSound(settingsSound);const sound=$('#sound');sound.setAttribute('aria-pressed',String(settingsSound));const label=settingsSound?'Couper le son':'Activer le son';sound.title=label;sound.setAttribute('aria-label',label);sound.querySelector('i').innerHTML=icon(settingsSound?'volume':'volumeOff');}
+function setSound(value){settingsSound=Boolean(value);write('sound.v2',String(settingsSound));game?.setSound(settingsSound);const sound=$('#sound');sound.setAttribute('aria-pressed',String(settingsSound));const label=settingsSound?'Couper le son':'Activer le son';sound.title=label;sound.setAttribute('aria-label',label);sound.querySelector('i').innerHTML=icon(settingsSound?'volume':'volumeOff');}
 $('#playerName').textContent=name;
 game=createGame({canvas:city,minimap:$('#minimap'),net,onState,onNotice:notify,onAimLock:showAimLock,loadout,onLoadoutChange:saveLoadout,initialPursuit:loadPursuit(),initialVitality:loadVitality()});
 installKikalmoLink({game,net,notify});

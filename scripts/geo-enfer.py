@@ -16,16 +16,23 @@ spec.loader.exec_module(geo)
 geo.CACHE=Path(tempfile.gettempdir())/'maille-city-ign-noyonnais-v1'
 geo.CACHE.mkdir(exist_ok=True)
 # Compact local metres for the independent game world, north up.
-west,south,east,north=2.970,49.551,3.085,49.610
+west,south,east,north=2.949,49.516,3.104,49.631
 geo.project=lambda lon,lat:((lon-3.000)*72300,(49.580-lat)*111230)
 ring=[geo.project(lon,lat) for lon,lat in [(west,north),(east,north),(east,south),(west,south)]]
 outline=geo.geometry('Polygon',[[[west,north],[east,north],[east,south],[west,south],[west,north]]])
 jobs=[]
+inner_w,inner_s,inner_e,inner_n=2.970,49.551,3.085,49.610
 for i in range(3):
     for j in range(3):
-        box=[west+(east-west)*i/3,south+(north-south)*j/3,west+(east-west)*(i+1)/3,south+(north-south)*(j+1)/3]
+        box=[inner_w+(inner_e-inner_w)*i/3,inner_s+(inner_n-inner_s)*j/3,inner_w+(inner_e-inner_w)*(i+1)/3,inner_s+(inner_n-inner_s)*(j+1)/3]
         jobs.extend((f'n{i}-{j}',layer,box) for layer in ('batiment','troncon_de_route'))
-jobs.extend(('vallee',layer,[west,south,east,north]) for layer in ('surface_hydrographique','zone_de_vegetation'))
+strips=[
+    [west,south,inner_w,north],[inner_e,south,east,north],
+    [inner_w,south,inner_e,inner_s],[inner_w,inner_n,inner_e,north]
+]
+for i,box in enumerate(strips):
+    jobs.extend((f'extension-{i}',layer,box) for layer in geo.LAYERS)
+jobs.extend(('vallee',layer,[inner_w,inner_s,inner_e,inner_n]) for layer in ('surface_hydrographique','zone_de_vegetation'))
 features={key:{} for key in geo.LAYERS}
 with ThreadPoolExecutor(max_workers=7) as pool:
     for layer,items in pool.map(geo.acquire,jobs):
@@ -73,7 +80,8 @@ for layer,items in features.items():
             original=[l.GetPoints() for l in geo.lines(geometry)]
             for i,l in enumerate(geo.lines(geometry.Intersection(outline).Simplify(.25))):
                 row=points(l)
-                if len(row)>=2:streets.append([ident+(f'-{i}' if i else ''),row,round(width,1),kind,name,level,geo.travel_direction(p.get('sens_de_circulation'),row,original)])
+                if len(row)>=2:streets.append([ident+(f'-{i}' if i else ''),row,round(width,1),kind,name,level,geo.travel_direction(p.get('sens_de_circulation'),row,original),
+                    [[round(x,1),round(y,1),round(h,1)] for x,y,h in samples(g)] if level>0 else None])
             continue
         detail=.22 if layer=='batiment' else .9
         cut=geometry.SimplifyPreserveTopology(detail) if layer=='batiment' else geometry.Intersection(outline).SimplifyPreserveTopology(detail)
@@ -92,7 +100,7 @@ for layer,items in features.items():
                 buildings.append([ident+(f'-{i}' if i else ''),outer,round(h,1),uses.get(p.get('usage_1'),'mixed'),holes or None,int(known)])
                 observed+=known
             elif layer=='surface_hydrographique':
-                water.append([outer,holes,round(float(np.median(water_z)),1) if water_z else None])
+                water.append([outer,holes,round(float(np.median(water_z)),1) if water_z else None,p.get('nature')])
             else:green.append([outer,holes,p.get('nature')])
 
 geo_points=np.array(z)
@@ -108,7 +116,7 @@ axis=[list(geo.project(*p)) for p in [(2.987,49.581),(3.002,49.581),(3.030,49.57
 meta=dict(world='enfer',source='IGN • BD TOPO®',attribution='© IGN, BD TOPO® · Licence Ouverte 2.0',
   url='https://www.ign.fr/geoservices/bd-topo',license='https://www.etalab.gouv.fr/licence-ouverte-open-licence/',
   extracted=datetime.now(timezone.utc).date().isoformat(),projection='XY en mètres. Origine 3° E, 49.58° N.',
-  axis=axis,mapAxis=axis,boundary=ring, observedHeight=observed,estimatedHeight=len(buildings)-observed,
+  axis=axis,mapAxis=axis,boundary=ring,coverage=[west,south,east,north], observedHeight=observed,estimatedHeight=len(buildings)-observed,
   counts=dict(buildings=len(buildings),streets=len(streets),water=len(water),green=len(green)))
 bundle=dict(metadata=meta,buildings=buildings,streets=streets,water=water,green=green,relief=relief)
 raw=json.dumps(bundle,separators=(',',':'),ensure_ascii=False).encode()

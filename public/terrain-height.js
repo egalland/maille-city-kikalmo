@@ -1,4 +1,5 @@
 // World coordinates and heights are metres. XY are east/south. Source: IGN BD TOPO road Z.
+import {bridgeGround} from './enfer-bridges.js';
 import {grid,waterLevels} from './paris-heights.js';
 
 const bytes=Uint8Array.from(atob(grid.data),char=>char.charCodeAt(0));
@@ -8,7 +9,7 @@ let surface=packaged,buildingBases=new WeakMap();
 const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
 const cubic=(a,b,c,d,t)=>b+.5*t*(c-a+t*(2*a-5*b+4*c-d+t*(3*(b-c)+d-a)));
 
-export function terrainHeight(x,y){
+export function baseTerrainHeight(x,y){
   const {cols,rows,step,values}=surface;
   const u=clamp((x-surface.x)/step,0,cols-1),v=clamp((y-surface.y)/step,0,rows-1);
   const i=Math.floor(u),j=Math.floor(v),t=u-i,s=v-j;
@@ -16,6 +17,7 @@ export function terrainHeight(x,y){
   const row=k=>{const n=k*cols;return cubic(values[n+i0],values[n+i],values[n+i2],values[n+i3],t);};
   return cubic(row(Math.max(0,j-1)),row(j),row(Math.min(rows-1,j+1)),row(Math.min(rows-1,j+2)),s);
 }
+export function terrainHeight(x,y){return bridgeGround(x,y,baseTerrainHeight(x,y));}
 export function terrainGradient(x,y){
   return {x:(terrainHeight(x+1,y)-terrainHeight(x-1,y))*.5,y:(terrainHeight(x,y+1)-terrainHeight(x,y-1))*.5};
 }
