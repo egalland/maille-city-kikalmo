@@ -127,7 +127,7 @@ export function createMeshRenderer(canvas){
 
     function draw(material,start,count){
       if(!visibleMaterial(material))return;
-      const tex=texture(material.map,material.alphaTest>.1?128:64),base=material.color||{r:1,g:1,b:1};
+      const tex=texture(material.map,material.map?.userData.cpuSize||(material.alphaTest>.1?128:64)),base=material.color||{r:1,g:1,b:1};
       for(let i=start;i+2<start+count;i+=3){
         const a=index?index[i]:i,b=index?index[i+1]:i+1,c=index?index[i+2]:i+2;
         const ax=a*3,bx=b*3,cx=c*3,za=projected[ax+2],zb=projected[bx+2],zc=projected[cx+2];

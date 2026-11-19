@@ -1,195 +1,274 @@
 import {puppetKnit} from './puppet-material.js';
-import {motionSeed,sampleLocomotion,linkedPose,kikalmoAnchors as anchors} from './locomotion-pose.js';
+import {motionSeed,sampleLocomotion,linkedPose} from './locomotion-pose.js';
 import * as THREE from './three.js';
-import {appearanceKey,getKikalmoLook,kikalmoFrame,zones} from './kikalmo-avatar.js';
-import {kikalmoShell,costumeThreads} from './kikalmo-shell.js';
+import {appearanceKey,getKikalmoLook,zones} from './kikalmo-avatar.js';
+import {costumeThreads} from './kikalmo-shell.js';
 
-const built=new WeakMap(),inactive=new Map();
-const shape=new THREE.SphereGeometry(1,12,9);
-const colors=new Map(),clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
-const joints=['hips','chest','head','leftShoulder','rightShoulder','leftHip','rightHip'];
-function material(color){
-  if(!colors.has(color))colors.set(color,new THREE.MeshLambertMaterial({color,map:puppetKnit()}));
-  return colors.get(color);
+const templates=new WeakMap(),unused=new Map(),materials=new Map();
+const sphere=new THREE.SphereGeometry(1,16,12);
+const lowSphere=new THREE.SphereGeometry(1,12,8);
+const up=new THREE.Vector3(0,1,0);
+const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const smooth=(a,b,n)=>{const t=clamp((n-a)/(b-a));return t*t*(3-2*t);};
+const shirts=['#a17176','#768a6a','#745e77','#445d76','#ad7048','#917b63'];
+
+function yarn(color){
+  if(!materials.has(color))materials.set(color,new THREE.MeshLambertMaterial({color,map:puppetKnit()}));
+  return materials.get(color);
 }
-// A small repeat knitted in both directions around the stuffed perimeter. Its
-// colour comes from the actual garment at that edge, independent of portrait UVs.
-let clothTexture;
-function knitTexture(){
-  if(clothTexture)return clothTexture;
-  const size=32,bytes=new Uint8Array(size*size*4);
-  for(let y=0;y<size;y++)for(let x=0;x<size;x++){
-    const u=(x+.5)/size,v=(y+.5)/size;
-    const stitch=.5+.43*Math.cos(Math.PI*v);
-    const d=Math.min(Math.abs(u-stitch),Math.abs(1-u-stitch));
-    const twist=Math.cos(2*Math.PI*(u*6-v*3))*.016;
-    const shade=Math.round(255*(.77+.19*Math.exp(-48*d*d)+twist));
-    const i=(y*size+x)*4;bytes.set([shade,shade,shade,255],i);
-  }
-  clothTexture=new THREE.DataTexture(bytes,size,size);
-  clothTexture.wrapS=clothTexture.wrapT=THREE.RepeatWrapping;
-  clothTexture.magFilter=THREE.LinearFilter;clothTexture.minFilter=THREE.LinearMipmapLinearFilter;
-  clothTexture.generateMipmaps=true;clothTexture.needsUpdate=true;return clothTexture;
+function ball(parent,material,x,y,z,width,height,depth,geometry=lowSphere){
+  const part=new THREE.Mesh(geometry,material);
+  part.position.set(x,y,z);part.scale.set(width,height,depth);parent.add(part);
+  return part;
 }
-function geometry(art){
-  if(built.has(art))return built.get(art);
-  const s=kikalmoShell(art),{w,h,depth,dims,pixels,material:tags}=s;
-  const rows=50,cols=Math.max(19,Math.min(64,Math.round(rows*w/h))),offset=(cols+1)*(rows+1);
-  const pos=[],uv=[],si=[],sw=[],front=[],back=[],seam=[],cells=new Uint8Array(cols*rows);
-  for(let j=0;j<rows;j++)for(let i=0;i<cols;i++){
-    const x=Math.min(w-1,Math.floor((i+.5)*w/cols)),y=Math.min(h-1,Math.floor((j+.5)*h/rows));
-    const near=Math.max(1,Math.round(w/cols/2)),check=(dx,dy)=>pixels[(clamp(y+dy,0,h-1)*w+clamp(x+dx,0,w-1))*4+3];
-    cells[j*cols+i]=Math.max(check(0,0),check(-near,-near),check(near,near),check(near,-near),check(-near,near))>28;
-  }
-  const isCostume=!!art.appearance.costume;
-  for(const side of [1,-1])for(let j=0;j<=rows;j++)for(let i=0;i<=cols;i++){
-    const u=i/cols,v=j/rows,idx=Math.round(v*(h-1))*w+Math.round(u*(w-1));
-    const lateral=(.5-u)*dims.width,up=dims.bottom+(1-v)*dims.height,role=tags[idx];
-    pos.push(side*depth[idx]*(side===1?1:.83),up,lateral);uv.push(u,1-v);
-    let bone=up>1.1?2:1,next=bone,t=0;
-    if(up<.82){bone=0;next=1;t=clamp((up-.47)/.35);}
-    else if(up<1.25){bone=1;next=2;t=clamp((up-.95)/.30);}
-    if(role===zones.headwear||role===zones.hair||role===zones.facewear||role===zones.feature||role===zones.nose){bone=next=2;t=0;}
-    if(isCostume&&up<.55){bone=0;next=lateral<0?5:6;t=clamp((.57-up)/.36);}
-    else if(isCostume&&up<1.19&&up>.50&&Math.abs(lateral)>.23){bone=1;next=lateral<0?3:4;t=clamp((Math.abs(lateral)-.23)*3.8);}
-    si.push(bone,next,0,0);sw.push(1-t,t,0,0);
-  }
-  const edges=[],widthAt=new Map(),vertexColors=new Array(2*offset*3).fill(1);
-  function edge(a,b,di,dj){
-    // Follow the exterior of each occupied cell, including holes between limbs.
-    // Read slightly inside the cutout so a transparent border never erases the side.
-    const i=a%(cols+1),j=Math.floor(a/(cols+1)),k=b%(cols+1),l=Math.floor(b/(cols+1));
-    const x=(i+k)*.5*w/cols,y=(j+l)*.5*h/rows;
-    const channels=[0,0,0];let samples=0,relief=.018;
-    for(const inset of [.28,.62,1,1.6]){
-      for(const across of [-.26,0,.26]){
-        const sx=clamp(Math.floor(x+(di*inset+dj*across)*w/cols),0,w-1);
-        const sy=clamp(Math.floor(y+(dj*inset+di*across)*h/rows),0,h-1);
-        const idx=sy*w+sx,px=idx*4;if(pixels[px+3]<125)continue;
-        samples++;for(let ch=0;ch<3;ch++)channels[ch]+=pixels[px+ch];
-        relief=Math.max(relief,depth[idx]);
+function rgb(color){return new THREE.Color(color).getRGB(new THREE.Color(),THREE.SRGBColorSpace).toArray().map(c=>Math.round(c*255));}
+
+// A circular cross section closes to a point at the ends. The jacket keeps its
+// volume at the shoulders and waist, while the head takes a rounder profile.
+function radius(t,exponent){return Math.max(0,1-(2*t-1)**2)**exponent;}
+function roundedGeometry(part){
+  const {width,height,depth,bend,exponent}=part;
+  const columns=36,rows=24,positions=[],indices=[],uv=[],normals=[];
+  for(let row=0;row<=rows;row++){
+    const v=row/rows,cross=radius(v,exponent),y=(.5-v)*height;
+    for(let col=0;col<=columns;col++){
+      const u=col/columns,theta=(u-.5)*Math.PI*2;
+      const cos=Math.cos(theta),sin=Math.sin(theta);
+      const x=depth*cos*cross*(cos>0?1: .94)+bend*(v-.5);
+      positions.push(x,y,width*sin*cross);
+      uv.push(u,1-v);
+      const slope=(radius(v+.002,exponent)-radius(v-.002,exponent))/.004;
+      const n=new THREE.Vector3(cos/depth,slope/height-(bend/height)*cos/depth,sin/width);
+      if(row===0||row===rows)n.set(0,row===0?1:-1,0);
+      n.normalize();normals.push(n.x,n.y,n.z);
+      if(row&&col){
+        const d=row*(columns+1)+col,c=d-1,b=d-columns-1,a=b-1;
+        if(row>1)indices.push(a,b,c);
+        if(row<rows)indices.push(b,d,c);
       }
     }
-    // Broad pieces have a padded seam. Fine embroidery keeps a narrower rim.
-    const half=clamp(relief*.70,.026,.15);
-    for(const index of [a,b])widthAt.set(index,Math.max(half,widthAt.get(index)||0));
-    const rgb=samples?channels.map(v=>v/(samples*255)):[.41,.32,.37];
-    const dye=new THREE.Color().setRGB(...rgb,THREE.SRGBColorSpace);
-    edges.push({a,b,di,dj,dye});
   }
-  for(let j=0;j<rows;j++)for(let i=0;i<cols;i++){
-    const k=j*cols+i;if(!cells[k])continue;
-    const a=j*(cols+1)+i,b=a+1,c=a+cols+1,d=c+1;
-    front.push(a,c,b,b,c,d);back.push(a+offset,b+offset,c+offset,b+offset,d+offset,c+offset);
-    if(!i||!cells[k-1])edge(a,c,1,0);if(i===cols-1||!cells[k+1])edge(d,b,-1,0);
-    if(!j||!cells[k-cols])edge(b,a,0,1);if(j===rows-1||!cells[k+cols])edge(c,d,0,-1);
+  const geometry=new THREE.BufferGeometry();
+  geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+  geometry.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
+  geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+  geometry.setIndex(indices);
+  return geometry;
+}
+
+function layers(art){
+  const {front,rear,tag}=art,w=front.width,h=front.height;
+  const read=canvas=>canvas.getContext('2d').getImageData(0,0,w,h).data;
+  const pixels=read(front),tags=read(tag);
+  let faceBottom=0,noseX=0,noseY=0,noseCount=0;
+  for(let y=0;y<h*.77;y++)for(let x=0;x<w;x++){
+    const i=(y*w+x)*4;
+    if(tags[i+3]<165)continue;
+    const zone=Math.round(tags[i]/24);
+    if(zone===zones.skin||zone===zones.feature||zone===zones.nose||zone===zones.facewear)faceBottom=Math.max(faceBottom,y);
+    if(zone===zones.nose&&x>w*.24&&x<w*.76){noseX+=x;noseY+=y;noseCount++;}
   }
-  for(const [i,half] of widthAt){
-    pos[i*3]=Math.max(pos[i*3],half);
-    pos[(i+offset)*3]=Math.min(pos[(i+offset)*3],-half*.83);
-  }
-  // Three rings join the skinned front and rear. The middle ring forms a soft
-  // bead, with a common outward direction at each corner to keep the hull closed.
-  const outward=new Map();
-  for(const {a,b,di,dj} of edges)for(const i of [a,b]){
-    const v=outward.get(i)||[0,0];v[0]+=di;v[1]+=dj;outward.set(i,v);
-  }
-  for(const {a,b,di,dye} of edges){
-    const start=pos.length/3;
-    for(const ring of [0,1,2])for(const i of [a,b]){
-      const [dz,dy]=outward.get(i),len=Math.hypot(dz,dy)||1;
-      const round=ring===1 ? .012/len : 0;
-      const x=ring===0?pos[i*3]:ring===2?pos[(i+offset)*3]:.002;
-      const y=pos[i*3+1]+dy*round,z=pos[i*3+2]+dz*round;
-      pos.push(x,y,z);uv.push(x/.059,(di?y:z)/.062);
-      vertexColors.push(dye.r,dye.g,dye.b);
-      si.push(...si.slice(i*4,i*4+4));sw.push(...sw.slice(i*4,i*4+4));
+  const split=clamp(faceBottom+Math.round(h*.042),h*.37,h*.70);
+  const nose=noseCount>6&&!art.appearance.facewear?{x:noseX/noseCount,y:noseY/noseCount}:null;
+  return {w,h,pixels,back:read(rear),split,nose};
+}
+function textileMap(source,part,fallback,head,costume){
+  const canvas=document.createElement('canvas');
+  canvas.width=256;canvas.height=144;
+  const ctx=canvas.getContext('2d'),im=ctx.createImageData(canvas.width,canvas.height);
+  const {w,h,pixels,back,split}=source;
+  const dye=rgb(fallback);
+  for(let y=0;y<canvas.height;y++){
+    const v=(y+.5)/canvas.height,cross=radius(v,part.exponent);
+    const srcY=clamp(Math.round(head?split*v:split+(h-split-1)*v),0,h-1);
+    for(let x=0;x<canvas.width;x++){
+      const u=(x+.5)/canvas.width,theta=(u-.5)*Math.PI*2,face=Math.cos(theta);
+      // The original embroidery follows the curved front. The side blends into
+      // yarn and the back borrows the existing rear portrait for uncovered heads.
+      const reach=1.02*cross*Math.sin(theta),front=face>=0;
+      const srcX=clamp(Math.round((.5-(front?1:-1)*reach*.5)*w),0,w-1);
+      const p=(srcY*w+srcX)*4,i=(y*canvas.width+x)*4;
+      const data=front?pixels:back;
+      const strength=front?smooth(.01,.53,face):costume?.31*smooth(.05,.80,-face):smooth(.04,.64,-face);
+      const weight=strength*smooth(30,224,data[p+3])*(costume&&!front&&head?0:1);
+      const knit=.96+.08*Math.cos((u*52+Math.cos(v*34*Math.PI)*.29)*Math.PI*2)*Math.cos(v*46*Math.PI)**2;
+      for(let c=0;c<3;c++)im.data[i+c]=(dye[c]*(1-weight)+data[p+c]*weight)*knit;
+      im.data[i+3]=255;
     }
-    for(let v=start;v<start+4;v+=2)seam.push(v,v+3,v+1,v,v+2,v+3);
   }
-  const mesh=new THREE.BufferGeometry();
-  mesh.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));mesh.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
-  mesh.setAttribute('color',new THREE.Float32BufferAttribute(vertexColors,3));
-  mesh.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(si,4));mesh.setAttribute('skinWeight',new THREE.Float32BufferAttribute(sw,4));
-  mesh.setIndex([...front,...back,...seam]);mesh.addGroup(0,front.length,0);mesh.addGroup(front.length,back.length,1);mesh.addGroup(front.length+back.length,seam.length,2);
-  mesh.computeVertexNormals();mesh.computeBoundingSphere();
-  const mats=[art.front,art.rear].map(p=>{
-    const tex=new THREE.CanvasTexture(p);tex.colorSpace=THREE.SRGBColorSpace;tex.anisotropy=2;
-    return new THREE.MeshLambertMaterial({map:tex,side:THREE.DoubleSide,alphaTest:.20,emissive:'#443e39',emissiveIntensity:.20});
-  });
-  mats.push(new THREE.MeshLambertMaterial({map:knitTexture(),vertexColors:true,side:THREE.DoubleSide,emissive:'#332831',emissiveIntensity:.12}));
-  let entry={mesh,mats,refs:0};built.set(art,entry);return entry;
+  ctx.putImageData(im,0,0);
+  const map=new THREE.CanvasTexture(canvas);map.colorSpace=THREE.SRGBColorSpace;
+  map.userData.cpuSize=128;map.anisotropy=4;
+  return new THREE.MeshLambertMaterial({map});
 }
-const tmp=new THREE.Vector3(),delta=new THREE.Vector3(),Y=new THREE.Vector3(0,1,0);
-function sphere(parent,color,rx,ry,rz){
-  const o=new THREE.Mesh(shape,material(color));o.scale.set(rx,ry,rz);parent.add(o);return o;
+
+function template(art){
+  const existing=templates.get(art);if(existing)return existing;
+  const {appearance:a}=art,source=layers(art),costume=!!a.costume;
+  const coat=costume?costumeThreads(art):null;
+  const sleeve=coat?.sleeve||shirts[a.outfit]||shirts[0],trouser=coat?.trouser||'#51495a';
+  const boot=coat?.boot||'#503f43',cuff=a.costume===163?'#4b365d':coat?.cuff||sleeve;
+  const hair=costume?swatchAt(source,.29,source.split/source.h*.62,coat.sleeve):swatchAt(source,.50,.16,a.color);
+  const head={width:costume?.315:.263,height:costume?.681:.645,depth:costume?.255:.224,bend:.052,exponent:.47};
+  const body={width:costume?.306:.287,height:.596,depth:.199,bend:-.035,exponent:.36};
+  const headGeo=roundedGeometry(head),bodyGeo=roundedGeometry(body);
+  const headMat=textileMap(source,head,hair,true,costume),bodyMat=textileMap(source,body,sleeve,false,costume);
+  let nose=null;
+  if(source.nose&&source.nose.y<source.split){
+    const v=source.nose.y/source.split,cross=radius(v,head.exponent);
+    const theta=Math.asin(clamp((.5-source.nose.x/source.w)*2/(1.02*cross),-.55,.55));
+    const noseColor=swatchAt(source,source.nose.x/source.w,source.nose.y/source.h,a.color);
+    if(noseColor!==a.color)nose={x:head.depth*Math.cos(theta)*cross+head.bend*(v-.5)-.009,y:(.5-v)*head.height,z:head.width*Math.sin(theta)*cross,mat:yarn(noseColor)};
+  }
+  const result={headGeo,bodyGeo,headMat,bodyMat,nose,sleeve,trouser,boot,cuff,costume,ornaments:costumeOrnaments(a.costume),refs:0};
+  templates.set(art,result);return result;
 }
-function stick(mesh,a,b,r){
+
+// Linked costumes keep their front embroidery. The Abyss Monarch also has
+// geometry for the motifs that must stand out around the hood and shoulders.
+function costumeOrnaments(id){
+  if(id!==163)return [];
+  const violet=yarn('#584171'),plum=yarn('#2d234a'),jade=yarn('#398b8c'),gold=yarn('#9e815a');
+  const head=new THREE.Group(),chest=new THREE.Group();
+  function cord(group,material,points,radius){
+    const curve=new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p)));
+    group.add(new THREE.Mesh(new THREE.TubeGeometry(curve,points.length*4,radius,7),material));
+  }
+  for(const side of [-1,1]){
+    const s=side;
+    cord(head,plum,[[.168,-.276,.11*s],[.154,-.19,.205*s],[.114,-.043,.272*s],[.09,.075,.275*s],[.064,.164,.218*s]],.038);
+    cord(head,violet,[[.19,-.25,.115*s],[.184,-.19,.194*s],[.149,-.078,.243*s],[.132,.025,.253*s],[.115,.092,.24*s]],.022);
+    cord(head,violet,[[-.11,-.218,.167*s],[-.197,-.14,.194*s],[-.215,-.01,.181*s],[-.166,.153,.19*s],[-.09,.23,.143*s]],.025);
+    for(let finger=0;finger<3;finger++){
+      const z=s*(.083+finger*.058),y=.282-.034*finger;
+      cord(head,jade,[[.002,y-.053,z*.90],[-.022,y,z],[-.031,y+.060,z*1.13],[-.004,y+.089,z*1.18]],.019);
+      ball(head,jade,-.004,y+.087,z*1.18,.026,.031,.025);
+    }
+    cord(chest,violet,[[.13,.035,.217*s],[.04,.124,.267*s],[-.066,.116,.285*s],[-.169,.026,.251*s],[-.18,-.068,.195*s]],.030);
+    cord(chest,gold,[[-.215,-.08,.062*s],[-.217,-.121,.158*s],[-.194,-.23,.179*s],[-.162,-.35,.116*s]],.009);
+  }
+  ball(head,gold,.157,.196,0,.035,.065,.042);
+  ball(head,jade,.181,.199,0,.023,.048,.029);
+  ball(chest,gold,-.234,-.118,0,.024,.051,.042);
+  ball(chest,jade,-.248,-.116,0,.014,.034,.028);
+  for(const [attachment,parts] of [['head',head.children],['chest',chest.children]])
+    for(const part of parts)part.userData.attachment=attachment;
+  return [...head.children,...chest.children];
+}
+
+function swatchAt({pixels,w,h},u,v,fallback){
+  const x=Math.round(u*(w-1)),y=Math.round(v*(h-1)),colors=[];
+  for(let j=-4;j<=4;j++)for(let i=-4;i<=4;i++){
+    const p=(clamp(y+j,0,h-1)*w+clamp(x+i,0,w-1))*4;
+    if(pixels[p+3]>180)colors.push([pixels[p],pixels[p+1],pixels[p+2]]);
+  }
+  if(!colors.length)return fallback;
+  const light=c=>c[0]*.3+c[1]*.6+c[2]*.1;
+  colors.sort((a,b)=>light(a)-light(b));
+  return '#'+colors[Math.floor(colors.length*.54)].map(c=>c.toString(16).padStart(2,'0')).join('');
+}
+
+function stretch(mesh,a,b,radius,delta){
   delta.subVectors(b,a);mesh.position.copy(a).addScaledVector(delta,.5);
-  mesh.scale.set(r,Math.max(.01,delta.length()*.55),r);mesh.quaternion.setFromUnitVectors(Y,delta.normalize());
+  mesh.scale.set(radius,Math.max(.01,delta.length()*.63),radius);
+  mesh.quaternion.setFromUnitVectors(up,delta.normalize());
 }
+
 export function createKikalmoModel(value,seed=0){
-  const a=JSON.parse(appearanceKey(value));
-  const group=new THREE.Group(),bones=anchors.map(anchor=>{const b=new THREE.Bone();b.position.set(...anchor);group.add(b);return b;});
-  group.updateMatrixWorld(true);const skeleton=new THREE.Skeleton(bones);skeleton.calculateInverses();
-  const limb=new THREE.Group();group.add(limb);
-  const shirts=['#a17176','#768a6a','#745e77','#445d76','#ad7048','#917b63'],arms=[],legs=[];
+  const a=JSON.parse(appearanceKey(value)),group=new THREE.Group();
+  const chest=new THREE.Group(),head=new THREE.Group(),limbs=new THREE.Group();
+  chest.name='kikalmo-chest';head.name='kikalmo-head';limbs.name='kikalmo-limbs';
+  group.add(chest,head,limbs);
+  const skin=yarn(a.color),base=yarn(shirts[a.outfit]||shirts[0]);
+  ball(chest,base,0,-.075,0,.199,.294,.288,sphere);
+  ball(head,skin,.015,.208,0,.225,.332,.260,sphere);
+  const arms=[],legs=[];
   for(let i=0;i<2;i++){
-    arms.push([sphere(limb,shirts[a.outfit]||shirts[0],1,1,1),sphere(limb,a.color,1,1,1),sphere(limb,a.color,.093,.10,.088)]);
-    legs.push([sphere(limb,'#51495a',1,1,1),sphere(limb,'#51495a',1,1,1),sphere(limb,'#503f43',.133,.070,.083)]);
+    const hand=ball(limbs,skin,0,0,0,.079,.084,.075);
+    const thumb=ball(hand,skin,.47,-.12,i?-.61:.61,.51,.56,.46);
+    const shoe=ball(limbs,yarn('#503f43'),0,0,0,.135,.077,.097);shoe.name='kikalmo-boot';
+    ball(shoe,yarn('#322d37'),.06,-.63,0,.97,.47,1.01);
+    arms.push([ball(limbs,base,0,0,0,1,1,1),ball(limbs,base,0,0,0,1,1,1),hand,thumb]);
+    legs.push([ball(limbs,yarn('#51495a'),0,0,0,1,1,1),ball(limbs,yarn('#51495a'),0,0,0,1,1,1),shoe]);
   }
-  const p=new THREE.Vector3(),q=new THREE.Vector3(),r=new THREE.Vector3();
-  let styleSeed=motionSeed(seed),lastId;
-  let active=null,entry=null,surface=null;
-  function setSurface(art){
-    if(art===active)return;
-    if(surface){group.remove(surface);release();}
-    active=art;entry=geometry(art);
-    if(a.costume){
-      const {sleeve,trouser,boot,cuff}=costumeThreads(art);
-      for(const [upper,lower,palm] of arms){upper.material=material(sleeve);lower.material=material(cuff);palm.material=material(a.color);}
-      for(const [thigh,shin,shoe] of legs){thigh.material=shin.material=material(trouser);shoe.material=material(boot);}
-    }
-    inactive.delete(art);entry.refs++;surface=new THREE.SkinnedMesh(entry.mesh,entry.mats);
-    surface.frustumCulled=false;surface.bind(skeleton,new THREE.Matrix4());group.add(surface);
-  }
+  let art,entry,style=motionSeed(seed),lastId;
+  const p=new THREE.Vector3(),q=new THREE.Vector3(),r=new THREE.Vector3(),delta=new THREE.Vector3(),target=new THREE.Vector3();
+  const orientation=new THREE.Quaternion();
   function release(){
     if(!entry||--entry.refs>0)return;
-    inactive.set(active,entry);
-    if(inactive.size<=12)return;
-    const [key,old]=inactive.entries().next().value;inactive.delete(key);built.delete(key);
-    old.mesh.dispose();for(const m of old.mats){if(m.map!==clothTexture)m.map.dispose();m.dispose();}
+    unused.set(art,entry);
+    if(unused.size<=16)return;
+    const [key,old]=unused.entries().next().value;
+    unused.delete(key);templates.delete(key);
+    old.bodyGeo.dispose();old.headGeo.dispose();
+    for(const part of old.ornaments)if(part.geometry!==lowSphere)part.geometry.dispose();
+    for(const mat of [old.headMat,old.bodyMat]){mat.map.dispose();mat.dispose();}
   }
-  function update(e,dt=.016,t=0){
-    if(e.id!==lastId){lastId=e.id;styleSeed=motionSeed(lastId??seed);}
-    const pose=e.pose||e,gait=sampleLocomotion(pose,t,styleSeed),rig=linkedPose(pose,gait,t);
-    const art=getKikalmoLook(a,kikalmoFrame(a,t))?.art||getKikalmoLook(a,0)?.art;if(art)setSurface(art);
-    const rag=e.ragdoll||pose.ragdoll,blend=clamp(rag?.blend||0);
-    for(let i=0;i<bones.length;i++){
-      const b=bones[i];b.position.fromArray(rig.anchors[i]);
-      let rz=-gait.lean*(i===2?.63:1),rx=gait.roll,ry=i===2?-gait.turn*.12+gait.twist*.4:gait.twist*(i===0?.18:1);
-      if(i===3||i===4){
-        const side=i-3,leg=side?gait.right:gait.left;
-        rz=rig.shoulders[side];rx=(side?-1:1)*leg.splay;
-      }else if(i>=5){rz=rig.hips[i-5];rx=0;}
-      b.rotation.set(rx,ry,rz);
-      const squash=i<3?gait.squash*(1-blend):0;
-      b.scale.set(1-.5*squash,1+squash,1-.5*squash);
-      const joint=rag?.[joints[i]]||(i===5||i===6?rag?.hips:null);
-      if(joint&&blend){tmp.fromArray(joint);b.position.lerp(tmp,blend);b.quaternion.slerp(identity,blend);}
+  function fit(look){
+    if(!look||look===art)return;
+    release();
+    art=look;entry=template(look);entry.refs++;unused.delete(look);
+    chest.clear();head.clear();
+    const torso=new THREE.Mesh(entry.bodyGeo,entry.bodyMat);
+    torso.name='kikalmo-jacket';torso.position.y=-.065;chest.add(torso);
+    const face=new THREE.Mesh(entry.headGeo,entry.headMat);
+    face.name='kikalmo-head-volume';face.position.set(.023,.235,0);head.add(face);
+    const {nose,sleeve,trouser,cuff,boot,costume,ornaments}=entry;
+    ball(chest,yarn(trouser),-.012,-.316,0,.151,.132,.228,sphere);
+    ball(chest,yarn(sleeve),-.015,.139,0,.133,.098,.175);
+    if(nose)ball(face,nose.mat,nose.x,nose.y,nose.z,.051,.044,.038);
+    if(costume){
+      ball(chest,yarn(sleeve),-.136,-.13,0,.102,.266,.245,sphere);
+      ball(chest,yarn(cuff),.003,.148,0,.149,.063,.225);
+    }else{
+      for(const s of [-1,1])ball(face,skin,.019,-.086,s*.231,.059,.066,.052);
     }
-    {
-      for(const side of [0,1]){
-        const name=side?'right':'left',arm=arms[side],leg=legs[side];
-        p.copy(bones[3+side].position);q.fromArray(rig.arms[side][1]);r.fromArray(rig.arms[side][2]);
-        if(blend){if(rag[name+'Elbow'])q.lerp(tmp.fromArray(rag[name+'Elbow']),blend);if(rag[name+'Hand'])r.lerp(tmp.fromArray(rag[name+'Hand']),blend);}
-        stick(arm[0],p,q,.068);stick(arm[1],q,r,.055);arm[2].position.copy(r);
-        p.copy(bones[5+side].position);q.fromArray(rig.legs[side][1]);r.fromArray(rig.legs[side][2]);
-        if(blend){if(rag[name+'Knee'])q.lerp(tmp.fromArray(rag[name+'Knee']),blend);if(rag[name+'Foot'])r.lerp(tmp.fromArray(rag[name+'Foot']),blend);}
-        stick(leg[0],p,q,.075);stick(leg[1],q,r,.064);leg[2].position.copy(r);leg[2].position.x+=.045;
+    for(const part of ornaments){
+      (part.userData.attachment==='head'?face:chest).add(part.clone());
+    }
+    for(const [upper,lower,hand,thumb] of arms){upper.material=yarn(sleeve);lower.material=yarn(cuff);hand.material=thumb.material=costume?yarn(cuff):skin;}
+    for(const [thigh,shin,shoe] of legs){thigh.material=shin.material=yarn(trouser);shoe.material=yarn(boot);}
+  }
+  function rotate(part,anchor,joint,below,gait,blend,lean){
+    part.position.fromArray(anchor);
+    part.rotation.set(gait.roll,gait.twist*lean,-gait.lean*lean);
+    const squash=gait.squash*(1-blend);
+    part.scale.set(1-squash*.5,1+squash,1-squash*.5);
+    if(joint&&blend){
+      part.position.lerp(target.fromArray(joint),blend);
+      if(below){
+        delta.fromArray(joint).sub(target.fromArray(below));
+        if(delta.lengthSq()>.0001)part.quaternion.slerp(orientation.setFromUnitVectors(up,delta.normalize()),blend);
       }
     }
   }
-  return {group,update,dispose(){release();skeleton.dispose();group.removeFromParent();}};
+  function update(e,dt=.016,t=0){
+    if(e.id!==lastId){lastId=e.id;style=motionSeed(lastId??seed);}
+    const pose=e.pose||e,gait=sampleLocomotion(pose,t,style),rig=linkedPose(pose,gait,t);
+    // The linked suit has a fixed mesh. All in-game motion comes from its rig.
+    fit(getKikalmoLook(a,0)?.art);
+    const rag=e.ragdoll||pose.ragdoll,blend=clamp(rag?.blend||0);
+    rotate(chest,rig.anchors[1],rag?.chest,rag?.hips,gait,blend,1);
+    rotate(head,rig.anchors[2],rag?.head,rag?.chest,gait,blend,.65);
+    head.rotateY(-gait.turn*.13*(1-blend));
+    for(const side of [0,1]){
+      const name=side?'right':'left',arm=arms[side],leg=legs[side];
+      p.fromArray(rig.arms[side][0]);q.fromArray(rig.arms[side][1]);r.fromArray(rig.arms[side][2]);
+      if(blend){
+        if(rag[name+'Shoulder'])p.lerp(target.fromArray(rag[name+'Shoulder']),blend);
+        if(rag[name+'Elbow'])q.lerp(target.fromArray(rag[name+'Elbow']),blend);
+        if(rag[name+'Hand'])r.lerp(target.fromArray(rag[name+'Hand']),blend);
+      }
+      stretch(arm[0],p,q,.087,delta);stretch(arm[1],q,r,.073,delta);arm[2].position.copy(r);arm[2].quaternion.copy(arm[1].quaternion);
+      p.fromArray(rig.legs[side][0]);q.fromArray(rig.legs[side][1]);r.fromArray(rig.legs[side][2]);
+      if(blend){
+        if(rag.hips)p.lerp(target.fromArray(rag.hips),blend);
+        if(rag[name+'Knee'])q.lerp(target.fromArray(rag[name+'Knee']),blend);
+        if(rag[name+'Foot'])r.lerp(target.fromArray(rag[name+'Foot']),blend);
+      }
+      stretch(leg[0],p,q,.096,delta);stretch(leg[1],q,r,.083,delta);
+      leg[2].position.copy(r);leg[2].position.x+=.054;leg[2].position.y+=.019;
+    }
+  }
+  return {group,update,dispose(){release();group.removeFromParent();}};
 }
-const identity=new THREE.Quaternion();
