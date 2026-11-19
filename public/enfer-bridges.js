@@ -16,16 +16,26 @@ export function selectBridgeDecks(streets,water,ground){
       const wet=bounds.find(({w,left,right,top,bottom})=>x>=left&&x<=right&&y>=top&&y<=bottom&&inside(x,y,w.poly)&&!w.holes?.some(h=>inside(x,y,h)));
       return Math.max(closest??ground(x,y),wet?.w.elevation==null?-Infinity:wet.w.elevation+2.4);
     });
-    for(let i=1;i<road.path.length;i++){
-      const a=road.path[i-1],b=road.path[i],dx=b[0]-a[0],dy=b[1]-a[1],len2=dx*dx+dy*dy;
+    const path=road.path;
+    if(path.length<2)continue;
+    const left=approach(path[0],path[1],ends[0]),right=approach(path.at(-1),path.at(-2),ends.at(-1));
+    const points=[left,...path,right],heights=[ground(...left),...ends,ground(...right)];
+    for(let i=1;i<points.length;i++){
+      const a=points[i-1],b=points[i],dx=b[0]-a[0],dy=b[1]-a[1],len2=dx*dx+dy*dy;
       if(len2<.01)continue;
-      const r=road.w*.5+2.35,segment={a,dx,dy,len2,r,z0:ends[i-1],z1:ends[i]};
+      const r=road.w*.5+2.35,segment={a,dx,dy,len2,r,z0:heights[i-1],z1:heights[i],
+        approach:i===1?-1:i===points.length-1?1:0};
       for(let x=Math.floor((Math.min(a[0],b[0])-r)/cell);x<=Math.floor((Math.max(a[0],b[0])+r)/cell);x++)
         for(let y=Math.floor((Math.min(a[1],b[1])-r)/cell);y<=Math.floor((Math.max(a[1],b[1])+r)/cell);y++){
           const key=x+4096*y;
           if(!cells.has(key))cells.set(key,[]);
           cells.get(key).push(segment);
         }
+    }
+    function approach(a,b,z){
+      const dx=a[0]-b[0],dy=a[1]-b[1],length=Math.hypot(dx,dy)||1;
+      const reach=Math.max(16,Math.min(55,Math.abs(z-ground(...a))*8+14));
+      return [a[0]+dx*reach/length,a[1]+dy*reach/length];
     }
   }
 }
@@ -41,12 +51,17 @@ export function bridgeGround(x,y,base){
   const here=cells.get(Math.floor(x/cell)+4096*Math.floor(y/cell));
   if(!here)return base;
   let limit=.9999,z=base;
-  for(const {a,dx,dy,len2,r,z0,z1} of here){
-    const t=Math.max(0,Math.min(1,((x-a[0])*dx+(y-a[1])*dy)/len2));
+  for(const {a,dx,dy,len2,r,z0,z1,approach} of here){
+    const projection=((x-a[0])*dx+(y-a[1])*dy)/len2;
+    if(approach<0&&projection<0||approach>0&&projection>1)continue;
+    const t=Math.max(0,Math.min(1,projection));
     const d=Math.hypot(a[0]+dx*t-x,a[1]+dy*t-y)/r;
     if(d>=limit)continue;
     limit=d;
-    const deck=z0+(z1-z0)*t,weight=Math.min(1,(1-d)*8);
+    const ramp=approach?t*t*(3-2*t):t;
+    const deck=z0+(z1-z0)*ramp;
+    const edge=Math.min(1,(1-d)*3),end=approach<0?t:approach>0?1-t:1;
+    const weight=edge*edge*(3-2*edge)*Math.min(1,end*5);
     z=base+Math.max(0,deck-base)*weight;
   }
   return z;

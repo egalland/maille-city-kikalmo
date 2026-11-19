@@ -1,3 +1,4 @@
+import {pavementRuns} from './curb-clearance.js';
 import {frontageSigns,frontageStyle} from './enfer-frontage.js';
 import {canopyDyes} from './street-props-art.js';
 import {cityViewRange,streetViewRange} from './view-range.js';
@@ -307,6 +308,22 @@ function storefront(b,a,d,outward,height,index){
     b.face('felt',p(f,.84,y-.27),p(t,.84,y-.27),p(t,.84,y-.38),p(f,.84,y-.38),tint);
   }
 }
+function frontageDetails(b,a,d,side,seed,store){
+  const dx=d[0]-a[0],dz=d[1]-a[1],len=Math.hypot(dx,dz),nx=side*dz/len,nz=-side*dx/len;
+  const t=store?.70:.62,x=a[0]+dx*t+nx*.27,z=a[1]+dz*t+nz*.27;
+  if(store){
+    b.box(x,.18,z,.58,.31,.34,'#785744');
+    b.box(x,.48,z,.43,.49,.095,'#45404c');
+    for(let i=0;i<3;i++)b.box(x,.55-i*.079,z+nz*.062,.28-i*.035,.018,.096,'#c4b39c');
+  }else{
+    b.box(x,.12,z,.46,.24,.39,seed%2?'#986758':'#8f7767');
+    for(let i=-1;i<=1;i++){
+      b.tube([x+i*.12,.26,z],[x+i*.135,.51+Math.abs(i)*.04,z+nz*.06],.087,.052,'#5d7555',5,'felt');
+      b.tube([x+i*.135,.49,z+nz*.06],[x+i*.148,.58,z+nz*.06],.047,.029,seed%2?'#d3a395':'#dbc67b',5,'felt');
+    }
+  }
+}
+
 function addEnferBuilding(b,building,poly,detail,skyline,h){
   const index=enferStyle(building),{wall,roof,bay}=enferStyles[index];
   const sections=[poly,...(building.holes||[])];
@@ -333,6 +350,7 @@ function addEnferBuilding(b,building,poly,detail,skyline,h){
         b.wall(mat,a,d,bottom,eaves,white,bays,floors-1);
       }else b.wall(mat,a,d,0,eaves,skyline?wall:white,bays,floors);
       if(ring===poly&&i===shopEdge)storefront(b,a,d,outward,eaves,business);
+      if(detail&&ring===poly&&len>3.7&&(entry||i===shopEdge))frontageDetails(b,a,d,outward,hash(building.id+i),i===shopEdge);
       if(detail&&ring===poly&&index!==3)facadeRelief(b,a,d,len,outward,bays,floors,eaves,index,entry);
       if(!roofShape)continue;
       const splits=[a,d],left=roofShape.ridge(a),right=roofShape.ridge(d);
@@ -462,7 +480,7 @@ function strip(batch,mat,a,d,width,h,col,scale=5,xOffset=0){
 function disc([x,z],r,sides){
   return Array.from({length:sides},(_,i)=>[x+Math.cos(i*tau/sides)*r,z+Math.sin(i*tau/sides)*r]);
 }
-function addRoad(b,seg){
+function addRoad(b,seg,neighbours){
   b.base=0;b.foundation=false;b.drape=true;
   const {a,d,street:s,i}=seg,dx=d[0]-a[0],dz=d[1]-a[1],len=Math.hypot(dx,dz);
   if(len<.2)return;
@@ -477,10 +495,13 @@ function addRoad(b,seg){
   const pavement=w+Math.min(6,w*.6);
   if(isEnfer){
     const yCurb=bridge?.20:.185;
-    for(const side of [-1,1])strip(b,'pave',a1,d1,(pavement-w)*.5,yCurb,white,streetFabric.paving.meters,side*(pavement+w)*.25);
     for(const side of [-1,1]){
-      const dx0=-dz/len*side*(w*.5+.24),dz0=dx/len*side*(w*.5+.24);
-      b.wall('felt',[a1[0]+dx0,a1[1]+dz0],[d1[0]+dx0,d1[1]+dz0],y-.03,yCurb,'#b5a293',len/2,.2);
+      const width=(pavement-w)*.5;
+      for(const [start,end] of pavementRuns(a,d,side*(pavement+w)*.25,width*.5,neighbours)){
+        strip(b,'pave',start,end,width,yCurb,white,streetFabric.paving.meters,side*(pavement+w)*.25);
+        const dx0=-dz/len*side*w*.5,dz0=dx/len*side*w*.5;
+        b.wall('felt',[start[0]+dx0,start[1]+dz0],[end[0]+dx0,end[1]+dz0],y-.02,yCurb,'#a99788',len/2,.2);
+      }
     }
     for(const [at,joint] of [[a,seg.joinStart],[d,seg.joinEnd]]){
       if(!joint)continue;
@@ -488,7 +509,7 @@ function addRoad(b,seg){
     }
   }
   strip(b,'pave',a1,d1,w+Math.min(6,w*.6),y-.018,white,streetFabric.paving.meters);
-  strip(b,'road',a1,d1,w+.40,y-.002,'#dfceaf',streetFabric.road.meters);
+  if(!isEnfer)strip(b,'road',a1,d1,w+.40,y-.002,'#dfceaf',streetFabric.road.meters);
   strip(b,'road',a1,d1,w,y,white,streetFabric.road.meters);
   if(isEnfer)for(const [at,joint] of [[a,seg.joinStart],[d,seg.joinEnd]]){
     if(joint)b.flat('road',disc(at,w*.5,12),y+.002,white,streetFabric.road.meters);
@@ -516,7 +537,7 @@ function addRoad(b,seg){
 const chunkSize=160;
 function key(x,z){return Math.floor(x/chunkSize)+','+Math.floor(z/chunkSize);}
 function makeIndex(){
-  const groups=new Map(),towers=[];
+  const groups=new Map(),towers=[],roads=new Map(),bucket=24;
   function get(x,z){const k=key(x,z);if(!groups.has(k))groups.set(k,{buildings:[],segments:[]});return groups.get(k);}
   for(const b of buildings){
     if(!b.poly?.length)continue;
@@ -526,15 +547,35 @@ function makeIndex(){
   for(const street of streets){
     const path=street.path||[];
     for(let i=0;i<path.length-1;i++){
-      const p=path[i],q=path[i+1],parts=Math.max(1,Math.ceil(Math.hypot(p[0]-q[0],p[1]-q[1])/18));
+      const p=path[i],q=path[i+1],parts=Math.max(1,Math.ceil(Math.hypot(p[0]-q[0],p[1]-q[1])/(street.bridge?6:18)));
       let a=p;
       for(let j=1;j<=parts;j++){
         const t=j/parts,d=[p[0]+(q[0]-p[0])*t,p[1]+(q[1]-p[1])*t];
-        get((a[0]+d[0])/2,(a[1]+d[1])/2).segments.push({a,d,street,i,joinStart:j===1,joinEnd:j===parts});a=d;
+        const seg={a,d,street,i,joinStart:j===1,joinEnd:j===parts};
+        get((a[0]+d[0])/2,(a[1]+d[1])/2).segments.push(seg);
+        if(isEnfer&&street.kind!=='path'){
+          const reach=street.w*.5+10;
+          for(let x=Math.floor((Math.min(a[0],d[0])-reach)/bucket);x<=Math.floor((Math.max(a[0],d[0])+reach)/bucket);x++)
+            for(let y=Math.floor((Math.min(a[1],d[1])-reach)/bucket);y<=Math.floor((Math.max(a[1],d[1])+reach)/bucket);y++){
+              const k=x+4096*y;if(!roads.has(k))roads.set(k,[]);roads.get(k).push(seg);
+            }
+        }
+        a=d;
       }
     }
   }
-  return {groups,towers};
+  function adjacent(seg){
+    const x=Math.floor((seg.a[0]+seg.d[0])*.5/bucket),y=Math.floor((seg.a[1]+seg.d[1])*.5/bucket);
+    const candidates=new Set();
+    for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++)for(const other of roads.get(x+i+4096*(y+j))||[]){
+      if(other===seg||other.street===seg.street&&other.i===seg.i)continue;
+      if((other.street.level||0)!==(seg.street.level||0)||!!other.street.bridge!==!!seg.street.bridge)continue;
+      const midpointX=(other.a[0]+other.d[0]-seg.a[0]-seg.d[0])*.5,midpointY=(other.a[1]+other.d[1]-seg.a[1]-seg.d[1])*.5;
+      if(Math.hypot(midpointX,midpointY)<21+(other.street.w+seg.street.w)*.5)candidates.add(other);
+    }
+    return [...candidates];
+  }
+  return {groups,towers,adjacent};
 }
 function frayDecoration(batch,kind,stage){
   const spec=propWearProfile(kind);
@@ -850,7 +891,7 @@ export function createCity3D(scene,{software=false}={}){
     groundTile(b,ix*chunkSize,iz*chunkSize,target.detail?16:target.skyline?4:8,lakes,parks,isEnfer&&geo.buildings.length<15);
     for(const building of geo.buildings)addBuilding(b,building,target.detail,target.skyline);
     for(const seg of geo.segments){
-      if(!target.skyline)addRoad(b,seg);
+      if(!target.skyline)addRoad(b,seg,isEnfer?index.adjacent(seg):[]);
       else if(seg.street.w>=8){
         b.base=0;b.foundation=false;b.drape=true;
         strip(b,'plain',seg.a,seg.d,seg.street.w,.03,'#827e84');

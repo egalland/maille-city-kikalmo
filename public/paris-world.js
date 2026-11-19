@@ -855,7 +855,7 @@ function addPatrol(patrol,id,name){
   if(patrol.length<4)return;
   const path=pathGeometry(patrol);
   if(path.length<8)return;
-  const rec={...path,key:hash(id),id,name,count:Math.max(1,Math.round(path.length/24))};
+  const rec={...path,key:hash(id),id,name,count:Math.max(1,Math.round(path.length/(isEnfer?21:24)))};
   footPatrol.insert(rec,bounds(path.path,2));
 }
 for(const {p} of walkerSeeds.values()){

@@ -222,6 +222,19 @@ function setName(value){const clean=net.setName(value);write('name',clean);$('#p
 function setSound(value){settingsSound=Boolean(value);write('sound.v2',String(settingsSound));game?.setSound(settingsSound);const sound=$('#sound');sound.setAttribute('aria-pressed',String(settingsSound));const label=settingsSound?'Couper le son':'Activer le son';sound.title=label;sound.setAttribute('aria-label',label);sound.querySelector('i').innerHTML=icon(settingsSound?'volume':'volumeOff');}
 $('#playerName').textContent=name;
 game=createGame({canvas:city,minimap:$('#minimap'),net,onState,onNotice:notify,onAimLock:showAimLock,loadout,onLoadoutChange:saveLoadout,initialPursuit:loadPursuit(),initialVitality:loadVitality(),skin:chosenSkin.id});
+const sectorPosition=new URL(location.href).searchParams;
+const positionKey='position.v1.'+(isEnfer?'enfer':(sectorPosition.get('lon')||'paris')+':'+(sectorPosition.get('lat')||''));
+function savePosition(){
+  const {x,y,angle}=game.getPosition();
+  if(Number.isFinite(x+y+angle)&&game.getVitalitySnapshot().health>0)write(positionKey,JSON.stringify({x,y,angle}));
+}
+if(!sectorTransfer){
+  try{
+    const point=JSON.parse(read(positionKey,'null'));
+    if(point&&Number.isFinite(point.x+point.y+point.angle))
+      game.restoreTravelState({...game.exportTravelState(),...point,yaw:point.angle,vehicle:null,vx:0,vy:0},{clearance:16});
+  }catch{}
+}
 $('#openAvatar').onclick=()=>panels.open('settings');
 $('#healHud').onclick=()=>game.action('heal');
 $('#heal').onclick=()=>game.action('heal');
@@ -273,9 +286,32 @@ function releaseTouchInputs(){stopStick();combat.release();traversal.release();d
 $('#panels').addEventListener('focusin',releaseTouchInputs);
 entry.addEventListener('focus',releaseTouchInputs);
 window.addEventListener('blur',releaseTouchInputs);
-document.addEventListener('visibilitychange',()=>{if(document.hidden)releaseTouchInputs();});
+const backgroundTimeout=25000,idleTimeout=10*60*1000;
+let lastActivity=Date.now(),presencePaused=false,backgroundTimer;
+function noteActivity(){
+  if(document.hidden)return;
+  lastActivity=Date.now();
+  if(presencePaused){presencePaused=false;void net.start();}
+}
+for(const event of ['keydown','pointerdown','pointermove','touchstart','wheel','focus'])
+  window.addEventListener(event,noteActivity,{passive:true});
+function pausePresence(){
+  presencePaused=true;savePosition();net.stop();
+}
+setInterval(()=>{
+  if(!document.hidden){
+    savePosition();
+    if(!presencePaused&&Date.now()-lastActivity>=idleTimeout)pausePresence();
+  }
+},3000);
+document.addEventListener('visibilitychange',()=>{
+  clearTimeout(backgroundTimer);
+  if(document.hidden){releaseTouchInputs();savePosition();backgroundTimer=setTimeout(pausePresence,backgroundTimeout);}
+  else noteActivity();
+});
 city.addEventListener('pointerdown',()=>{if(controlsAreTouch())chat.classList.remove('mobile-open');});
 window.addEventListener('pagehide',()=>{
+  clearTimeout(backgroundTimer);savePosition();
   try{
     const vitals=game.getVitalitySnapshot();
     sessionStorage.setItem(vitalityKey,JSON.stringify(vitals));
@@ -284,7 +320,7 @@ window.addEventListener('pagehide',()=>{
     else sessionStorage.removeItem(pursuitKey);
   }catch{}
 });
-window.addEventListener('pageshow',e=>{if(e.persisted)net.start();});
+window.addEventListener('pageshow',e=>{if(e.persisted){lastActivity=Date.now();presencePaused=false;void net.start();}});
 if(attachSectorTravel(game,net,$('#sectorEdge'),sectorTransfer)!==false){
   net.start();
   $('#loadScene').hidden=true;

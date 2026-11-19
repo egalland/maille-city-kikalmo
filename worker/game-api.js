@@ -3,7 +3,7 @@ import {hitSeverity, woundDuration, activeBleeding} from '../public/bleeding.js'
 import {weaponCatalog} from '../public/weapon-catalog.js';
 import {propMaxHealth, vehiclePropDamage} from '../public/prop-damage.js';
 import {isVehicleType,vehicleSpec} from '../public/vehicle-types.js';
-import {chassisDamage,partMask,vehicleBurnDelay} from '../public/vehicle-damage.js';
+import {chassisDamage,partMask,vehicleBurnDelay,blastRadius,blastDamage} from '../public/vehicle-damage.js';
 import {meleeMoves} from '../public/melee-moves.js';
 import {cleanTrafficPacket} from '../public/traffic-sync.js';
 import {normalizeAppearance} from '../public/kikalmo-schema.js';
@@ -110,7 +110,10 @@ const locomotionModes=new Set(['idle','walk','run','jump','fall','land','vault',
 function movementFields(s,now){
   if(!Number.isFinite(s.lift))return {};
   const lift=num(s.lift,0,0,64);
-  if(s.vehicle||s.downUntil>now||s.health===0)return {lift:s.vehicle?0:lift,motion:'idle'};
+  if(s.vehicle)return s.motion==='carAir'&&lift>0
+    ?{lift:Math.min(lift,12),motion:'carAir',verticalSpeed:num(s.verticalSpeed,0,-30,12)}
+    :{lift:0,motion:'idle'};
+  if(s.downUntil>now||s.health===0)return {lift,motion:'idle'};
   return {lift,verticalSpeed:num(s.verticalSpeed,0,-50,20),motion:locomotionModes.has(s.motion)?s.motion:'idle',
     motionPhase:num(s.motionPhase,0,0,1),stride:num(s.stride,0,0,1),slope:num(s.slope,0,-1,1),turn:num(s.turn,0,-1,1)};
 }
@@ -383,10 +386,15 @@ function npcHitStatement(q,{room,id,op,name,data,now},guard) {
 // A start and its single contact get stable operation IDs even across network retries.
 const swingOp=started=>'swing-'+started.toString(36);
 function vehicleImpact(raw,actor,previous){
-  const {id,type,cause,weapon,speed,x,y,angle,part:impactPart}=dict(raw);
+  const {id,type,cause,weapon,speed,x,y,angle,part:impactPart,blast,range}=dict(raw);
   const part=cause==='weapon'&&typeof impactPart==='string'&&Object.hasOwn(partMask,impactPart)?impactPart:'body';
   if(!key(id)||!isVehicleType(type)||![x,y,actor.x,actor.y].every(Number.isFinite))return null;
   const distance=Math.hypot(x-actor.x,y-actor.y);
+  if(cause==='blast'){
+    if(!key(blast)||id===blast||!Number.isFinite(range)||range<0||range>blastRadius||distance>145)return null;
+    const damage=blastDamage(range,65);
+    return damage?{id,type,cause,blast,x:num(x),y:num(y),angle:num(angle,0,-7,7),part,damage}:null;
+  }
   if(cause==='weapon'){
     if(!Object.hasOwn(weaponCatalog,weapon)||distance>weaponCatalog[weapon].range+12)return null;
   }else if(cause!=='crash'||distance>15||!(actor.vehicle||previous.vehicle))return null;
@@ -394,6 +402,18 @@ function vehicleImpact(raw,actor,previous){
   return damage?{id,type,cause,x:num(x),y:num(y),angle:num(angle,0,-7,7),part,damage}:null;
 }
 function vehicleDamageStatement(q,{room,id,op,name,data,now}){
+  const blastGuard=data.cause==='blast'?` AND EXISTS (
+      SELECT 1 FROM mc_items source
+      LEFT JOIN mc_items pos ON pos.room=source.room AND pos.kind='vehicle' AND pos.item=source.item
+      WHERE source.room=? AND source.kind='vehicleDamage' AND source.item=?
+        AND json_extract(source.data,'$.explodeAt') BETWEEN ? AND ?
+        AND abs(?-coalesce(json_extract(pos.data,'$.x'),json_extract(source.data,'$.x')))<=?
+        AND abs(?-coalesce(json_extract(pos.data,'$.y'),json_extract(source.data,'$.y')))<=?
+    ) AND NOT EXISTS (
+      SELECT 1 FROM mc_events WHERE room=? AND type='vehicleDamage' AND at>=?
+        AND json_extract(data,'$.blast')=? AND json_extract(data,'$.id')=?
+    )`:'';
+  const blastArgs=data.cause==='blast'?[room,data.blast,now-4200,now+250,data.x,blastRadius+3,data.y,blastRadius+3,room,now-5800,data.blast,data.id]:[];
   return q(`WITH prior AS (
     SELECT (SELECT data FROM mc_items WHERE room=? AND kind='vehicleDamage' AND item=?
       AND coalesce(json_extract(data,'$.explodeAt'),0) NOT BETWEEN 1 AND ?) AS old
@@ -404,9 +424,10 @@ function vehicleDamageStatement(q,{room,id,op,name,data,now}){
   SELECT ?,?,?,?,'vehicleDamage',json_set(?,'$.hp',next_hp,'$.damage',hp-next_hp,
     '$.parts',coalesce(json_extract(old,'$.parts'),0)|?,
     '$.fireAt',CASE WHEN next_hp<=32 THEN coalesce(nullif(json_extract(old,'$.fireAt'),0),?) ELSE 0 END,
-    '$.explodeAt',CASE WHEN next_hp=0 THEN ? ELSE 0 END),?
-  FROM item WHERE hp>0`,room,data.id,now-wreckFor,data.damage,room,id,op,name,JSON.stringify(data),
-    partMask[data.part]||0,now,now+vehicleBurnDelay,now);
+    '$.explodeAt',CASE WHEN next_hp<=32 THEN
+      coalesce(nullif(json_extract(old,'$.explodeAt'),0),coalesce(nullif(json_extract(old,'$.fireAt'),0),?)+?) ELSE 0 END),?
+  FROM item WHERE hp>0`+blastGuard,room,data.id,now-wreckFor,data.damage,room,id,op,name,JSON.stringify(data),
+    partMask[data.part]||0,now,now,vehicleBurnDelay,now,...blastArgs);
 }
 function contactGuard(type,data,actor,room,id,now){
   const kind=data.swingKind||data.kind,range=meleeMoves[kind].reach+.5+1.75;

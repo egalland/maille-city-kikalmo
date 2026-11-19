@@ -37,7 +37,8 @@ export function createMeshRenderer(canvas){
 
   function texture(map,size=64){
     if(!map?.image?.width)return null;
-    if(textures.has(map))return textures.get(map);
+    const cached=textures.get(map);
+    if(cached?.version===map.version)return cached;
     const source=map.image;
     let tex;
     if(map.isDataTexture){
@@ -55,7 +56,7 @@ export function createMeshRenderer(canvas){
       ctx.drawImage(source,0,0,size,size);
       tex=ctx.getImageData(0,0,size,size).data;
     }
-    const sample={pixels:tex,size};textures.set(map,sample);return sample;
+    const sample={pixels:tex,size,version:map.version};textures.set(map,sample);return sample;
   }
   function render(scene,camera,force=false){
     if(!image)return;

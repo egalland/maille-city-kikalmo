@@ -274,3 +274,24 @@ test('A stopped car has one claimant, an ejected driver and a timed abandoned re
     assert.equal((await send('join',c)).world.vehicles[car.id],undefined);
   }finally{db.close();}
 });
+
+test('a scheduled wreck spreads damage to a nearby car once, and reconnecting forgets expired wrecks',async t=>{
+  const DB=localDatabase(),p=session('Trame'),other=session('Broderie');
+  let now=1782250000000;
+  t.mock.method(Date,'now',()=>now);
+  const state={x:100,y:101,health:100};
+  const send=(who,op,events=[])=>accepted(api(DB,'/api/world/'+op,{...who,map:'enfer',state,events}));
+  try{
+    await send(p,'join');await send(other,'join');
+    const source={id:'burning-car',type:'compact',x:100,y:100,hp:15,fireAt:now-8200,explodeAt:now};
+    await DB.prepare("INSERT INTO mc_items (room,kind,item,seq,owner,data,at) VALUES ('enfer:public','vehicleDamage',?,0,'',?,?)")
+      .bind(source.id,JSON.stringify(source),now).run();
+    const blast={op:'blast-1',type:'vehicleDamage',data:{id:'next-car',type:'compact',cause:'blast',blast:source.id,range:3,x:103,y:100}};
+    await Promise.all([send(p,'sync',[blast]),send(other,'sync',[blast])]);
+    const recorded=await send(p,'join');
+    assert.ok(recorded.world.vehicleDamage['next-car'].hp<100);
+    assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM mc_events WHERE type='vehicleDamage'").first()).n,1);
+    now+=24001;
+    assert.equal((await send(other,'join')).world.vehicleDamage[source.id],undefined);
+  }finally{DB.close();}
+});

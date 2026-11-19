@@ -105,7 +105,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     g.rotation.set(0,-angle,0,'YXZ');
     if(vehicle){
       const slope=terrainGradient(e.x,e.y),c=Math.cos(angle),s=Math.sin(angle);
-      g.rotation.z=Math.atan(slope.x*c+slope.y*s);g.rotation.x=-Math.atan(-slope.x*s+slope.y*c);
+      g.rotation.z=e.carPitch??Math.atan(slope.x*c+slope.y*s);g.rotation.x=-Math.atan(-slope.x*s+slope.y*c);
     }
     g.visible=true;
     if(lighting&&!renderer.software){
@@ -180,7 +180,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     // Tighten the boom immediately at walls, extend it gently after clearing a corner.
     const model=car?vehicleSpec(car.type):null;
     const follow=car?8.15+Math.max(0,model.halfLength-2)*1.24:5.25;
-    const feet=car?0:p.lift||0;
+    const feet=p.lift||0;
     const focusY=feet+(car?Math.max(1.35,model.height*.77):1.17),lift=feet+(car?Math.max(2.92,model.height+1.05):2.18);
     const snap=state.snap || Math.hypot(camX-p.x,camY-p.y)>25 || inFrame===1;
     const f=snap?1:blend(car?11:19,dt);
@@ -201,12 +201,12 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     pickupDisplay.update(state.pickups,p,time);
     const candidates=state.entities.filter(e=>Number.isFinite(e.x)&&Number.isFinite(e.y)).sort((a,b)=>distance(a,p)-distance(b,p));
     const lowPower=renderer.software||scale<.81;
-    const carLimit=lowPower?4:touch?6:8, pedestrianLimit=lowPower?5:touch?7:9;
+    const carLimit=lowPower?5:touch?7:10, pedestrianLimit=lowPower?8:touch?11:14;
     let npcs=0,cars=0,index=0;
     blood.begin(time,state.epoch??Date.now());bloodMesh.begin();
     for(const e of candidates) {
       const d=distance(e,p),critical=e.self||e.peer;
-      if(!critical && (d>(e.isCar?115:68) || (e.isCar?cars>=carLimit:npcs>=pedestrianLimit)))continue;
+      if(!critical && (d>(e.isCar?115:86) || (e.isCar?cars>=carLimit:npcs>=pedestrianLimit)))continue;
       if(critical && !e.self && d>210)continue;
       if(e.isCar)cars++;else npcs++;
       entity(e,dt,time);

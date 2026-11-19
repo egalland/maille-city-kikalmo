@@ -8,5 +8,5 @@ export function parkingExpired(vehicle,now){
 }
 
 export function wreckExpired(wear,now){
-  return wear?.hp===0&&wear.explodeAt>0&&wear.explodeAt+wreckFor<=now;
+  return wear?.explodeAt>0&&wear.explodeAt+wreckFor<=now;
 }

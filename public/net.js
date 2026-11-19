@@ -4,7 +4,7 @@ import {createRosterWire} from './roster-wire.js';
 import {createStateEncoder} from './state-wire.js';
 
 // Each tab is a separate player. State snapshots may coalesce; actions have stable IDs and are retried.
-const actionPoses=new Set(['jump','fall','vault','climb','land']);
+const actionPoses=new Set(['jump','fall','vault','climb','land','carAir']);
 const cosmeticQueue=new Set(['emote','alert','shot']);
 const socialQueue=new Set(['chat','emote']);
 const combatActions=new Set(['fire','shot','hit','melee']);

@@ -15,7 +15,22 @@ export function chassisDamage(type,{cause,speed,weapon,part}){
 }
 
 export const partMask={body:0,engine:0,glass:1,frontLeft:2,frontRight:4,rearLeft:8,rearRight:16};
-export const vehicleBurnDelay=2700;
+export const vehicleBurnDelay=8200;
+export const blastRadius=8.5;
+export function blastDamage(distance,max=52){
+  return Math.max(0,Math.round(max*(1-distance/blastRadius)));
+}
+export function chassisHealthAt(wear,now){
+  const hp=chassisHealth(wear?.hp);
+  if(!wear?.fireAt)return hp;
+  const ends=wear.explodeAt||wear.fireAt+vehicleBurnDelay;
+  if(now>=ends)return 0;
+  return Math.max(1,Math.min(hp||6,Math.ceil(32*(ends-now)/Math.max(1,ends-wear.fireAt))));
+}
+export function burnProgress(wear,now){
+  if(!wear?.fireAt)return 0;
+  return Math.max(0,Math.min(1,(now-wear.fireAt)/Math.max(1,(wear.explodeAt||wear.fireAt+vehicleBurnDelay)-wear.fireAt)));
+}
 
 export function vehiclePart(vehicle,point,height){
   const spec=vehicleSpec(vehicle.type),c=Math.cos(vehicle.angle||0),s=Math.sin(vehicle.angle||0);
@@ -33,6 +48,7 @@ export function wheelPart(front,right){return (front?2:8)*(right?2:1);}
 
 export function nextChassis(previous,hit,amount,now){
   const hp=Math.max(0,chassisHealth(previous?.hp)-amount);
+  const fireAt=hp<=32?(previous?.fireAt||now):0;
   return {...hit,hp,parts:(previous?.parts||0)|(partMask[hit.part]||0),
-    fireAt:hp<=32?(previous?.fireAt||now):0,explodeAt:hp===0?(previous?.explodeAt||now+vehicleBurnDelay):0};
+    fireAt,explodeAt:fireAt?(previous?.explodeAt||fireAt+vehicleBurnDelay):0};
 }

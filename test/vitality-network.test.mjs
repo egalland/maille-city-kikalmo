@@ -152,6 +152,10 @@ test('a second online player receives the climb, landing, and vehicle transition
   a.net.publish({...pose,vehicle:{id:'car-maillot',type:'scooter',x,y}});
   await until(()=>peer()?.vehicle?.type==='scooter','driving replaces the traversal');
   assert.equal(peer().lift,0);assert.equal(peer().motion,'idle');
+  a.net.publish({...pose,motion:'carAir',vehicle:{id:'car-maillot',type:'scooter',x,y}});
+  await until(()=>peer()?.motion==='carAir','an actual car jump relays its height');
+  assert.equal(peer().lift,pose.lift);
+  assert.equal(peer().verticalSpeed,pose.verticalSpeed);
 });
 
 test('a swing reaches the second client once and can make a single nearby physical contact',async t=>{

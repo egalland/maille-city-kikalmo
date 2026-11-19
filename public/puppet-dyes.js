@@ -22,7 +22,7 @@ export function puppetAppearance(role,color,seed=0){
   const crew=crews[type],animal=type==='fox'?'fox':type==='human'?'human':crew?.[0]||wildlife[pick%4];
   const fox=type==='fox'?foxSkin(color):null;
   const dye=(pick+(typeof color==='string'?motionSeed(color)%coats.length:0))%coats.length;
-  return {type,pick,animal,pelt:animal==='human'?{fur:skin[pick%skin.length],cream:'#e7aa8f',shade:'#674c45',inner:'#cb8d75'}:fox?{...furColors.fox,fur:fox.fur,cream:fox.cream}:furColors[animal],service:!!crew,
+  return {type,pick,animal,skinId:fox?.id,pelt:animal==='human'?{fur:skin[pick%skin.length],cream:'#e7aa8f',shade:'#674c45',inner:'#cb8d75'}:fox?{...furColors.fox,fur:fox.fur,cream:fox.cream}:furColors[animal],service:!!crew,
     coat:crew?.[1]||(fox?.coat||coats[dye]),
     trim:crew?.[2]||(type==='fox'?yarnPalette.ochre:'#dbc59b')};
 }
