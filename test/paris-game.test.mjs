@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { SPAWN, getTravelPoint, nearbyProps, blocked, routeAgents, trafficVehicleAt, sampleTrafficRoute } from '../public/paris-world.js';
 import { createGame } from '../public/game.js';
 import { propMaxHealth } from '../public/prop-damage.js';
-import { vehicleSpec } from '../public/vehicle-types.js';
+import { vehicleSpec, vehicleDoorways } from '../public/vehicle-types.js';
 import { nearbyWeaponDrops } from '../public/weapon-drops.js';
 
 test('Chase-camera controls, car possession, shared effects and travel share the real Paris world',()=>{
@@ -534,4 +534,36 @@ test('Traffic takes a legal side street at the last fork before a persistent par
   assert.ok(changed,`the persistent parked van kept this driver on the obstructed street (${traveled.toFixed(1)} m driven)`);
   assert.ok(onDetour>22,'the same car drives down the side street while the parked van stays in place');
   t.diagnostic(`Permanent obstruction: same driver continued ${onDetour.toFixed(1)} m on the connected alternate route`);
+});
+
+test('An NPC stops at the passenger door, leaves the cabin and flees before the player takes the controls',t=>{
+  const h=startGame(t),v=h.scene.entities.find(e=>e.isCar&&e.id==='car-etoile');
+  assert.ok(v);
+  // Stage a stopped local traffic car near the spawn without changing the driver network.
+  const dispatchId='test-jacking-seat';
+  const player=h.game.getPosition();
+  const seat=Array.from({length:12},(_,i)=>{
+    const side=i*Math.PI/6;
+    return {...v,id:dispatchId,x:player.x+1.78*Math.cos(side),y:player.y+1.78*Math.sin(side),angle:side+Math.PI/2,occupied:true,owner:''};
+  }).find(car=>!blocked(car.x,car.y,1.0)&&vehicleDoorways(car,.94).every(door=>!blocked(door.x,door.y,.55)));
+  assert.ok(seat,'clear test lane');
+  h.receive({type:'vehicle',player:'street',at:h.epoch,data:seat});
+  const moved={id:v.id,type:v.type,x:v.x+110,y:v.y,occupied:false};
+  h.world.vehicles={[v.id]:moved};
+  h.receive({type:'vehicle',player:'street',at:h.epoch,data:moved});
+  h.step(4);
+  h.game.action('vehicle');h.step(5);
+  assert.equal(h.state.boarding,true,h.notices.join(' '));
+  assert.equal(h.state.inVehicle,false);
+  h.step(75);
+  const claim=h.actions.findLast(e=>e.name==='vehicle'&&e.data.id===dispatchId)?.data;
+  assert.ok(claim?.eject);
+  assert.equal(h.state.inVehicle,false,'the local player remains on foot until the server confirms');
+  h.receive({type:'vehicle',player:h.net.id,at:h.epoch,data:{...claim,eject:{...claim.eject,at:h.epoch}}});
+  h.step(6);
+  assert.ok(h.scene.entities.some(e=>e.id==='exit-'+dispatchId&&e.moving));
+  assert.equal(h.state.inVehicle,false,'the exit is visible before the controls switch');
+  h.step(29);
+  assert.equal(h.state.inVehicle,true);
+  assert.equal(h.published.vehicle?.id,dispatchId);
 });

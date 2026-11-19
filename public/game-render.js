@@ -14,8 +14,6 @@ import { vehicleSpec } from './vehicle-types.js';
 import * as THREE from './three.js';
 import { createCity3D } from './city3d.js';
 import { createPuppet, createCar } from './puppets3d.js';
-import {appearanceKey} from './kikalmo-avatar.js';
-import {createKikalmoModel} from './kikalmo-model.js';
 import { createCanvasView } from './canvas-view.js';
 import { createPickupDisplay } from './pickup-models.js';
 import { cameraDistance, nearbyProps } from './paris-world.js';
@@ -97,11 +95,10 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   }
   function entity(e,dt,t){
     const vehicle=!!e.isCar,key=e.renderId||e.id;
-    const look=!vehicle?appearanceKey(e.appearance):'';
-    const id=vehicle?'car/'+e.type:look?'kikalmo/'+look:'puppet/'+e.type;
+    const id=vehicle?'car/'+e.type:'puppet/'+e.type+'/'+(e.color||'');
     let item=models.get(key);
     if(item && item.kind!==id){scene.remove(item.object.group);item.object.dispose?.();models.delete(key);item=null;}
-    if(!item){const seed=hash(String(e.id))%65535;const object=look?createKikalmoModel(e.appearance,seed):(vehicle?createCar:createPuppet)(e.type,e.color,seed);item={kind:id,object};models.set(key,item);scene.add(object.group);}
+    if(!item){const seed=hash(String(e.id))%65535;const object=(vehicle?createCar:createPuppet)(e.type,e.color,seed);item={kind:id,object};models.set(key,item);scene.add(object.group);}
     item.used=inFrame;const g=item.object.group;
     const angle=e.angle||0;
     g.position.set(e.x,terrainHeight(e.x,e.y)+(e.lift||0),e.y);
@@ -118,7 +115,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
         g.traverse(node=>{if(node.isMesh&&node.material&&!node.material.transparent){node.castShadow=casts;node.receiveShadow=true;}});
       }
     }
-    item.object.update(vehicle?e:walkingPose(e),dt,t);
+    item.object.update(vehicle?{...e,appearance:undefined}:walkingPose(e),dt,t);
     return item;
   }
   function badge(e,label,bubble){

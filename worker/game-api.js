@@ -1,3 +1,4 @@
+import {abandonedFor,disconnectedFor,wreckFor,wreckExpired} from '../public/vehicle-lifecycle.js';
 import {hitSeverity, woundDuration, activeBleeding} from '../public/bleeding.js';
 import {weaponCatalog} from '../public/weapon-catalog.js';
 import {propMaxHealth, vehiclePropDamage} from '../public/prop-damage.js';
@@ -174,7 +175,14 @@ function eventData(type,raw,now) {
     case 'melee':
       return isMeleeKind(d.kind)&&recentSwing(d.started,now)&&Number.isFinite(d.x)&&Number.isFinite(d.y)?
         {kind:d.kind,started:d.started,x:result.x,y:result.y,angle:num(d.angle,0,-7,7),lift:num(d.lift,0,0,64)}:null;
-    case 'vehicle': return key(d.id) ? {...result,id:d.id,occupied:!!d.occupied} : null;
+    case 'vehicle': {
+      if(!key(d.id))return null;
+      const occupied=!!d.occupied;
+      const out={...result,id:d.id,occupied,...(!occupied?{expiresAt:now+abandonedFor}:{})};
+      if(occupied&&d.eject&&Number.isFinite(d.eject.x+d.eject.y+d.eject.angle)&&Math.hypot(d.eject.x-result.x,d.eject.y-result.y)<=5)
+        out.eject={x:d.eject.x,y:d.eject.y,angle:num(d.eject.angle,0,-7,7),at:now};
+      return out;
+    }
     case 'npc': {
       if (!key(d.id)) return null;
       if (d.cause!=='melee' && d.kind && Number.isFinite(d.started)) {
@@ -234,7 +242,7 @@ function visibleCombatEvent(e,viewer){
 function events(rows) {
   return rows.map(r=>({seq:r.seq,player:r.player,name:r.name,type:r.type,data:JSON.parse(r.data),at:r.at}));
 }
-function shared(rows) {
+function shared(rows,now) {
   const world={destroyed:[],vehicles:{},npcs:{},pickups:{},propHealth:{},vehicleDamage:{}};
   const broken=new Set();
   for (const r of rows) {
@@ -243,8 +251,19 @@ function shared(rows) {
       const item=JSON.parse(r.data);world.propHealth[r.item]=item;
       if(item.health===0)broken.add(r.item);
     }
-    if (r.kind==='vehicle') world.vehicles[r.item]={...JSON.parse(r.data),owner:r.owner};
-    if(r.kind==='vehicleDamage')world.vehicleDamage[r.item]=JSON.parse(r.data);
+    if(r.kind==='vehicle'){
+      const vehicle=JSON.parse(r.data);
+      if(r.owner&&r.driverSeen>now-GONE&&(r.driverCar===r.item||r.at>now-6500))
+        world.vehicles[r.item]={...vehicle,owner:r.owner,lastSeen:r.at};
+      else{
+        const expiresAt=r.owner?r.at+disconnectedFor:vehicle.expiresAt||r.at+abandonedFor;
+        if(expiresAt>now)world.vehicles[r.item]={...vehicle,occupied:false,owner:'',expiresAt};
+      }
+    }
+    if(r.kind==='vehicleDamage'){
+      const wear=JSON.parse(r.data);
+      if(!wreckExpired(wear,now))world.vehicleDamage[r.item]=wear;
+    }
     if (r.kind==='npc') world.npcs[r.item]=JSON.parse(r.data);
   }
   world.destroyed=[...broken];
@@ -267,13 +286,14 @@ async function join(db,b,now,room) {
     q(MEMBERS_SQL,room,now-GONE),
     q('SELECT seq,player,name,type,data,at FROM mc_events WHERE room=? AND type=\'chat\' ORDER BY seq DESC LIMIT 30',room),
     q('SELECT COALESCE(MAX(seq),0) AS last FROM mc_events WHERE room=?',room),
-    q('SELECT kind,item,data,owner FROM mc_items WHERE room=?',room),
+    q(`SELECT i.kind,i.item,i.data,i.owner,i.at,m.seen AS driverSeen,json_extract(m.state,'$.vehicle.id') AS driverCar FROM mc_items i
+      LEFT JOIN mc_members m ON i.room=m.room AND i.owner=m.id WHERE i.room=?`,room),
     q('SELECT item,available FROM mc_pickup_claims WHERE room=? AND ok=1 AND available>?',room,now),
     q('DELETE FROM mc_pickup_claims WHERE at<?',now-EVENT_RETENTION),
     q('DELETE FROM mc_fire_poses WHERE at<?',now-5000)
   ]);
   if (!results[4].results.length) return json({error:'session'},403);
-  const world=shared(results[8].results);
+  const world=shared(results[8].results,now);
   for(const pickup of results[9].results)world.pickups[pickup.item]=pickup.available;
   return json({now,...(b.protocol===2?{stateRefs:stateReferences(playerState(b.state,now,room))}:{}),...rosterPacket(results[5].results,id,{protocol:b.protocol}),history:events(results[6].results.reverse()),
     cursor:results[7].results[0].last,world});
@@ -375,7 +395,8 @@ function vehicleImpact(raw,actor,previous){
 }
 function vehicleDamageStatement(q,{room,id,op,name,data,now}){
   return q(`WITH prior AS (
-    SELECT (SELECT data FROM mc_items WHERE room=? AND kind='vehicleDamage' AND item=?) AS old
+    SELECT (SELECT data FROM mc_items WHERE room=? AND kind='vehicleDamage' AND item=?
+      AND coalesce(json_extract(data,'$.explodeAt'),0) NOT BETWEEN 1 AND ?) AS old
   ), item AS (
     SELECT old,coalesce(json_extract(old,'$.hp'),100) AS hp,
       max(0,coalesce(json_extract(old,'$.hp'),100)-?) AS next_hp FROM prior
@@ -384,7 +405,7 @@ function vehicleDamageStatement(q,{room,id,op,name,data,now}){
     '$.parts',coalesce(json_extract(old,'$.parts'),0)|?,
     '$.fireAt',CASE WHEN next_hp<=32 THEN coalesce(nullif(json_extract(old,'$.fireAt'),0),?) ELSE 0 END,
     '$.explodeAt',CASE WHEN next_hp=0 THEN ? ELSE 0 END),?
-  FROM item WHERE hp>0`,room,data.id,data.damage,room,id,op,name,JSON.stringify(data),
+  FROM item WHERE hp>0`,room,data.id,now-wreckFor,data.damage,room,id,op,name,JSON.stringify(data),
     partMask[data.part]||0,now,now+vehicleBurnDelay,now);
 }
 function contactGuard(type,data,actor,room,id,now){
@@ -479,6 +500,8 @@ async function sync(db,b,now,room) {
       propOps.set(op,data.impactId);
     }
     const requiresCar=type==='vehicle';
+    if(requiresCar&&data.eject&&(!Number.isFinite(actor.x+actor.y)||actor.health===0||actor.vehicle||
+      Math.hypot(actor.x-data.x,actor.y-data.y)>6.8))continue;
     if (requiresCar) {
       data.owner=data.occupied ? id : '';
       if (data.occupied) claims.add(data.id);
@@ -489,8 +512,9 @@ async function sync(db,b,now,room) {
     if (requiresCar) {
       stmts.push(q(accept+` WHERE NOT EXISTS (
         SELECT 1 FROM mc_items i JOIN mc_members m ON m.room=i.room AND m.id=i.owner
-        WHERE i.room=? AND i.kind='vehicle' AND i.item=? AND i.owner<>? AND m.seen>?)`,
-        ...values,room,data.id,id,now-GONE));
+        WHERE i.room=? AND i.kind='vehicle' AND i.item=? AND i.owner<>? AND m.seen>?
+          AND (json_extract(m.state,'$.vehicle.id')=i.item OR i.at>?))`,
+        ...values,room,data.id,id,now-GONE,now-6500));
     } else if(type==='vehicleDamage'){
       stmts.push(vehicleDamageStatement(q,{room,id,op,name,data,now}));
     } else if(type==='propDamage'){

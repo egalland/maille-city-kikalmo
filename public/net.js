@@ -1,3 +1,4 @@
+import {parkingExpired,wreckExpired,disconnectedFor,abandonedFor} from './vehicle-lifecycle.js';
 import {matchesPickup} from './drop-id.js';
 import {createRosterWire} from './roster-wire.js';
 import {createStateEncoder} from './state-wire.js';
@@ -69,7 +70,7 @@ export function createNet(options={}) {
     for (const previous of roster) {
       const car=previous.vehicle;
       if (car && !present.has(previous.id) && context.vehicles[car.id]?.owner===previous.id) {
-        context.vehicles[car.id]={...context.vehicles[car.id],...car,occupied:false,owner:''};
+        context.vehicles[car.id]={...context.vehicles[car.id],...car,occupied:false,owner:'',expiresAt:(previous.updatedAt||serverTime())+disconnectedFor};
       }
     }
     roster=next;rosterRevision++;
@@ -91,10 +92,14 @@ export function createNet(options={}) {
       context.propHealth[d.id]=d;
       if(d.health===0 && !context.destroyed.includes(d.id))context.destroyed.push(d.id);
     }
-    if (e.type==='vehicle') context.vehicles[d.id]=d;
+    if(e.type==='vehicle'){
+      const vehicle={...d,lastSeen:e.at,...(!d.occupied?{expiresAt:d.expiresAt||e.at+abandonedFor}:{})};
+      if(!parkingExpired(vehicle,serverTime()))context.vehicles[d.id]=vehicle;
+    }
     if(e.type==='vehicleDamage'){
       const prior=context.vehicleDamage[d.id];
-      if(prior&&prior.hp<=d.hp)return;
+      if(prior&&!wreckExpired(prior,serverTime())&&prior.hp<=d.hp)return;
+      if(wreckExpired(d,serverTime()))return;
       context.vehicleDamage[d.id]=d;
     }
     if (e.type==='npc') context.npcs[d.id]=d;
@@ -104,7 +109,7 @@ export function createNet(options={}) {
       lifetimeChats.add(e.seq);
       if (lifetimeChats.size>1000) lifetimeChats.delete(lifetimeChats.values().next().value);
       onChat({seq:e.seq,player:e.player,name:e.name,text:d.text,at:e.at});
-    } else if (e.player!==id || e.type==='propDamage' || e.type==='vehicleDamage' || (e.type==='npc' && Number.isFinite(d.damage))) {
+    } else if (e.player!==id || e.type==='propDamage' || e.type==='vehicle' || e.type==='vehicleDamage' || (e.type==='npc' && Number.isFinite(d.damage))) {
       for (const fn of listeners) fn(e);
     }
   }
@@ -220,6 +225,8 @@ export function createNet(options={}) {
       if(Number.isSafeInteger(data.cursor))cursor=joining?data.cursor:Math.max(cursor,data.cursor);
       if(data.now-lastPickupPrune>5000){
         for(const [item,until] of Object.entries(context.pickups))if(until<=data.now)delete context.pickups[item];
+        for(const [id,vehicle] of Object.entries(context.vehicles))if(parkingExpired(vehicle,data.now))delete context.vehicles[id];
+        for(const [id,wear] of Object.entries(context.vehicleDamage))if(wreckExpired(wear,data.now))delete context.vehicleDamage[id];
         lastPickupPrune=data.now;
       }
       failures=0;lastReply=received;

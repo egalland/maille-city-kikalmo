@@ -234,3 +234,43 @@ test('vehicle damage preserves cracked glass, flat tyres and the delayed explosi
     assert.equal((await read()).explodeAt,last.explodeAt);
   }finally{DB.close();}
 });
+
+test('A stopped car has one claimant, an ejected driver and a timed abandoned record',async t=>{
+  const db=localDatabase(),a=session('Amande'),b=session('Praline'),c=session('Roux');
+  const start=1782250000000;
+  let now=start;
+  t.mock.method(Date,'now',()=>now);
+  const car={id:'traffic-seat-test',type:'compact',x:250,y:260,angle:0,occupied:true};
+  const pose={x:251,y:258,health:100,vehicle:null};
+  const send=(operation,user,state=pose,events=[])=>accepted(api(db,'/api/world/'+operation,{...user,map:'enfer',state,events}));
+  const request=(op,data)=>({op,type:'vehicle',data});
+  try{
+    await send('join',a);await send('join',b);
+    const eject={x:250,y:262,angle:1.6};
+    const answers=await Promise.all([send('sync',a,pose,[request('seat', {...car,eject})]),send('sync',b,pose,[request('seat',{...car,eject})])]);
+    assert.equal(answers.filter(response=>response.denied.length===1).length,1);
+    const result=await send('join',c),owner=result.world.vehicles[car.id].owner;
+    assert.ok([a.id,b.id].includes(owner));
+    assert.deepEqual(result.world.vehicles[car.id].eject,{...eject,at:start});
+    const driver=owner===a.id?a:b;
+    await send('sync',driver,{...pose,vehicle:car});
+    now+=9000;
+    await send('sync',driver,{...pose,vehicle:car});
+    const denied=await send('sync',c,pose,[request('locked',car)]);
+    assert.equal(denied.denied[0].owner,driver.id,'a car driven by a connected player stays reserved');
+    await send('sync',driver,pose,[request('parked',{...car,occupied:false})]);
+    const parked=await send('join',c);
+    assert.equal(parked.world.vehicles[car.id].expiresAt,now+35000);
+    now+=35001;
+    assert.equal((await send('join',c)).world.vehicles[car.id],undefined);
+
+    await send('join',driver,pose);
+    await send('sync',driver,{...pose,vehicle:car},[request('reused',car)]);
+    await send('leave',driver);
+    const orphan=(await send('join',c)).world.vehicles[car.id];
+    assert.equal(orphan.occupied,false);
+    assert.equal(orphan.expiresAt,now+60000);
+    now+=60001;
+    assert.equal((await send('join',c)).world.vehicles[car.id],undefined);
+  }finally{db.close();}
+});

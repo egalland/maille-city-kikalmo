@@ -1,12 +1,12 @@
 // Illustrated front view of the fox, in the same teal cape worn in the street.
-export function portrait(c,size){
+export function portrait(c,size,skin){
   c.save();c.scale(size/100,size/100);c.lineJoin='round';c.lineCap='round';
-  const ink='#493237',cream='#ffdeab',light='#f8b66c',fur='#d37c47';
+  const ink='#493237',cream=skin?.cream||'#ffdeab',light='#f8b66c',fur=skin?.fur||'#d37c47';
   function shape(d,fill,outline=ink,width=2){const p=new Path2D(d);c.fillStyle=fill;c.fill(p);if(outline){c.lineWidth=width;c.strokeStyle=outline;c.stroke(p);}return p;}
   function stroke(d,col,width=1.5){c.strokeStyle=col;c.lineWidth=width;c.stroke(new Path2D(d));}
   function oval(x,y,rx,ry,col,rot=0){c.fillStyle=col;c.beginPath();c.ellipse(x,y,rx,ry,rot,0,Math.PI*2);c.fill();}
   function knit(path,startX,startY,w,h,col,step=7){c.save();c.clip(path);for(let j=0;j<h;j+=step*.82){let shift=Math.round(j/(step*.82))%2?2.7:0;for(let i=0;i<w;i+=step){const x=startX+i+shift,y=startY+j;stroke('M'+x+' '+y+'q2 1 3 3q.8-2 2.7-3',col,.75);}}c.restore();}
-  let cape=shape('M7 104Q9 82 30 76L33 71H69L73 76Q95 82 96 104Z','#3a8580');
+  let cape=shape('M7 104Q9 82 30 76L33 71H69L73 76Q95 82 96 104Z',skin?.coat||'#3a8580');
   knit(cape,3,71,97,34,'#8ab5a2',7);
   stroke('M21 90Q36 87 45 77M80 90Q63 86 56 77','#edbd78',3);
   shape('M44 79Q50 75 57 79L56 87L50 92L44 87Z','#d6a75f');

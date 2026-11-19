@@ -412,7 +412,7 @@ export function createTrafficFlow(sample,chooseDetour){
     return true;
   }
 
-  function step(seeds,{dt=0,epoch=Date.now(),blockers=[],observer=null,excluded=new Set(),checkpoints=[],blockedPose}={}){
+  function step(seeds,{dt=0,epoch=Date.now(),blockers=[],observer=null,excluded=new Set(),checkpoints=[],blockedPose,recycleAfter=0}={}){
     const actualDt=clamp(dt,0,.5);
     const fixed=blockers.filter(b=>b&&Number.isFinite(b.x)&&Number.isFinite(b.y)).map(b=>makeBody(b));
     const candidates=new Map(seeds.filter(s=>s.routeId!=null&&!excluded.has(s.id)).map(s=>[s.id,s]));
@@ -450,8 +450,18 @@ export function createTrafficFlow(sample,chooseDetour){
         planJunctions(states,bodies);
         for(const car of states)if(cars.has(car.seed.id))car.target=planSpeed(car,bodies,blockedPose);
       }
-      for(const car of states)if(cars.has(car.seed.id)&&!advance(car,bodies,elapsed,blockedPose)){
-        cars.delete(car.seed.id);refused.set(car.seed.id,Infinity);car.body.x=Infinity;
+      for(const car of states){
+        if(!cars.has(car.seed.id))continue;
+        const advanced=advance(car,bodies,elapsed,blockedPose);
+        if(car.speed<.32&&car.target<.42)car.stalledSince??=tick;
+        else car.stalledSince=null;
+        const stalled=car.stalledSince==null?0:tick-car.stalledSince;
+        const close=observer&&distanceSquared(observer,car.pose)<12**2;
+        const recycle=recycleAfter>0&&stalled>=recycleAfter*(close?2:1);
+        if(!advanced||recycle){
+          cars.delete(car.seed.id);releasePermits(car.seed.id);
+          refused.set(car.seed.id,recycle?tick+12:Infinity);car.body.x=Infinity;
+        }
       }
     }
     return states.filter(c=>cars.has(c.seed.id)).map(c=>({...c.seed,...c.pose,isCar:true,

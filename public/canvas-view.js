@@ -18,7 +18,6 @@ import {enferStyle,enferStyles,enferWall,enferRoof,roofPitch} from './enfer-arch
 import {buildings,streets,water,green,isEnfer} from './paris-data.js';
 import {monuments,cameraDistance,nearbyProps} from './paris-world.js';
 import {drawCanvasPuppet,drawCanvasCar} from './canvas-puppets.js';
-import {drawKikalmoPuppet} from './kikalmo-canvas.js';
 import {pickupPatch,pickupStyle,pickupLift,pickupPhase,pickupRange,pickupMarkerWidth} from './pickup-art.js';
 import {grandParisModels,skipLandmark} from './canvas-landmarks.js';
 
@@ -366,7 +365,7 @@ export function createCanvasView(canvas,spawn,onNotice){
       ctx=foregroundLayer.getContext('2d');ctx.clearRect(0,0,w,h);
     }
     ctx.save();ctx.translate(base.x,base.y);ctx.transform(scaleX,0,(base.x-top.x)/height,1,0,0);
-    if(!e.appearance||!drawKikalmoPuppet(ctx,e,0,0,height,time,angle))drawCanvasPuppet(ctx,e,0,0,height,time,angle);
+    drawCanvasPuppet(ctx,e,0,0,height,time,angle);
     ctx.restore();
     if(ctx!==g){
       // Fade the completed sprite once. Applying alpha per limb lets the hidden back arms and lining show through.

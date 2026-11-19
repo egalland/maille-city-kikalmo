@@ -3,7 +3,7 @@ import {installHudEditor} from './hud-editor.js';
 import {installTraversalControl} from './traversal-control.js';
 import {installCombatControls} from './combat-controls.js';
 import {installDriveControls} from './drive-controls.js';
-import {installKikalmoLink} from './kikalmo-link.js';
+import {foxSkin} from './puppet-dyes.js';
 import {createWanted,wantedRules,wantedThresholds} from './wanted.js';
 import {attachSectorTravel} from './sector-travel.js';
 import {readSectorTransfer} from './sector-transfer.js';
@@ -72,7 +72,13 @@ const combat=installCombatControls($('#fire'),$('#melee'),{
   endAim:()=>showAimLock(null)
 });
 drawBrand($('#brandMark').getContext('2d'));
-portrait($('#portrait').getContext('2d'),96);
+let chosenSkin=foxSkin(read('skin','lagon'));
+function paintPortrait(){
+  const badge=$('#portrait'),g=badge.getContext('2d');
+  g.clearRect(0,0,96,96);portrait(g,96,chosenSkin);badge.setAttribute('aria-label','Renard · '+chosenSkin.label);
+}
+function setSkin(id){chosenSkin=foxSkin(id);write('skin',chosenSkin.id);game?.setSkin(chosenSkin.id);paintPortrait();}
+paintPortrait();
 function appendChat({name,text,system=false}){
   const log=$('#chatLog'),p=document.createElement('p');
   if(system){p.className='system';const dot=document.createElement('b');dot.textContent='◆';p.append(dot,document.createTextNode(text));}
@@ -193,7 +199,7 @@ function onState(next){
   const ride=$('#ride');
   ride.classList.toggle('near',Boolean(state.inVehicle||state.nearVehicle));
   const vehicle=state.inVehicle?state.vehicleName:state.nearVehicleName;
-  const rideVerb=state.inVehicle?'Descendre':state.nearVehicle?'Monter':'Véhicule';
+  const rideVerb=state.inVehicle?'Descendre':state.boarding?'Conducteur en sortie…':state.jackTarget?'Prendre le volant':state.nearVehicle?'Monter':'Véhicule';
   const rideLabel=vehicle?rideVerb+' · '+vehicle:'Monter ou descendre du véhicule';
   ride.setAttribute('aria-label',rideLabel);
   ride.title=$('#rideShortcut').title=rideLabel;
@@ -215,17 +221,15 @@ function onState(next){
 function setName(value){const clean=net.setName(value);write('name',clean);$('#playerName').textContent=clean;}
 function setSound(value){settingsSound=Boolean(value);write('sound.v2',String(settingsSound));game?.setSound(settingsSound);const sound=$('#sound');sound.setAttribute('aria-pressed',String(settingsSound));const label=settingsSound?'Couper le son':'Activer le son';sound.title=label;sound.setAttribute('aria-label',label);sound.querySelector('i').innerHTML=icon(settingsSound?'volume':'volumeOff');}
 $('#playerName').textContent=name;
-game=createGame({canvas:city,minimap:$('#minimap'),net,onState,onNotice:notify,onAimLock:showAimLock,loadout,onLoadoutChange:saveLoadout,initialPursuit:loadPursuit(),initialVitality:loadVitality()});
-installKikalmoLink({game,net,notify});
-function openAvatar(){window.dispatchEvent(new Event('kikalmo:open'));}
-$('#openAvatar').onclick=openAvatar;
+game=createGame({canvas:city,minimap:$('#minimap'),net,onState,onNotice:notify,onAimLock:showAimLock,loadout,onLoadoutChange:saveLoadout,initialPursuit:loadPursuit(),initialVitality:loadVitality(),skin:chosenSkin.id});
+$('#openAvatar').onclick=()=>panels.open('settings');
 $('#healHud').onclick=()=>game.action('heal');
 $('#heal').onclick=()=>game.action('heal');
 editor=installHudEditor({scene:$('#scene'),onEdit:()=>{
   if(panels?.isOpen())panels.close();releaseTouchInputs();game.setPaused(true);
 },onFinish:()=>{game.setPaused(false);focusGame();}});
 $('#editHud').onclick=()=>editor.open();
-panels=createPanels({game,editLayout:()=>editor.open(),openAvatar,net,getState:()=>({...state,name:net.name}),selectWeapon,setName,setSound,getSound:()=>settingsSound,setTouchAim,getTouchAim:()=>touchAimEnabled,notify,returnFocus:focusGame});
+panels=createPanels({game,editLayout:()=>editor.open(),getSkin:()=>chosenSkin.id,setSkin,net,getState:()=>({...state,name:net.name}),selectWeapon,setName,setSound,getSound:()=>settingsSound,setTouchAim,getTouchAim:()=>touchAimEnabled,notify,returnFocus:focusGame});
 onState(state);setSound(settingsSound);game.setAimAssist(touchAimEnabled);
 document.querySelectorAll('[data-panel]').forEach(b=>b.addEventListener('click',()=>{if(document.activeElement===entry)entry.blur();panels.open(b.dataset.panel);}));
 $('#playNav').onclick=()=>{if(panels.isOpen())panels.close();chat.classList.remove('mobile-open');focusGame();};

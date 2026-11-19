@@ -1,3 +1,4 @@
+import {foxSkins} from './puppet-dyes.js';
 import {makeEmoteIcon} from './emote-art.js';
 import {drawItemIcon, drawAvatar} from './sprites.js';
 import {switchWorldURL,renderModeURL} from './world-link.js';
@@ -94,7 +95,7 @@ function gameShareURL() {
   return coreDestinations.some(d=>d.key===halt)?historicURL(url.href,halt):url.href;
 }
 
-export function createPanels({game,net,editLayout,openAvatar,getState,selectWeapon,setName,setSound,getSound,setTouchAim,getTouchAim,notify,returnFocus}) {
+export function createPanels({game,net,editLayout,getSkin,setSkin,getState,selectWeapon,setName,setSound,getSound,setTouchAim,getTouchAim,notify,returnFocus}) {
   const root=document.getElementById('panels');
   let current='', dialog=null, selected=0, choose=null, setSelected=null;
   let held=false, wheelDirty=false, openedAt=0, interval=0, renderCurrent=null;
@@ -423,12 +424,16 @@ export function createPanels({game,net,editLayout,openAvatar,getState,selectWeap
     const controls=button('Commandes','mc-secondary',()=>open('help'));
     controls.innerHTML=icon('help')+'<span>Commandes</span>';
     const custom=node('div','mc-profile-actions');
-    custom.append(button('Modifier la disposition','mc-secondary',()=>{close(false);editLayout();}),button('Mon avatar Kikalmo','mc-secondary',()=>{close(false);openAvatar();}));
-    actions.append(controls,confirm);form.append(group,custom,soundRow,aimRow,display,actions);
+    custom.append(button('Modifier la disposition','mc-secondary',()=>{close(false);editLayout();}));
+    const wardrobe=node('div','mc-option-row'),skin=node('select','mc-input');skin.id='mc-fox-skin';
+    for(const entry of foxSkins){const option=node('option','',entry.label);option.value=entry.id;skin.append(option);}
+    skin.value=getSkin();
+    wardrobe.append(fieldLabel('Tenue du renard',skin.id),skin);
+    actions.append(controls,confirm);form.append(group,wardrobe,custom,soundRow,aimRow,display,actions);
     form.addEventListener('submit',e=>{
       e.preventDefault();const name=username.value.trim();
       if(!name){username.setCustomValidity('Entre un nom de joueur.');username.reportValidity();return;}
-      setName(name);close();notify?.('Paramètres enregistrés.');
+      setName(name);setSkin(skin.value);close();notify?.('Paramètres enregistrés.');
     });username.addEventListener('input',()=>username.setCustomValidity(''));
     body.append(form);sheet.append(body);
   }

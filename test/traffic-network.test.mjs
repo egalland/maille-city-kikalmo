@@ -40,3 +40,14 @@ test('A late observer joins the existing traffic queue, then takes ownership whe
     assert.equal(packTraffic(cars,observer,handoff.followers,at).cars.length,1);
   }finally{db.close();}
 });
+
+test('A car that stays stuck for the recycling window stops blocking the next lane update',()=>{
+  const flow=createTrafficFlow((_route,d)=>({x:d,y:0,angle:0,routeLength:800}));
+  const seed={id:'waiting',type:'compact',routeId:'abcd',routeDistance:0,cruiseSpeed:7,speed:0};
+  const options={dt:.1,observer:{x:-16,y:0},blockers:[{id:'van',type:'van',isCar:true,x:6,y:0}],recycleAfter:3};
+  assert.ok(flow.step([seed],options).length);
+  let cars;
+  for(let i=0;i<63;i++)cars=flow.step([seed],options);
+  assert.equal(cars.length,0);
+  assert.equal(flow.step([seed],options).length,0,'recycle cooldown prevents an instant return');
+});

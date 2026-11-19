@@ -132,9 +132,9 @@ function cloakGeometry(){
   const g=new THREE.BufferGeometry();g.setIndex(idx);g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.computeVertexNormals();return g;
 }
 const capeShape=cloakGeometry();
-function addFoxCape(torso){
+function addFoxCape(torso,cloth){
   const cape=joint(torso,'cape',-.015,.20,0);
-  addPart(cape,capeShape,0,0,0,1,1,1,colors.teal);
+  addPart(cape,capeShape,0,0,0,1,1,1,cloth);
   for(const y of [-.326,-.352]){
     const points=[];
     for(let j=0;j<=24;j++){
@@ -271,8 +271,8 @@ function makeBody(look,high){
   }
   serviceUniform(torso,head,type,out[0],out[1]);
   if(isFox){
-    addFoxCape(torso);
-    ball(torso,.002,.201,0,.191,.068,.245,'#24736f');
+    addFoxCape(torso,cloth);
+    ball(torso,.002,.201,0,.191,.068,.245,cloth);
     cord(torso,[[.121,.202,-.171],[.172,.137,-.09],[.19,.139,0],[.172,.137,.09],[.121,.202,.171]],.019,'#f5c979');
     ball(torso,.198,.143,0,.033,.056,.056,'#d49b54');ball(torso,.225,.145,0,.023,.04,.036,'#6fe0c9');
   }
@@ -808,7 +808,22 @@ const cabinPlane=new THREE.PlaneGeometry(1,1);
 const cottonSmoke=new THREE.MeshBasicMaterial({color:'#82747e',transparent:true,opacity:.42,depthWrite:false});
 export function createCar(type='car',color,seed=0){
   const body=createCarBody(type,color,seed),spec=vehicleSpec(type?.type??type);
-  let wear=null,cabin=null;
+  let wear=null,cabin=null,door=null;
+  function updateDoor(open){
+    if(!open||spec.openSeat){if(door)door.visible=false;return;}
+    if(!door){
+      door=new THREE.Group();door.name='Portière ouverte';
+      const paint=fleetPaint[type] || (/^#(?:[a-f\d]{3}){1,2}$/i.test(color||'')?color:carPaint[Math.abs((Number(seed)||0)*1741)%carPaint.length|0]);
+      const span=Math.min(1.18,spec.halfLength*.57),h=spec.height;
+      addPart(door,geo.box,-span*.5,h*.353,0,span,h*.295,.067,paint);
+      addPart(door,geo.box,-span*.51,h*.568,0,span*.85,h*.151,.036,'#6e959f');
+      addPart(door,geo.box,-span*.71,h*.463,.036,.18,.047,.048,'#dccba8',0,0,0,'plain');
+      batchGroup(door);body.group.add(door);
+    }
+    const side=Math.sign(open);
+    door.visible=true;door.position.set(spec.halfLength*.40,0,side*spec.halfWidth*.94);
+    door.rotation.y=side*Math.abs(open)*1.04;
+  }
   function updateCabin(pose){
     if(spec.openSeat)return;
     if(!pose.driver&&!(pose.parts&1)){if(cabin)cabin.group.visible=false;return;}
@@ -842,7 +857,7 @@ export function createCar(type='car',color,seed=0){
     cabin.map.needsUpdate=true;
   }
   function update(pose={},dt,time=0){
-    body.update(pose,dt,time);updateCabin(pose);
+    body.update(pose,dt,time);updateCabin(pose);updateDoor(pose.doorOpen);
     const stage=chassisStage(pose.chassisHp);
     if(!stage){if(wear)wear.group.visible=false;return;}
     if(!wear){
@@ -873,5 +888,5 @@ export function createCar(type='car',color,seed=0){
       puff.scale.setScalar(.075+.34*age);
     });
   }
-  return {...body,update,dispose(){if(cabin){cabin.group.removeFromParent();cabin.map.dispose();cabin.material.dispose();}body.dispose();}};
+  return {...body,update,dispose(){if(door)for(const part of door.children)part.geometry.dispose();if(cabin){cabin.group.removeFromParent();cabin.map.dispose();cabin.material.dispose();}body.dispose();}};
 }
