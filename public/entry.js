@@ -17,7 +17,12 @@ if(canonical.hash.startsWith('#kikalmo=')){
 if(canonical.href!==location.href)history.replaceState(history.state,'',canonical.href);
 // The loading scene remains interactive if a module fails on a slow mobile connection.
 const retry=document.getElementById('retryLoad');
-retry.onclick=()=>location.reload();
+retry.onclick=()=>{
+  const recovery=new URL(location.href);
+  if(recovery.searchParams.get('rendu')==='compat'){location.reload();return;}
+  recovery.searchParams.set('rendu','compat');
+  location.replace(recovery);
+};
 const enfer=selectedWorld(canonical.href)==='enfer';
 if(enfer){
   document.title='Maille City · Enfer · Pays noyonnais';
@@ -38,7 +43,7 @@ try {
   text.textContent=isGPU?'Le rendu 3D nécessite WebGL 2. Active l’accélération graphique ou essaie un navigateur compatible.':'Le chargement de la ville a été interrompu.';
   const url=new URL(location.href);
   if(enfer){
-    text.textContent='La carte Enfer n’a pas pu être chargée.';
+    text.textContent='Enfer n’a pas pu démarrer. Réessaie en mode compatible.';
   }else if(url.searchParams.has('lon')){
     text.textContent='Le secteur demandé n’a pas pu être chargé. Tu peux réessayer ou revenir sur l’axe du Louvre à La Défense.';
     const back=document.getElementById('returnToCity');

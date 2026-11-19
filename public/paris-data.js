@@ -2,25 +2,9 @@ import {selectedWorld} from './world-link.js';
 import {selectBridgeDecks} from './enfer-bridges.js';
 import {selectSectorTerrain,baseTerrainHeight} from './terrain-height.js';
 import {bundledSectors} from './sector-crossing.js';
-// One coordinate system for the embedded historic axis and every on-demand neighbourhood.
-const offlineMaps='maille-city-bundled-sectors-v1';
-async function offlinePreset(key){
-  const url=key==='enfer'?'/map-enfer.gz':'/sector-'+key+'.gz';
-  let cache;
-  try{if(globalThis.caches)cache=await caches.open(offlineMaps);}
-  catch{/* The browser can still download the archive directly. */}
-  const requestURL=key==='enfer'?url+'?rev=20261119b':url;
-  const saved=await cache?.match(requestURL).catch(()=>null);
-  if(saved)return saved;
-  const response=await fetch(requestURL);
-  if(!response.ok)throw Error('Secteur indisponible');
-  if(cache)try{await cache.put(requestURL,response.clone());}catch{}
-  return response;
-}
+import {readMapArchive} from './map-archive.js';
 async function readPreset(key) {
-  const response=await offlinePreset(key);
-  const unzipped=response.body.pipeThrough(new DecompressionStream('gzip'));
-  const d=await new Response(unzipped).json();
+  const d=await readMapArchive(key);
   return {
     metadata:key==='enfer'?d.metadata:{...d.metadata,sector:{...d.metadata.sector,preset:key}},
     relief:d.relief,

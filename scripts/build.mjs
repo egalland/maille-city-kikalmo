@@ -38,4 +38,9 @@ for (const path of ['/','/main.js','/paris-world.js','/paris-data.js','/city3d.j
   const response = await worker.fetch(new Request('https://test.local'+path),{});
   if (response.status !== 200 || (await response.arrayBuffer()).byteLength < 30) throw Error('Missing asset '+path);
 }
+const map=await worker.fetch(new Request('https://test.local/map-enfer.json'),{});
+if(map.headers.get('content-encoding')!=='gzip'||!map.headers.get('content-type')?.includes('json'))
+  throw Error('Missing browser-compatible map response');
+const decoded=await new Response(map.body.pipeThrough(new DecompressionStream('gzip'))).json();
+if(decoded.metadata.world!=='enfer')throw Error('Invalid browser-compatible map response');
 console.log('Worker and '+Object.keys(assets).length+' assets ready.');

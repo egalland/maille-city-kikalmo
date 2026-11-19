@@ -33,10 +33,11 @@ const server=createServer(async(req,res)=>{
       res.end(Buffer.from(await result.arrayBuffer()));return;
     }
     if (req.method!=='GET' && req.method!=='HEAD') {res.writeHead(405);res.end();return;}
-    const file=url.pathname==='/'?'index.html':url.pathname.slice(1);
+    const mapJSON=url.pathname==='/map-enfer.json';
+    const file=mapJSON?'map-enfer.gz':url.pathname==='/'?'index.html':url.pathname.slice(1);
     if (!/^[a-zA-Z0-9][\w.-]*$/.test(file)) {res.writeHead(404);res.end();return;}
     const bytes=await readFile(new URL(file,publicDir));
-    res.writeHead(200,{'content-type':contentType[extname(file)]||'application/octet-stream',
+    res.writeHead(200,{...(mapJSON?{'content-encoding':'gzip'}:{}),'content-type':mapJSON?'application/json; charset=utf-8':contentType[extname(file)]||'application/octet-stream',
       'cache-control':'no-store','x-content-type-options':'nosniff'});
     res.end(req.method==='HEAD'?undefined:bytes);
   } catch(error) {

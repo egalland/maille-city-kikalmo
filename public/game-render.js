@@ -1,3 +1,4 @@
+import {rendererFallback} from './renderer-fallback.js';
 import {makeEmoteIcon} from './emote-art.js';
 import {textileSky,sunBearing} from './textile-sky.js';
 import {createBleedFibers} from './bleed-fibers.js';
@@ -38,12 +39,21 @@ function makeShadow() {
 function hash(str){let n=2166136261;for(const ch of str){n=Math.imul(n^ch.charCodeAt(0),16777619);}return n>>>0;}
 
 export function createView(canvas,spawn,onNotice) {
-  let renderer;
-  try { renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance',alpha:false,stencil:false}); }
-  catch(error) {
-    console.warn('WebGL indisponible',error);
-    return createCanvasView(canvas,spawn,onNotice);
-  }
+  const forceCompatible=typeof location!=='undefined'&&new URLSearchParams(location.search).get('rendu')==='compat';
+  return rendererFallback(
+    fallback=>createWebGLView(canvas,spawn,fallback),
+    ()=>createCanvasView(canvas,spawn,onNotice),
+    {forceCompatible,report:error=>console.warn('Maille City · rendu compatible',error)}
+  );
+}
+
+function createWebGLView(canvas,spawn,onLost) {
+  const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance',alpha:false,stencil:false});
+  try{return mountWebGLView(canvas,spawn,onLost,renderer);}
+  catch(error){renderer.dispose();throw error;}
+}
+
+function mountWebGLView(canvas,spawn,onLost,renderer) {
   const touch=matchMedia('(pointer:coarse)').matches;
   const scene=new THREE.Scene();
   scene.background=new THREE.Color('#f0d9be');scene.fog=new THREE.FogExp2('#d1c2b2',.00066);
@@ -225,7 +235,7 @@ export function createView(canvas,spawn,onNotice) {
     if(ray.ray.intersectPlane(floor,point)&&point.distanceTo(camera.position)<160)return Math.atan2(point.z-p.y,point.x-p.x);
     return Math.atan2(ray.ray.direction.z,ray.ray.direction.x);
   }
-  function contextLost(event){event.preventDefault();active=false;onNotice('Affichage 3D interrompu. Recharge la page pour reprendre.');}
+  function contextLost(event){event.preventDefault();if(active)onLost(new Error('Contexte WebGL interrompu.'));}
   canvas.addEventListener('webglcontextlost',contextLost);
   return {available:true,mode:'webgl',render,aim,projectTarget,effect,dispose(){
     active=false;canvas.removeEventListener('webglcontextlost',contextLost);labels.remove();
