@@ -42,12 +42,13 @@ for(const appearance of testLooks){
   const model=createKikalmoModel(appearance,7);
   model.update({appearance,speed:2.5},.016,0);model.group.updateMatrixWorld(true);
   const obj=model.group.getObjectByName('kikalmo-head-volume');assert.ok(obj,'rounded 3D head geometry');
-  const v=obj.geometry.getAttribute('position');assert.ok(v.count>850);
-  const box=new THREE.Box3().setFromBufferAttribute(v);assert.ok(box.max.x-box.min.x>.3);
-  const initial=obj.parent.position.clone();
+  const v=obj.geometry.getAttribute('position');assert.ok(v.count>100);
+  const box=new THREE.Box3().setFromBufferAttribute(v);assert.ok((box.max.x-box.min.x)*obj.scale.x>.3);
+  const head=model.group.getObjectByName('kikalmo-head'),initial=head.position.clone();
   model.update({appearance,ragdoll:{blend:1,head:[.7,.26,0],hips:[0,.20,0],chest:[.44,.24,0]}},.016,0);
-  assert.ok(initial.distanceTo(obj.parent.position)>.8);
-  const textile=obj.material.map.image;volumes.add(digest(square(textile)));model.dispose();
+  assert.ok(initial.distanceTo(head.position)>.8);
+  const features=[];model.group.traverse(o=>{if(o.isMesh)features.push([o.position.toArray(),o.scale.toArray(),o.material.color.getHex()]);});
+  volumes.add(digest(JSON.stringify(features)));model.dispose();
   const views=new Set();for(const a of [0,Math.PI/2,Math.PI]){
     const c=native.createCanvas(224,224),g=c.getContext('2d');
     drawKikalmoPuppet(g,{appearance,speed:1.4},112,212,189,0,a);const d=square(c);
@@ -67,4 +68,4 @@ for(const appearance of testLooks){
 }
 assert.equal(volumes.size,testLooks.length);
 const portrait=native.createCanvas(100,120);assert.ok(await drawKikalmoPortrait(portrait,testLooks[1]));
-console.log(JSON.stringify({renderedProfiles:profiles.length,distinctFronts:textures.size,distinctReliefMaps:geometry.size,originalAliases:aliases,pixelsChangedOf10000:differences,modelTextures:volumes.size,canvasAngles:3}));
+console.log(JSON.stringify({renderedProfiles:profiles.length,distinctFronts:textures.size,distinctReliefMaps:geometry.size,originalAliases:aliases,pixelsChangedOf10000:differences,volumetricModels:volumes.size,canvasAngles:3}));

@@ -1,26 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {installKikalmoRaster} from './fixtures/kikalmo-raster.mjs';
-import {getKikalmoLook} from '../public/kikalmo-avatar.js';
+import {appearanceSchema} from '../public/kikalmo-schema.js';
+import {modeledItems} from '../public/kikalmo-items.js';
+import {itemDyes} from '../public/kikalmo-dyes.js';
 import {createKikalmoModel} from '../public/kikalmo-model.js';
 import {createMeshRenderer} from '../public/mesh-renderer.js';
 import {Box3,Color,PerspectiveCamera,Scene,Vector3} from '../public/three.js';
 
-test('linked avatars keep opaque rounded heads and jackets with independent joint motion',async()=>{
+test('linked avatars have round heads, wearable geometry and independent joint motion',()=>{
   const canvasApi=installKikalmoRaster();
   for(const appearance of [{shape:2,costume:163},{shape:4,headwear:210,adornment:221,premiumHair:34}]){
-    assert.ok(await getKikalmoLook(appearance).promise);
     const person=createKikalmoModel(appearance),actor={id:'profile'};
     person.update(actor,.016,0);
     const head=person.group.getObjectByName('kikalmo-head-volume');
     const coat=person.group.getObjectByName('kikalmo-jacket');
     for(const part of [head,coat]){
       const box=new Box3().setFromBufferAttribute(part.geometry.attributes.position);
-      assert.ok(box.max.x-box.min.x>.32,'depth is comparable to body width');
-      const map=part.material.map.image,rgba=map.getContext('2d').getImageData(0,0,map.width,map.height).data;
-      assert.ok(rgba.every((value,i)=>i%4!==3||value===255),'skin and textiles fully cover the volume');
+      assert.ok((box.max.x-box.min.x)*part.scale.x>.32,'depth is comparable to body width');
+      assert.ok(part.material.map.isDataTexture&&!part.material.transparent,'cloth has a solid dyed surface');
     }
-    if(appearance.costume===163)assert.ok(head.children.length>12,'the crest and hood trims have their own geometry');
+    if(appearance.costume===163)assert.ok(person.group.getObjectByName('kikalmo-costume-head-163').children.length>12,'the ornament is made of meshes');
 
     const canvas=canvasApi.createCanvas(220,220),scene=new Scene();
     const camera=new PerspectiveCamera(39,1,.12,25);
@@ -43,7 +43,28 @@ test('linked avatars keep opaque rounded heads and jackets with independent join
     person.update({...actor,moving:true,speed:4,walk:2},.016,.33);
     assert.ok(boot.position.distanceTo(before)>.025,'boot follows walking motion');
     person.update({...actor,ragdoll:{blend:1,hips:[0,.2,0],chest:[.4,.22,0],head:[.7,.24,0]}},.016,0);
-    assert.ok(new Vector3(0,1,0).applyQuaternion(head.parent.quaternion).x>.85,'head follows the fallen body');
+    assert.ok(new Vector3(0,1,0).applyQuaternion(person.group.getObjectByName('kikalmo-head').quaternion).x>.85,'head follows the fallen body');
     person.dispose();
   }
+});
+
+test('every registered catalogue item builds without a portrait and meshes are attached to the outfit',()=>{
+  for(const [slot,ids] of Object.entries(appearanceSchema)){
+    if(modeledItems[slot])assert.deepEqual(Object.keys(modeledItems[slot]).map(Number).sort((a,b)=>a-b),ids);
+    for(const id of ids){
+      assert.ok(itemDyes[id]?.length===2,`dyes for ${slot} ${id}`);
+      const model=createKikalmoModel({shape:1,[slot]:id});
+      const label=slot==='costume'?'costume-head':slot;
+      const part=model.group.getObjectByName(`kikalmo-${label}-${id}`);
+      assert.ok(part,`model for ${slot} ${id}`);
+      let triangles=0;
+      part.traverse(node=>{if(node.isMesh)triangles+=(node.geometry.index?.count??node.geometry.attributes.position.count)/3;});
+      assert.ok(triangles>0,`geometry for ${slot} ${id}`);
+      model.dispose();
+    }
+  }
+  const combined=createKikalmoModel({shape:2,costume:163,headwear:19,facewear:96,adornment:227,fabric:79});
+  for(const part of ['costume-head-163','costume-body-163','headwear-19','facewear-96','adornment-227','fabric-79'])
+    assert.ok(combined.group.getObjectByName('kikalmo-'+part),part);
+  combined.dispose();
 });
