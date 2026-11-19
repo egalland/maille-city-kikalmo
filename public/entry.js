@@ -25,9 +25,9 @@ retry.onclick=()=>{
 };
 const enfer=selectedWorld(canonical.href)==='enfer';
 if(enfer){
-  document.title='Maille City · Enfer · Pays noyonnais';
-  document.getElementById('loadingText').textContent='Ouverture du Pays noyonnais en laine…';
-  document.getElementById('city').setAttribute('aria-label','Pays noyonnais en laine, monde 3D à la troisième personne');
+  document.title='Maille City · Enfer';
+  document.getElementById('loadingText').textContent='Ouverture d’Enfer en laine…';
+  document.getElementById('city').setAttribute('aria-label','Enfer en laine, monde 3D à la troisième personne');
 }
 const crossing=readSectorTransfer(canonical);
 if(crossing?.target){

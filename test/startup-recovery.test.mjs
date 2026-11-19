@@ -40,3 +40,33 @@ test('a WebGL frame failure draws immediately with the compatible renderer',()=>
   assert.equal(view.mode,'canvas');
   assert.equal(view.aim(),1);
 });
+
+test('the CPU renderer gives the closer 3D mesh priority and renders data textures',async()=>{
+  const {createMeshRenderer}=await import('../public/mesh-renderer.js');
+  const {BoxGeometry,DataTexture,Mesh,MeshBasicMaterial,PerspectiveCamera,Scene}=await import('../public/three.js');
+  const pixels=new Uint8ClampedArray(2*2*4);
+  const canvas={getContext:()=>({
+    createImageData:(width,height)=>({data:new Uint8ClampedArray(width*height*4)}),
+    putImageData(image){
+      const center=(Math.floor(canvas.height/2)*canvas.width+Math.floor(canvas.width/2))*4;
+      pixels.set(image.data.subarray(center,center+4));
+    }
+  })};
+  const scene=new Scene(),camera=new PerspectiveCamera(50,1,.12,50);
+  const geo=new BoxGeometry(2,2,2);
+  const red=new DataTexture(new Uint8Array([255,0,0,255]),1,1);
+  const close=new Mesh(geo,new MeshBasicMaterial({map:red}));
+  const distant=new Mesh(geo,new MeshBasicMaterial({color:0x00ff00}));
+  close.position.z=-4;distant.position.z=-7;
+  scene.add(close,distant);
+  const renderer=createMeshRenderer(canvas);renderer.setSize(64,64);renderer.render(scene,camera,true);
+  assert.deepEqual([...pixels.slice(0,4)],[255,0,0,255]);
+  close.position.x=5;renderer.render(scene,camera,true);
+  assert.deepEqual([...pixels.slice(0,4)],[0,255,0,255]);
+});
+
+test('human pedestrians can animate without animal ears',async()=>{
+  const {createPuppet}=await import('../public/puppets3d.js');
+  const puppet=createPuppet('human');
+  assert.doesNotThrow(()=>puppet.update({speed:2,moving:true},1/60,1));
+});

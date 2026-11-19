@@ -40,7 +40,8 @@ test('the bundled Noyonnais map opens on usable streets and includes water, terr
   assert.ok(data.streets.some(r=>r.name?.toLowerCase().includes('parvis notre')));
   assert.ok(data.water.some(w=>w.elevation>0));
   assert.equal(SPAWN.key,'noyon');
-  assert.match(districtAt(SPAWN.x,SPAWN.y),/Noyon/);
+  assert.equal(districtAt(SPAWN.x,SPAWN.y),'Les Vieilles Mailles');
+  assert.ok(coreDestinations.every(p=>!/Noyon|Pontoise|Couarcy/i.test(p.label)));
   assert.equal(coreDestinations.length,11);
   for(const point of coreDestinations){
     assert.equal(blocked(point.x,point.y,.65),false,point.label);

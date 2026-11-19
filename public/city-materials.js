@@ -1,3 +1,4 @@
+import {frontageSigns} from './enfer-frontage.js';
 import {glassCloth, windowCloth, shopCloth, shopCloths, zincCloth} from './paris-applique.js';
 import {paintStreetFabric} from './street-fabric.js';
 import {paintKnit} from './wool-art.js';
@@ -75,6 +76,14 @@ export function cityMaterials(enfer=false){
   };
   for(let i=0;i<shopCloths.length;i++)material['shop'+i]=lambert(shopTile(i));
   if(enfer){
+    frontageSigns.forEach((item,index)=>{
+      material['sign'+index]=lambert(tile(256,64,(c,w,h)=>{
+        rect(c,0,0,w,h,item.color);c.strokeStyle='#ebc991';c.lineWidth=2;c.strokeRect(3,3,w-6,h-6);
+        c.fillStyle='#fff1cb';c.textAlign='center';c.textBaseline='middle';
+        c.font='bold 24px serif';c.fillText(item.name,w/2,26);
+        c.font='600 12px sans-serif';c.fillText(item.caption,w/2,47);
+      }));
+    });
     material.tileRoof=finish(tile(144,96,wovenTiles),.105,.94);
     for(const [key,depth] of [['pave',.052],['road',.021],['park',.055],['felt',.047],['water',.082]]){
       const old=material[key];

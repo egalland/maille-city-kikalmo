@@ -87,3 +87,12 @@ test('Legacy saves retain their displayed level and malformed or unknown inputs 
   assert.equal(wanted.restore({points: 1e12}, 1).points, 320);
   assert.equal(wanted.restore(null, NaN).level, 0);
 });
+
+test('Breaking line of sight lowers the pursuit sooner', () => {
+  const hidden = createWanted(), visible = createWanted();
+  hidden.add('hitOfficer', 0);
+  visible.add('hitOfficer', 0);
+  assert.equal(hidden.tick(9, true).points, 48);
+  assert.equal(hidden.tick(15, true).level, 0);
+  assert.equal(visible.tick(15).level, 1);
+});

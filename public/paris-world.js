@@ -2,7 +2,7 @@ import {yarnPalette} from './wool-art.js';
 // Local coordinates are metres, east and south. All map layers share the IGN projection in paris-data.
 import { buildings, streets, water, green, metadata } from './paris-data.js';
 
-import {enferStops,enferDistrict} from './enfer-places.js';
+import {enferStops,enferDistrict,enferStreet} from './enfer-places.js';
 import { terrainHeight, buildingGround } from './terrain-height.js';
 import { terraceProfiles } from './street-terraces.js';
 import { authoredWeaponDrops } from './drop-id.js';
@@ -451,13 +451,13 @@ export function moveBody(x,y,dx,dy,opt={}) {
   }
   return {x,y,hit:!!touched,touched,normalX:nx,normalY:ny};
 }
-export function cameraDistance(x,y,height,angle,distance,endHeight=height,destroyed=EMPTY) {
+export function cameraDistance(x,y,height,angle,distance,endHeight=height,destroyed=EMPTY,radius=.16) {
   const c=Math.cos(angle),s=Math.sin(angle), step=.35;
   const start=terrainHeight(x,y)+height,end=terrainHeight(x+c*distance,y+s*distance)+endHeight;
   for(let l=step;l<distance+step;l+=step){
     const dist=Math.min(l,distance),px=x+c*dist,py=y+s*dist;
     const z=start+(end-start)*dist/(distance||1)-terrainHeight(px,py);
-    if(z<.13||testPose(px,py,{radius:.16,height:z,camera:true,destroyed}))
+    if(z<.13||testPose(px,py,{radius,height:z,camera:true,destroyed}))
       return Math.max(.15,dist-step-.12);
   }
   return distance;
@@ -477,6 +477,7 @@ function closestRoad(x,y,range,predicate){
 export function streetAt(x,y){
   const seg=closestRoad(x,y,29,s=>!!s.name&&s.kind!=='motorway');
   if(!seg)return '';
+  if(isEnfer)return enferStreet(seg.road);
   return seg.road.name===seg.road.name.toUpperCase()
     ?seg.road.name.toLocaleLowerCase('fr').replace(/(^|[ -])\p{L}/gu,c=>c.toLocaleUpperCase('fr'))
     :seg.road.name;
@@ -653,7 +654,7 @@ for(const path of ordered){
   const road=path.road;
   if(road.kind==='path'||road.kind==='motorway'||road.level>0||path.length<21)continue;
   const major=road.kind==='primary'||/avenue|boulevard/i.test(road.name);
-  const country=isEnfer&&enferDistrict(...road.path[Math.floor(road.path.length/2)])==='Vallée de l’Oise';
+  const country=isEnfer&&enferDistrict(...road.path[Math.floor(road.path.length/2)])==='Vallée des Aulnes';
   const step=country?74:major?13:27;
   const kinds=country?['tree','tree','bollard','tree']:major?['tree','lamp','tree','bench','tree','postbox','lamp','tree','bin','hydrant','tree','bollard']:['tree','bin','lamp','bench','bollard','postbox','lamp','hydrant'];
   for(const side of [-1,1]){
@@ -679,6 +680,23 @@ if(isEnfer){
       const r=.38,tree={id:'wood-'+gx+'-'+gy,type:'tree',wooded:true,x,y,r,h:6.5,angle:seed%628/100};
       props.push(tree);decor.insert(tree,bounds([[x,y]],r));
     }
+}
+if(isEnfer){
+  for(const building of buildings){
+    if(building.kind!=='residential'||hash(building.id)%15)continue;
+    const [px,py]=building.poly[0],front=closestRoad(px,py,15,r=>!r.bridge&&r.kind!=='path'&&r.kind!=='motorway');
+    if(!front)continue;
+    const {angle,road}=front,c=Math.cos(angle),s=Math.sin(angle);
+    const offset=Math.sign((py-front.y)*c-(px-front.x)*s)*(road.w*.5+2.4);
+    const x=front.x-s*offset,y=front.y+c*offset;
+    if(destinations.some(d=>Math.hypot(d.x-x,d.y-y)<10))continue;
+    const halfLength=1.65,halfWidth=.16;
+    if(testPose(x,y,{angle,halfLength,halfWidth:.31}))continue;
+    if([...roadGrid.area(x,y,7)].some(seg=>lineDist2(x,y,seg.a,seg.b)<sq(seg.road.w*.5+1.18)))continue;
+    const type=['yard-wall','yard-fence','yard-gate'][hash(building.id+'yard')%3];
+    const item={id:'yard-'+building.id,type,x,y,angle,h:type==='yard-wall'?.9:1.55,r:1.7,halfLength,halfWidth};
+    props.push(item);decor.insert(item,bounds([[x,y]],item.r));
+  }
 }
 export function nearbyProps(x,y,radius){
   return [...decor.area(x,y,radius)].filter(o=>sq(x-o.x)+sq(y-o.y)<=sq(radius));
@@ -972,7 +990,7 @@ function mapView(w,h,player,full){
   }
   return {x:player.x,y:player.y,scale:Math.max(w/275,h/175)};
 }
-export function paintMap(canvas,player,{full=false,peers=[],vehicles=[],pickups=[],dpr=Math.min(2,globalThis.devicePixelRatio||1)}={}){
+export function paintMap(canvas,player,{full=false,peers=[],vehicles=[],pickups=[],tracked=null,dpr=Math.min(2,globalThis.devicePixelRatio||1)}={}){
   if(!canvas||!player)return;
   const rect=canvas.getBoundingClientRect?.(),w=Math.round(rect?.width||canvas.width),h=Math.round(rect?.height||canvas.height);
   if(!w||!h)return;
@@ -991,6 +1009,12 @@ export function paintMap(canvas,player,{full=false,peers=[],vehicles=[],pickups=
     c.beginPath();c.arc(x,y,r,0,TAU);c.fillStyle=color;c.fill();
     if(stroke){c.strokeStyle=stroke;c.lineWidth=1.7;c.stroke();}
   };
+  if(tracked){
+    const x=clamp(px(tracked.x),8,w-8),y=clamp(py(tracked.y),8,h-8);
+    c.beginPath();c.moveTo(px(player.x),py(player.y));c.lineTo(x,y);
+    c.setLineDash([4,4]);c.strokeStyle='#a3e1be';c.lineWidth=1.6;c.stroke();c.setLineDash([]);
+    circle(x,y,7,'#244a48','#a3e1be');
+  }
   // Keep pickup markers at a fixed screen size and below place names and players.
   for(const drop of pickups){
     const x=px(drop.x),y=py(drop.y),r=full?3.6:4.8;
@@ -1005,7 +1029,7 @@ export function paintMap(canvas,player,{full=false,peers=[],vehicles=[],pickups=
     for(const d of labels){
       const x=px(d.x),y=py(d.y),j=['etoile','neuilly','louvre'].includes(d.key)?15:-14;
       circle(x,y,3.2,'#ffd49e','#3e3442');
-      const label=isEnfer?(d.key==='noyon'?'Noyon':d.key==='gare'?'Gare':d.label):d.key==='sector'?d.label:d.key==='arche'?'La Défense':d.key==='etoile'?'Étoile':d.key==='maillot'?'Maillot':d.key==='neuilly'?'Neuilly':d.key==='concorde'?'Concorde':'Louvre';
+      const label=isEnfer?d.label:d.key==='sector'?d.label:d.key==='arche'?'La Défense':d.key==='etoile'?'Étoile':d.key==='maillot'?'Maillot':d.key==='neuilly'?'Neuilly':d.key==='concorde'?'Concorde':'Louvre';
       const width=c.measureText(label).width;let lx=clamp(x-width/2,3,w-width-3);
       c.fillStyle='#2a2633e8';c.fillRect(lx-3,y+j-7,width+6,14);c.fillStyle='#fff0d6';c.fillText(label,lx,y+j);
     }

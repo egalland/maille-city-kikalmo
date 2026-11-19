@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { localDatabase } from '../scripts/local-db.mjs';
 import { handleApi } from '../worker/game-api.js';
-import { authoredWeaponDrops, encodeDropId, gridDrop } from '../public/drop-id.js';
+import { authoredWeaponDrops, encodeDropId, gridDrop, officerDrop } from '../public/drop-id.js';
 import { createNet } from '../public/net.js';
 
 const spawn=authoredWeaponDrops[0];
@@ -103,4 +103,22 @@ test('A lost acknowledgement retries the same claim and the game receives one gr
   }finally{
     clients.forEach(n=>n.stop());await Promise.allSettled([...inFlight]);DB.close();
   }
+});
+
+test('Enfer officer loot needs a recent defeated NPC and has only one collector',async()=>{
+  const DB=localDatabase(),a=user('Mousse'),b=user('Ficelle');
+  const now=Date.now(),officer={id:'service-1',type:'police',x:126,y:175,health:0,healthAt:now-300};
+  const drop=officerDrop(officer,now);
+  const request=(u,operation,state,events=[])=>ok(api(DB,operation,{...u,map:'enfer',state,events}));
+  const claim=(u,n,state=pose(officer))=>request(u,'sync',state,[action(op(n),drop)]);
+  try{
+    await request(a,'join',pose(officer));
+    await request(b,'join',pose(officer));
+    assert.equal((await claim(a,1)).pickupResults[0].ok,false);
+    await DB.prepare("INSERT INTO mc_items (room,kind,item,seq,owner,data,at) VALUES ('enfer:public','npc',?,0,?,?,?)")
+      .bind(officer.id,a.id,JSON.stringify(officer),now).run();
+    assert.equal((await claim(a,2,{...pose(officer),x:officer.x+25})).pickupResults[0].ok,false);
+    const results=await Promise.all([claim(a,3),claim(b,3)]);
+    assert.deepEqual(results.map(result=>result.pickupResults[0].ok).sort(),[false,true]);
+  }finally{DB.close();}
 });

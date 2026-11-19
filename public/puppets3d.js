@@ -368,8 +368,10 @@ export function createPuppet(type='fox',color,seed=0){
       arm.rotation.x=-s*limb.splay;
       bone['elbow'+k].rotation.z=limb.elbow;
       if(s>0){const free=1-motion.effort;arm.rotation.z+=free*(1.11*shot+em*(2.4+.20*Math.sin(phaseIdle*13)));arm.rotation.x+=free*em*(.36+.16*Math.sin(phaseIdle*14));}
-      ear.rotation.x=s*(.085+.029*Math.sin(phase*2-.5)*rel)+turn*.07;
-      ear.rotation.z=-.025*(1-rel)*idleBreath+.069*Math.sin(phase*2-.38)*rel+.13*impact;
+      if(ear){
+        ear.rotation.x=s*(.085+.029*Math.sin(phase*2-.5)*rel)+turn*.07;
+        ear.rotation.z=-.025*(1-rel)*idleBreath+.069*Math.sin(phase*2-.38)*rel+.13*impact;
+      }
     }
     if(bone.cape){bone.cape.rotation.z=-.07*rel-.04*b*rel-.018*idleBreath;bone.cape.rotation.x=.045*a*rel+turn*.03;}
     if(bone.tail){

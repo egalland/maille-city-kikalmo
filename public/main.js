@@ -42,7 +42,7 @@ function saveLoadout(list) {
 }
 const weaponNames=new Map(weapons);
 const city=$('#city'),chat=$('#chat'),entry=$('#chatEntry');
-let settingsSound=read('sound.v2','true')==='true',panels=null,game=null, state={weapon:'pistol',ammo:12,health:100,wanted:0,wantedPoints:0,wantedProgress:0,ownedWeapons:loadout,district:isEnfer?'Noyon':'Place de l’Étoile'}, timer=0;
+let settingsSound=read('sound.v2','true')==='true',panels=null,game=null, state={weapon:'pistol',ammo:12,health:100,wanted:0,wantedPoints:0,wantedProgress:0,ownedWeapons:loadout,district:isEnfer?'Les Vieilles Mailles':'Place de l’Étoile'}, timer=0;
 let touchAimEnabled=read('touchAimAssist','true')==='true';
 
 const aimMarker=$('#touchAimMarker');
@@ -203,6 +203,9 @@ function onState(next){
   $('#primaryVerb').textContent=state.weapon==='fist'?'Frapper':'Tirer';
   showLife();
   showWanted();
+  const tracked=state.trackedDrop,tracker=$('#weaponTracker');
+  tracker.hidden=!tracked;
+  if(tracked){$('#trackArrow').style.transform='rotate('+tracked.angle+'deg)';$('#trackDistance').textContent=tracked.title+' · '+tracked.distance+' m';}
   showEquipment();
   const hint=$('#pickupHint'),drop=state.nearPickup;
   hint.hidden=!drop;

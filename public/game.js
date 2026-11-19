@@ -1,7 +1,8 @@
+import {officerDrop} from './drop-id.js';
 import {createStreetAudio} from './street-audio.js';
 import {reactionTo,reactionGoal} from './pedestrian-reaction.js';
 import {chassisDamage,chassisHealth,enginePower,damagedTires,vehiclePart,nextChassis} from './vehicle-damage.js';
-import { SPAWN, destinations, districtAt, streetAt, nearbyProps, blocked, contactAt, moveBody, supportAt, routeAgents, sampleTrafficRoute, trafficVehicleAt, trafficAlternatives, getTravelPoint, paintMap } from './paris-world.js';
+import { SPAWN, destinations, districtAt, streetAt, nearbyProps, blocked, contactAt, moveBody, supportAt, cameraDistance, routeAgents, sampleTrafficRoute, trafficVehicleAt, trafficAlternatives, getTravelPoint, paintMap } from './paris-world.js';
 import { nearbyDrivableStreets } from './paris-world.js';
 import {isEnfer} from './paris-data.js';
 import { planDispatch, planDistantDispatch, stepDispatch, dispatchDoor, footApproach, dispatchWorkSpot, stepDispatchFoot } from './dispatch-roads.js';
@@ -76,7 +77,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   addLoadout(loadout);
   const pursuit=createWanted(initialPursuit),pickupWait=new Map(),pendingPickup=new Set();
   p.wanted=pursuit.state().level;
-  let wantedEvent=null,actionNumber=0,nearPickup=null,pickups=[],pickupArea=[],pickupCenter=null,noticePickup=null;
+  let wantedEvent=null,actionNumber=0,nearPickup=null,pickups=[],pickupArea=[],pickupCenter=null,noticePickup=null,trackedDrop=null;
   const ammo=Object.fromEntries(Object.entries(weapons).map(([k,v])=>[k,v.mag]));
   let weapon='pistol',car=null,nearCar=null,speed=0,vx=0,vy=0,steer=0,turn=0,impact=0,shootPose=0,braking=false;
   let yaw=p.angle,pitch=.13,drag=null,freeLookUntil=0,cameraSnap=true,stickX=0,stickY=0,aimX=0,aimY=0,fireHeld=false,sprintHeld=false,paused=false;
@@ -138,7 +139,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     const wanted=pursuit.state();
     const traversalReady=!paused&&!car&&!incapacitated()&&traversal.grounded;
     const traversalAction=traversalReady?traversal.hint(p.angle,{destroyed,colliders:obstacles}):'jump';
-    const state={traversalReady,traversalAction,...life.state(epoch),health:Math.ceil(life.health),vehicleName:car?vehicleSpec(car.type).label:'',vehicleHealth:car?vehicleHealth(car):100,nearVehicleName:nearCar?vehicleSpec(nearCar.type).label:'',wanted:p.wanted,wantedPoints:wanted.points,wantedProgress:wanted.progress,wantedEvent,ownedWeapons:ownedWeapons(),nearPickup,district:district(),street:streetName,weapon,ammo:Number.isFinite(ammo[weapon])?ammo[weapon]:'∞',
+    const state={traversalReady,traversalAction,...life.state(epoch),health:Math.ceil(life.health),vehicleName:car?vehicleSpec(car.type).label:'',vehicleHealth:car?vehicleHealth(car):100,nearVehicleName:nearCar?vehicleSpec(nearCar.type).label:'',wanted:p.wanted,wantedPoints:wanted.points,wantedProgress:wanted.progress,wantedEvent,ownedWeapons:ownedWeapons(),nearPickup,trackedDrop:tracker(),district:district(),street:streetName,weapon,ammo:Number.isFinite(ammo[weapon])?ammo[weapon]:'∞',
       maxAmmo:Number.isFinite(weapons[weapon].mag)?weapons[weapon].mag:'∞',nearVehicle:!!nearCar,inVehicle:!!car,speed:Math.round(Math.abs(speed)*3.6),score,
       reloading:reloading>0,ready,graphics:view.mode||(view.available?'webgl':'unavailable')};
     const packed=JSON.stringify(state);if(force||packed!==lastState){onState(state);lastState=packed;}
@@ -279,6 +280,22 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     const dx=person.x-v.x,dy=person.y-v.y,c=Math.cos(v.angle),s=Math.sin(v.angle),shape=vehicleSpec(v.type);
     return Math.abs(dx*c+dy*s)<shape.halfLength+margin&&Math.abs(dy*c-dx*s)<shape.halfWidth+margin;
   }
+  function getAvailableDrops(){return availableDrops([...weaponDrops,...officerPickups()]);}
+  function officerPickups(){
+    if(!isEnfer)return [];
+    const out=[];
+    for(const npc of npcShared.values()){
+      const drop=officerDrop(npc,epoch);
+      if(drop)out.push(drop);
+    }
+    return out;
+  }
+  function tracker(){
+    if(!trackedDrop)return null;
+    const distance=Math.round(dist(p,trackedDrop));
+    const angle=deltaAngle(yaw,Math.atan2(trackedDrop.y-p.y,trackedDrop.x-p.x));
+    return {title:weaponLabels[trackedDrop.weapon],distance,angle:Math.round(angle*180/Math.PI)};
+  }
   function availableDrops(list){
     const shared=net?.world?.().pickups||{};
     return list.filter(drop=>{
@@ -309,6 +326,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         return;
       }
       nearPickup=null;
+      if(trackedDrop?.id===drop.id)trackedDrop=null;
       const isNew=!owned.has(drop.weapon);
       owned.add(drop.weapon);
       ammo[drop.weapon]=weapons[drop.weapon].mag;
@@ -330,7 +348,8 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     if(!pickupCenter||dist(pickupCenter,p)>12){
       pickupCenter={x:p.x,y:p.y};pickupArea=nearbyWeaponDrops(p.x,p.y,115);
     }
-    pickups=availableDrops(pickupArea);
+    pickups=availableDrops([...pickupArea,...officerPickups().filter(drop=>dist(drop,p)<115)]);
+    if(trackedDrop&&!availableDrops([trackedDrop]).length)trackedDrop=null;
     nearPickup=null;
     if(paused||car||incapacitated()||!traversal.grounded||p.lift>.8){noticePickup=null;return;}
     let closest=null,closestDistance=pickupRadius;
@@ -844,7 +863,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       ammo[k]=Number.isFinite(w.mag)?Math.floor(finite(s.ammo?.[k],w.mag,0,w.mag)):Infinity;
     }
     reloading=weapon===s.weapon?finite(s.reloading,0,0,weapons[weapon].reload):0;
-    yaw=safeAngle(Number.isFinite(s.yaw)?s.yaw:angle);pitch=finite(s.pitch,.13,-.47,1.35);
+    yaw=safeAngle(Number.isFinite(s.yaw)?s.yaw:angle);pitch=finite(s.pitch,.13,-.32,1.05);
     const ownerChain=ride&&Array.isArray(s.vehicle.previousOwners)?s.vehicle.previousOwners:[];
     const previousOwners=[...new Set([s.vehicle?.owner,...ownerChain].filter(id=>typeof id==='string'&&id.length<=64))].slice(0,4);
     car=ride;
@@ -1195,14 +1214,16 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     popTick-=dt;if(popTick<=0){syncPeers();if(p.wanted)dispatchPursuit();popTick=.24;}
     population(dt);
     if(!drag && Math.abs(driftX)+Math.abs(driftY)>.002){
-      yaw+=driftX*dt;pitch=clamp(pitch+driftY*dt,-.47,1.35);
+      yaw+=driftX*dt;pitch=clamp(pitch+driftY*dt,-.32,1.05);
       driftX*=Math.exp(-12*dt);driftY*=Math.exp(-12*dt);
     }
     if(keys.has('j')||keys.has('l')){yaw+=(keys.has('l')?1:-1)*1.8*dt;meleeCameraAim=true;freeLookUntil=time+2.5;}
     cooldown=Math.max(0,cooldown-dt);contactLock=Math.max(0,contactLock-dt);
     impact=Math.max(0,impact-dt*3);shootPose=Math.max(0,shootPose-dt*4.5);
     if(reloading){reloading=Math.max(0,reloading-dt);if(!reloading)ammo[weapon]=weapons[weapon].mag;}
-    const wanted=pursuit.tick(time);p.wanted=wanted.level;
+    const spotted=actors.some(a=>!a.down&&!a.stunned&&['police','swat'].includes(a.type)&&dist(a,p)<30&&
+      cameraDistance(p.x,p.y,1.4,Math.atan2(a.y-p.y,a.x-p.x),dist(a,p),1.45,destroyed)>=dist(a,p)-.45);
+    const wanted=pursuit.tick(time,isEnfer&&!spotted);p.wanted=wanted.level;
     const medic=!car&&p.lift<1.2&&actors.some(o=>o.type==='medic'&&!o.stunned&&dist(o,p)<2.7);
     if(life.tick(epoch,medic)){
       acceptShotsFrom=life.snapshot().protectedUntil;
@@ -1251,7 +1272,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       driver:!e.noDriver&&!!(e.self||e.peer||e.occupied||e.routeId)}:e)},dt,time);cameraSnap=false;drawAimLock();
     networkTick-=dt;if(networkTick<=0){publish();networkTick=.12;}
     hudTick-=dt;if(hudTick<=0){sendHud();hudTick=.12;}
-    mapTick-=dt;if(mapTick<=0){mapTick=.16;if(minimap)paintMap(minimap,p,{full:false,peers:remotes,vehicles:cars,pickups});}
+    mapTick-=dt;if(mapTick<=0){mapTick=.16;if(minimap)paintMap(minimap,p,{full:false,peers:remotes,vehicles:cars,pickups,tracked:trackedDrop});}
     frameId=requestAnimationFrame(frame);
   }
   function selectWeapon(kind){
@@ -1305,9 +1326,9 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     if(drag?.id===e.pointerId){
       const dx=e.clientX-drag.x,dy=e.clientY-drag.y,sens=e.pointerType==='touch'?.006:.0054;
       const dYaw=clamp(-dx*sens,-.6,.6),dPitch=clamp(dy*sens*.6,-.26,.26),eventTime=performance.now();
-      yaw+=dYaw;if(dYaw)meleeCameraAim=true;pitch=clamp(pitch+dPitch,-.47,1.35);
+      yaw+=dYaw;if(dYaw)meleeCameraAim=true;pitch=clamp(pitch+dPitch,-.32,1.05);
       const elapsed=clamp((eventTime-drag.t)/1000,.015,.14);
-      driftX=clamp(dYaw/elapsed,-3,3)*.36;driftY=clamp(dPitch/elapsed,-2,2)*.32;
+      driftX=clamp(dYaw/elapsed,-3,3)*.14;driftY=clamp(dPitch/elapsed,-2,2)*.12;
       drag.x=e.clientX;drag.y=e.clientY;drag.t=eventTime;freeLookUntil=time+2.1;
     }else if(e.pointerType!=='touch')aimPointer={x:e.clientX,y:e.clientY};
   }
@@ -1317,10 +1338,21 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   }
   const pointerLeave=()=>{if(!fireHeld)aimPointer=null;};
   const menu=e=>e.preventDefault();
+  let wheelAt=-Infinity;
+  function cycleWeapon(event){
+    if(paused||incapacitated()||event.ctrlKey||event.metaKey||!event.deltaY)return;
+    event.preventDefault();
+    const now=performance.now();
+    if(now-wheelAt<135)return;
+    const list=ownedWeapons();
+    if(list.length<2)return;
+    wheelAt=now;
+    equipOwned(list[(list.indexOf(weapon)+Math.sign(event.deltaY)+list.length)%list.length]);
+  }
   const visibility=()=>{if(document.hidden)resetInputs();else{previousFrame=performance.now();popTick=0;}};
   window.addEventListener('keydown',down);window.addEventListener('keyup',up);window.addEventListener('blur',resetInputs);document.addEventListener('visibilitychange',visibility);
   canvas.addEventListener('pointerdown',pointerDown);canvas.addEventListener('pointerup',pointerUp);canvas.addEventListener('pointercancel',pointerUp);
-  canvas.addEventListener('pointermove',pointerMove);canvas.addEventListener('pointerleave',pointerLeave);canvas.addEventListener('contextmenu',menu);
+  canvas.addEventListener('pointermove',pointerMove);canvas.addEventListener('pointerleave',pointerLeave);canvas.addEventListener('contextmenu',menu);canvas.addEventListener('wheel',cycleWeapon,{passive:false});
   const detachEvent=net?.onEvent?.(e=>{
     const d=e.data||{};
     if(e.type==='melee'&&e.player!==net?.id&&Object.hasOwn(meleeMoves,d.kind)&&Math.abs(epoch-d.started)<1400&&dist(d,p)<PEER_RANGE){
@@ -1419,11 +1451,13 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     getWeaponAmmo(id){return owned.has(id)?ammo[id]:undefined;},
     getPosition(){return {x:p.x,y:p.y,angle:p.angle,district:district()};},
     getRoadMotion(){return paused||incapacitated()?null:roadMotion;},
-    drawFullMap(target){paintMap(target,p,{full:true,peers:net?.peers?.()||remotes,vehicles:cars,pickups:availableDrops(weaponDrops)});},
+    getAvailableDrops,
+    trackDrop(drop){trackedDrop=drop;sendHud(true);},
+    drawFullMap(target){paintMap(target,p,{full:true,peers:net?.peers?.()||remotes,vehicles:cars,pickups:getAvailableDrops(),tracked:trackedDrop});},
     destroy(){isRunning=false;clearAimLock();cancelAnimationFrame(frameId);detachEvent?.();view.dispose();
       window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);window.removeEventListener('blur',resetInputs);document.removeEventListener('visibilitychange',visibility);
       canvas.removeEventListener('pointerdown',pointerDown);canvas.removeEventListener('pointermove',pointerMove);canvas.removeEventListener('pointerup',pointerUp);
-      canvas.removeEventListener('pointercancel',pointerUp);canvas.removeEventListener('pointerleave',pointerLeave);canvas.removeEventListener('contextmenu',menu);audio.dispose();
+      canvas.removeEventListener('pointercancel',pointerUp);canvas.removeEventListener('pointerleave',pointerLeave);canvas.removeEventListener('contextmenu',menu);canvas.removeEventListener('wheel',cycleWeapon);audio.dispose();
     }
   };
 }

@@ -30,6 +30,7 @@ const shortcuts = [
   ['Utiliser une trousse de secours', ['H']],
   ['Entrer ou sortir d’un véhicule', ['E']],
   ['Roue d’armes', ['Tab']],
+  ['Changer d’arme', ['Molette']],
   ['Émotes', ['B']],
   ['Ouvrir le chat', ['T']],
   ['Plan de la ville', ['M']]
@@ -254,7 +255,7 @@ export function createPanels({game,net,editLayout,openAvatar,getState,selectWeap
     ring.addEventListener('pointercancel',cancel);ring.addEventListener('lostpointercapture',cancel);
   }
   function mapPanel() {
-    const sheet=frame('map','Carte',isEnfer?'Enfer · Pays noyonnais':metadata.sector?.name||'Paris et petite couronne');
+    const sheet=frame('map','Carte',isEnfer?'Enfer':metadata.sector?.name||'Paris et petite couronne');
     const pad=node('div','mc-body');
     const nav=node('div','gp-mode');nav.setAttribute('role','group');nav.setAttribute('aria-label','Échelle du plan');
     const localButton=button('Plan local','',()=>switchMap('local'));
@@ -277,28 +278,36 @@ export function createPanels({game,net,editLayout,openAvatar,getState,selectWeap
       const summary=node('summary','','Localiser une arme à trouver');
       const label=fieldLabel('Arme recherchée','mc-find-weapon');
       const field=node('select','mc-input');field.id='mc-find-weapon';
+      const nearest=node('option','','Arme manquante la plus proche');nearest.value='*';field.append(nearest);
+      const missingIds=new Set(missing.map(it=>it.id));
       for(const it of missing){
         const option=node('option','',it.name);option.value=it.id;field.append(option);
       }
       const result=node('p','mc-depot-result');result.setAttribute('aria-live','polite');
+      let candidate;
+      const follow=button('Suivre sur la mini-carte','mc-secondary',()=>{
+        if(candidate){game.trackDrop?.(candidate);close();}
+      });
       function findDrop(){
         if(!finder.open)return;
         const from=game.getPosition(),cooldowns=net.world?.()?.pickups||{},now=net.serverTime?.()??Date.now();
         let closest=null,distance=Infinity;
-        for(const drop of weaponDrops){
-          if(drop.weapon!==field.value||cooldowns[drop.id]>now)continue;
+        for(const drop of game.getAvailableDrops?.()||weaponDrops){
+          const matches=field.value==='*'?missingIds.has(drop.weapon):drop.weapon===field.value;
+          if(!matches||cooldowns[drop.id]>now)continue;
           const reach=Math.hypot(drop.x-from.x,drop.y-from.y);
           if(reach<distance){closest=drop;distance=reach;}
         }
+        candidate=closest;follow.disabled=!candidate;
         if(!closest){result.textContent='Aucun dépôt disponible dans ce secteur.';return;}
         const street=streetAt(closest.x,closest.y),district=districtAt(closest.x,closest.y);
         result.textContent=[street,street===district?'':district,Math.round(distance)+' m'].filter(Boolean).join(' · ');
       }
       field.addEventListener('change',findDrop);finder.addEventListener('toggle',findDrop);
-      finder.append(summary,label,field,result);
+      finder.append(summary,label,field,result,follow);
     }else finder.hidden=true;
     const travel=node('div','mc-travel');
-    const label=fieldLabel(isEnfer?'Destinations du Noyonnais':'Voyage rapide sur l’axe historique','mc-travel-target');
+    const label=fieldLabel(isEnfer?'Destinations d’Enfer':'Voyage rapide sur l’axe historique','mc-travel-target');
     const row=node('form','mc-travel-row');
     const target=node('select','mc-input');target.id='mc-travel-target';
     for(const destination of coreDestinations){
@@ -370,7 +379,7 @@ export function createPanels({game,net,editLayout,openAvatar,getState,selectWeap
     }
     const {repeatWindow, repeatStep, maxRepeatBonus, calmDelay, decayRate}=wantedTuning;
     rules.append(pointsList,node('p','mc-guide-aside','La même infraction répétée en moins de '+repeatWindow+' s rapporte '+Math.round(repeatStep*100)+' % de plus par répétition, jusqu’à +'+Math.round(maxRepeatBonus*100)+' %.'));
-    alert.append(levels,node('p','mc-guide-aside','Après '+calmDelay+' s sans infraction, l’alerte diminue de '+decayRate.toLocaleString('fr-FR')+' points par seconde.'),rules);
+    alert.append(levels,node('p','mc-guide-aside','Après '+calmDelay+' s sans infraction, l’alerte baisse. À Enfer, échappe à la vue des policiers pour la faire baisser dès 10 s.'),rules);
 
     const controls=node('details','mc-guide-details');
     controls.append(node('summary','','Commandes clavier et souris'),keyRows());
@@ -407,8 +416,8 @@ export function createPanels({game,net,editLayout,openAvatar,getState,selectWeap
     const display=node('div','mc-option-row');
     const info=node('span','mc-option-label','Rendu actif');
     const graphics=state().graphics;
-    display.append(info,node('span','mc-render-mode',graphics==='canvas'?'Secours 2D':graphics==='webgl'?'3D WebGL':'Initialisation'));
-    if(graphics==='canvas') display.append(button('Relancer en 3D','mc-secondary',()=>location.replace(renderModeURL(location.href))));
+    display.append(info,node('span','mc-render-mode',graphics==='canvas'?'Secours 2D':graphics==='webgl'?'3D WebGL':graphics==='mesh'?'3D sur processeur':'Initialisation'));
+    if(graphics==='canvas'||graphics==='mesh') display.append(button('Relancer en 3D','mc-secondary',()=>location.replace(renderModeURL(location.href))));
     const confirm=node('button','mc-primary','Enregistrer');confirm.type='submit';
     const actions=node('div','mc-form-actions');
     const controls=button('Commandes','mc-secondary',()=>open('help'));

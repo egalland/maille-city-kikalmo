@@ -45,16 +45,32 @@ export const authoredWeaponDrops=Object.freeze([
   ["smg",7183.7,3012.1],    // Notre-Dame
   ["yarn",6835.8,-493.9]    // Sacré-Cœur
 ].map(([weapon,x,y])=>Object.freeze({id:encodeDropId(weapon,x,y),weapon,x,y})));
+export const enferWeaponDrops=Object.freeze([
+  ['yarn',-29.4,-267.1],['smg',-43.1,-271.5],['shotgun',75.1,-280.2]
+].map(([weapon,x,y])=>Object.freeze({id:encodeDropId(weapon,x,y),weapon,x,y})));
+const enferWeaponIds=new Set(enferWeaponDrops.map(p=>p.id));
 const authoredWeaponIds=new Set(authoredWeaponDrops.map(p=>p.id));
 export function isActiveGridDrop(x,y){
   const ix=Math.floor(x/dropCellSize),iy=Math.floor(y/dropCellSize);
   if(mixDropSeed(ix,iy,3)%4===0 || Math.hypot(x-3096.44,y-561.04)<125)return false;
   return authoredWeaponDrops.every(p=>Math.hypot(x-p.x,y-p.y)>=68);
 }
-export function isEligibleDropId(id){
+export function isEligibleDropId(id,enfer=false){
   const p=decodeDropId(id);
   if(!p)return false;
-  if(authoredWeaponIds.has(id))return true;
+  if((enfer?enferWeaponIds:authoredWeaponIds).has(id))return true;
   if(p.x<-14700||p.x>30800||p.y<-19000||p.y>29000)return false;
   return isActiveGridDrop(p.x,p.y) && gridDrop(Math.floor(p.x/dropCellSize),Math.floor(p.y/dropCellSize)).id===id;
+}
+
+export const officerLootWindow=24000;
+export const officerWeapons=Object.freeze({police:'smg',swat:'shotgun'});
+export function officerDrop(state,now){
+  const weapon=officerWeapons[state?.type],stamp=Math.round(state?.healthAt);
+  if(!weapon||state.health!==0||!Number.isFinite(stamp)||now>=stamp+officerLootWindow)return null;
+  return {id:'lo-'+state.id+':'+stamp.toString(36),weapon,x:state.x,y:state.y};
+}
+export function decodeOfficerDrop(id){
+  const match=/^lo-([\w:-]{1,54}):([0-9a-z]{7,11})$/.exec(id);
+  return match?{npc:match[1],stamp:parseInt(match[2],36)}:null;
 }

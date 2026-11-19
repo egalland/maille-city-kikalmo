@@ -64,11 +64,11 @@ export function createWanted(initialSnapshot = null, startTime = 0) {
     return state();
   }
 
-  function advance(time) {
+  function advance(time,hidden=false) {
     const now = Math.max(clock, finite(time, clock));
     if (points > 0 && lastCrimeTime !== null) {
-      const start = Math.max(clock, lastCrimeTime + wantedTuning.calmDelay);
-      if (now > start) points = Math.max(0, points - (now - start) * wantedTuning.decayRate);
+      const start = Math.max(clock, lastCrimeTime + (hidden?10:wantedTuning.calmDelay));
+      if (now > start) points = Math.max(0, points - (now - start) * wantedTuning.decayRate * (hidden?2.65:1));
       if (points === 0) {
         clear(now);
         return;
@@ -77,8 +77,8 @@ export function createWanted(initialSnapshot = null, startTime = 0) {
     clock = now;
   }
 
-  function tick(time) {
-    advance(time);
+  function tick(time,hidden=false) {
+    advance(time,hidden);
     return state();
   }
 

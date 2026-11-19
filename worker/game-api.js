@@ -8,7 +8,7 @@ import {cleanTrafficPacket} from '../public/traffic-sync.js';
 import {normalizeAppearance} from '../public/kikalmo-schema.js';
 import {encodeRoster} from '../public/roster-wire.js';
 import {stateReferences,restoreStateFields} from '../public/state-wire.js';
-import { decodeDropId, isEligibleDropId } from '../public/drop-id.js';
+import { decodeDropId, isEligibleDropId, decodeOfficerDrop, officerLootWindow } from '../public/drop-id.js';
 import {prepareFire,readFireSession,rememberFirePose,recordFire} from './fire-netcode.js';
 
 // The Worker owns these tables. They are initialized once per D1 binding and isolate.
@@ -280,23 +280,37 @@ async function join(db,b,now,room) {
 }
 const airbornePickup=new Set(['jump','fall','climb','vault']);
 function recordPickup(stmts,q,{room,id,token,name,op,item,weapon,state,now}){
-  const p=decodeDropId(item);
-  if(!p||p.weapon!==weapon||!isEligibleDropId(item))return false;
+  const p=decodeDropId(item),officer=decodeOfficerDrop(item);
+  if(officer){
+    if(room!==worldKeys.enfer||!['smg','shotgun'].includes(weapon))return false;
+  }else if(!p||p.weapon!==weapon||!isEligibleDropId(item,room===worldKeys.enfer))return false;
   const match=/^pick-([0-9a-z]{7,11})-([0-9a-z]{1,10})$/.exec(op);
   if(!match)return false;
   const issued=parseInt(match[1],36);
   const fresh=issued>=now-PICKUP_REQUEST_AGE&&issued<=now+2500;
   if(!fresh)return true; // An expired operation can only read its original receipt.
-  const close=Number.isFinite(state.x)&&Number.isFinite(state.y)&&!state.vehicle&&state.health!==0&&!(state.downUntil>now)&&(state.lift||0)<=.8&&!airbornePickup.has(state.motion)&&Math.hypot(state.x-p.x,state.y-p.y)<=4;
+  const close=Number.isFinite(state.x)&&Number.isFinite(state.y)&&!state.vehicle&&state.health!==0&&!(state.downUntil>now)&&(state.lift||0)<=.8&&!airbornePickup.has(state.motion)&&(officer||Math.hypot(state.x-p.x,state.y-p.y)<=4);
   // Reads, receipt and winner event share one D1 batch transaction. Another player
   // can enter only after it commits and will see the winning availability timestamp.
-  stmts.push(q(`INSERT OR IGNORE INTO mc_pickup_claims (room,player,op,item,ok,available,at)
-    SELECT ?,?,?,?, (previous<=? AND ?),
-      CASE WHEN previous>? THEN previous WHEN ? THEN ? ELSE 0 END, ?
-    FROM (SELECT COALESCE((SELECT available FROM mc_pickup_claims
-      WHERE room=? AND item=? AND ok=1 ORDER BY available DESC LIMIT 1),0) AS previous)
+  const lootGuard=officer?`AND EXISTS (
+    SELECT 1 FROM mc_items WHERE room=? AND kind='npc' AND item=?
+      AND json_extract(data,'$.health')=0 AND json_extract(data,'$.healthAt')=?
+      AND json_extract(data,'$.healthAt')>?
+      AND json_extract(data,'$.type')=?
+      AND (json_extract(data,'$.x')-?)*(json_extract(data,'$.x')-?)+
+          (json_extract(data,'$.y')-?)*(json_extract(data,'$.y')-?)<=16
+  )`:'';
+  const lootArgs=officer?[room,officer.npc,officer.stamp,now-officerLootWindow,
+    weapon==='smg'?'police':'swat',state.x??0,state.x??0,state.y??0,state.y??0]:[];
+  stmts.push(q(`WITH receipt AS (
+    SELECT COALESCE((SELECT available FROM mc_pickup_claims
+      WHERE room=? AND item=? AND ok=1 ORDER BY available DESC LIMIT 1),0) AS previous,
+      (? ${lootGuard}) AS allowed
+  ) INSERT OR IGNORE INTO mc_pickup_claims (room,player,op,item,ok,available,at)
+    SELECT ?,?,?,?, (previous<=? AND allowed),
+      CASE WHEN previous>? THEN previous WHEN allowed THEN ? ELSE 0 END, ? FROM receipt
     WHERE EXISTS (SELECT 1 FROM mc_members WHERE room=? AND id=? AND secret=? AND seen>?)`,
-    room,id,op,item,now,close?1:0,now,close?1:0,now+PICKUP_COOLDOWN,now,room,item,room,id,token,now-GONE));
+    room,item,close?1:0,...lootArgs,room,id,op,item,now,now,now+PICKUP_COOLDOWN,now,room,id,token,now-GONE));
   stmts.push(q(`INSERT OR IGNORE INTO mc_events (room,player,op,name,type,data,at)
     SELECT room,player,op,?,'pickup',json_object('id',item,'weapon',?,'availableAt',available),at
     FROM mc_pickup_claims WHERE room=? AND player=? AND op=? AND item=? AND ok=1 AND at=?`,

@@ -1,3 +1,4 @@
+import {createMeshRenderer} from './mesh-renderer.js';
 import {enferLighting} from './enfer-lighting.js';
 import {isEnfer} from './paris-data.js';
 import {rendererFallback} from './renderer-fallback.js';
@@ -44,10 +45,13 @@ export function createView(canvas,spawn,onNotice) {
   const forceCompatible=typeof location!=='undefined'&&new URLSearchParams(location.search).get('rendu')==='secours';
   return rendererFallback(
     fallback=>createWebGLView(canvas,spawn,fallback),
-    ()=>createCanvasView(canvas,spawn,onNotice),
+    ()=>{
+      try{return mountWebGLView(canvas,spawn,()=>{},createMeshRenderer(canvas));}
+      catch(error){console.warn('Rendu 3D logiciel',error);return createCanvasView(canvas,spawn,onNotice);}
+    },
     {forceCompatible,report:error=>{
       console.warn('Maille City · rendu compatible',error);
-      onNotice?.('Rendu 3D indisponible · secours 2D');
+      onNotice?.('Accélération indisponible · 3D sur processeur');
     }}
   );
 }
@@ -74,8 +78,8 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     const sun=new THREE.DirectionalLight(0xffe2ad,1.92);sun.position.set(Math.cos(sunBearing),1.06,Math.sin(sunBearing));scene.add(sun);
     const fill=new THREE.DirectionalLight(0xd8ebea,.69);fill.position.set(-.6,.47,-.9);scene.add(fill);
   }
-  const city=createCity3D(scene), pickupDisplay=createPickupDisplay(scene);
-  const camera=new THREE.PerspectiveCamera(58,1,.08,6300);
+  const city=createCity3D(scene,{software:renderer.software}), pickupDisplay=createPickupDisplay(scene);
+  const camera=new THREE.PerspectiveCamera(51,1,.12,6300);
   const shadows=makeShadow();scene.add(shadows);
   const shadowTransform=new THREE.Object3D(), projection=new THREE.Vector3(), cameraAim=new THREE.Vector3();
   let width=0,height=0, cameraArm=5.6, camX=spawn.x,camY=spawn.y, lastPropTick=-100,props=[],inFrame=0,slowCount=0,scale=touch?.94:1, active=true;
@@ -89,7 +93,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     if(w===width&&h===height)return;
     width=w;height=h;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,touch?1.15:1.4)*scale);
-    renderer.setSize(w,h,false);camera.aspect=w/h;camera.fov=touch&&w<h?68:58;camera.updateProjectionMatrix();
+    renderer.setSize(w,h,false);camera.aspect=w/h;camera.fov=w<h?62:Math.min(53,2*Math.atan(Math.tan(80*Math.PI/360)/(w/h))*180/Math.PI);camera.updateProjectionMatrix();
   }
   function entity(e,dt,t){
     const vehicle=!!e.isCar,key=e.renderId||e.id;
@@ -107,7 +111,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
       g.rotation.z=Math.atan(slope.x*c+slope.y*s);g.rotation.x=-Math.atan(-slope.x*s+slope.y*c);
     }
     g.visible=true;
-    if(lighting){
+    if(lighting&&!renderer.software){
       const casts=e.self||Math.hypot(e.x-camX,e.y-camY)<42;
       if(item.casts!==casts){
         item.casts=casts;
@@ -169,8 +173,11 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
       effects.push({mesh:m,life:(explosion?1.3:.65)-age,max:explosion?1.3:.65,vx,vy:vy-7*age,vz});
     }
   }
+  let cpuFrame=-Infinity;
   function render(state,dt,time) {
     if(!active || !canvas.isConnected)return;
+    if(renderer.software&&!state.snap&&time-cpuFrame<.047)return;
+    if(renderer.software){dt=Math.min(.10,Math.max(dt,time-cpuFrame));cpuFrame=time;}
     resize();inFrame++;
     const {p,car,yaw,pitch,destroyed}=state;
     // Tighten the boom immediately at walls, extend it gently after clearing a corner.
@@ -183,7 +190,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     camX+=(p.x-camX)*f;camY+=(p.y-camY)*f;
     const goal=follow+(car?Math.min(2.25,Math.abs(state.speed)*.065):0),wantedY=lift+pitch*2.8,back=yaw+Math.PI;
     const ground=terrainHeight(camX,camY),groundBehind=terrainHeight(camX+Math.cos(back)*goal,camY+Math.sin(back)*goal);
-    const available=clamp(cameraDistance(camX,camY,focusY,back,goal,wantedY,destroyed),.30,goal);
+    const available=clamp(cameraDistance(camX,camY,focusY,back,goal,wantedY,destroyed,.31),.24,goal);
     cameraArm=snap?available:Math.min(available,cameraArm+(available-cameraArm)*blend(6,dt));
     const armHeight=ground+focusY+(groundBehind-ground+wantedY-focusY)*cameraArm/goal;
     camera.position.set(camX+Math.cos(back)*cameraArm,armHeight+.12,camY+Math.sin(back)*cameraArm);
@@ -196,7 +203,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     city.update(p,time,{props,destroyed,propHealth:state.propHealth,propDamageRevision:state.propDamageRevision});
     pickupDisplay.update(state.pickups,p,time);
     const candidates=state.entities.filter(e=>Number.isFinite(e.x)&&Number.isFinite(e.y)).sort((a,b)=>distance(a,p)-distance(b,p));
-    const lowPower=scale<.81;
+    const lowPower=renderer.software||scale<.81;
     const carLimit=lowPower?4:touch?6:8, pedestrianLimit=lowPower?5:touch?7:9;
     let npcs=0,cars=0,index=0;
     blood.begin(time,state.epoch??Date.now());bloodMesh.begin();
@@ -232,7 +239,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
       if(e.vy!==undefined){e.vy-=7*dt;e.mesh.position.x+=e.vx*dt;e.mesh.position.z+=e.vz*dt;e.mesh.position.y=Math.max(terrainHeight(e.mesh.position.x,e.mesh.position.z)+.02,e.mesh.position.y+e.vy*dt);if(!e.fiber)e.mesh.rotation.z+=dt*6;}
       e.mesh.material.opacity=Math.min(1,e.life*(e.fiber?10:5));
     }
-    renderer.render(scene,camera);
+    renderer.render(scene,camera,snap);
     if(dt>.049)slowCount++;else slowCount=Math.max(0,slowCount-.5);
     if(slowCount>55 && scale>.68){scale=Math.max(.68,scale-.12);width=0;slowCount=0;}
   }
@@ -256,7 +263,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   }
   function contextLost(event){event.preventDefault();if(active)onLost(new Error('Contexte WebGL interrompu.'));}
   canvas.addEventListener('webglcontextlost',contextLost);
-  return {available:true,mode:'webgl',render,aim,projectTarget,effect,dispose(){
+  return {available:true,mode:renderer.software?'mesh':'webgl',render,aim,projectTarget,effect,dispose(){
     active=false;canvas.removeEventListener('webglcontextlost',contextLost);labels.remove();
     for(const item of models.values())item.object.dispose?.();
     bloodMesh.dispose();pickupDisplay.dispose();city.dispose?.();

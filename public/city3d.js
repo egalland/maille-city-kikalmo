@@ -1,3 +1,4 @@
+import {frontageSigns,frontageStyle} from './enfer-frontage.js';
 import {canopyDyes} from './street-props-art.js';
 import {cityViewRange,streetViewRange} from './view-range.js';
 import {streetFabric} from './street-fabric.js';
@@ -286,12 +287,38 @@ function facadeRelief(b,a,d,len,outward,bays,floors,eaves,index,entry){
     }
   }
 }
+function storefront(b,a,d,outward,height,index){
+  const len=Math.hypot(d[0]-a[0],d[1]-a[1]),item=frontageSigns[index];
+  if(len<3.6||height<2.5)return;
+  const dx=(d[0]-a[0])/len,dz=(d[1]-a[1])/len;
+  const p=(k,off,h)=>[a[0]+dx*k+dz*outward*off,h,a[1]+dz*k-dx*outward*off];
+  const center=len*.5,bay=Math.min(4.1,len*.84),l=center-bay*.5,r=center+bay*.5,cap=Math.min(3.15,height-.10);
+  b.face('felt',p(l,.026,.08),p(r,.026,.08),p(r,.026,cap+.05),p(l,.026,cap+.05),item.color);
+  b.face('felt',p(l+.15,.048,.69),p(r-.15,.048,.69),p(r-.15,.048,cap-.55),p(l+.15,.048,cap-.55),'#47615d');
+  for(const x of [l+.16,center-.36,center+.36,r-.16])
+    b.face('felt',p(x-.034,.063,.52),p(x+.034,.063,.52),p(x+.034,.063,cap-.53),p(x-.034,.063,cap-.53),'#e4ccaa');
+  const low=p(l+.09,.074,cap-.49),right=p(r-.09,.074,cap-.49),upper=p(r-.09,.074,cap-.01),left=p(l+.09,.074,cap-.01);
+  b.face('sign'+index,low,right,upper,left,'#ffffff',outward<0?[[0,0],[1,0],[1,1],[0,1]]:[[1,0],[0,0],[0,1],[1,1]]);
+  if(index===2)return;
+  const y=cap-.52,steps=10;
+  for(let i=0;i<steps;i++){
+    const f=l+i*bay/steps,t=l+(i+1)*bay/steps,tint=i%2?'#eaccaa':item.awning;
+    b.face('felt',p(f,.065,y),p(t,.065,y),p(t,.84,y-.27),p(f,.84,y-.27),tint);
+    b.face('felt',p(f,.84,y-.27),p(t,.84,y-.27),p(t,.84,y-.38),p(f,.84,y-.38),tint);
+  }
+}
 function addEnferBuilding(b,building,poly,detail,skyline,h){
   const index=enferStyle(building),{wall,roof,bay}=enferStyles[index];
   const sections=[poly,...(building.holes||[])];
   const roofShape=!skyline?enferRoof(poly,h,index):null,eaves=roofShape?.wall??h;
   const mat=skyline?'plain':'enfer'+index;
   const vertex=([x,z],height)=>[x,height,z];
+  const business=detail?frontageStyle(building):null;
+  let shopEdge=-1,bestFront=-Infinity;
+  if(business!=null)poly.forEach((p,i)=>{
+    const q=poly[(i+1)%poly.length],score=Math.hypot(p[0]-q[0],p[1]-q[1])-.024*Math.hypot((p[0]+q[0])*.5+3,(p[1]+q[1])*.5+282);
+    if(score>bestFront){bestFront=score;shopEdge=i;}
+  });
   const outward=Math.sign(poly.reduce((sum,[x,z],i)=>{const d=poly[(i+1)%poly.length];return sum+x*d[1]-z*d[0];},0))||1;
   for(const ring of sections){
     for(let i=0;i<ring.length;i++){
@@ -305,13 +332,16 @@ function addEnferBuilding(b,building,poly,detail,skyline,h){
         if(bays>1)b.wall(mat,split,d,0,bottom,white,bays-1,1);
         b.wall(mat,a,d,bottom,eaves,white,bays,floors-1);
       }else b.wall(mat,a,d,0,eaves,skyline?wall:white,bays,floors);
+      if(ring===poly&&i===shopEdge)storefront(b,a,d,outward,eaves,business);
       if(detail&&ring===poly&&index!==3)facadeRelief(b,a,d,len,outward,bays,floors,eaves,index,entry);
       if(!roofShape)continue;
       const splits=[a,d],left=roofShape.ridge(a),right=roofShape.ridge(d);
       if(left*right<0){const t=left/(left-right);splits.splice(1,0,[a[0]+(d[0]-a[0])*t,a[1]+(d[1]-a[1])*t]);}
       for(let j=1;j<splits.length;j++){
         const u=splits[j-1],v=splits[j];
-        b.face('felt',vertex(u,eaves),vertex(v,eaves),vertex(v,roofShape.top(v)),vertex(u,roofShape.top(u)),wall);
+        const topU=roofShape.top(u),topV=roofShape.top(v);
+        if(Math.max(topU,topV)-eaves>.018)
+          b.face('felt',vertex(u,eaves),vertex(v,eaves),vertex(v,topV),vertex(u,topU),wall);
       }
     }
   }
@@ -324,6 +354,8 @@ function addEnferBuilding(b,building,poly,detail,skyline,h){
       const facet=roofPitch(points,roofShape.ridge,side);
       for(let i=2;i<facet.length;i++){
         const face=[facet[0],facet[i-1],facet[i]];
+        const [a,d,c]=face;
+        if(Math.abs((d[0]-a[0])*(c[1]-a[1])-(d[1]-a[1])*(c[0]-a[0]))<.004)continue;
         b.tri('tileRoof',...face.map(p=>vertex(p,roofShape.top(p))),roof,face.map(([x,z])=>[x/3.2,z/3.2]));
       }
     }
@@ -427,6 +459,9 @@ function strip(batch,mat,a,d,width,h,col,scale=5,xOffset=0){
   const points=[[a,-w],[a,w],[d,w],[d,-w]].map(([p,off])=>[p[0]+nx*(off+xOffset),p[1]+nz*(off+xOffset)]);
   batch.quad(mat,points,h,col,scale);
 }
+function disc([x,z],r,sides){
+  return Array.from({length:sides},(_,i)=>[x+Math.cos(i*tau/sides)*r,z+Math.sin(i*tau/sides)*r]);
+}
 function addRoad(b,seg){
   b.base=0;b.foundation=false;b.drape=true;
   const {a,d,street:s,i}=seg,dx=d[0]-a[0],dz=d[1]-a[1],len=Math.hypot(dx,dz);
@@ -438,10 +473,26 @@ function addRoad(b,seg){
   if(path&&!bridge){
     strip(b,'pave',a1,d1,Math.max(1.45,w),.027,'#f5e9d2',streetFabric.paving.meters);return;
   }
-  const y=bridge?.071:.038;
+  const y=bridge?.103:.074;
+  const pavement=w+Math.min(6,w*.6);
+  if(isEnfer){
+    const yCurb=bridge?.20:.185;
+    for(const side of [-1,1])strip(b,'pave',a1,d1,(pavement-w)*.5,yCurb,white,streetFabric.paving.meters,side*(pavement+w)*.25);
+    for(const side of [-1,1]){
+      const dx0=-dz/len*side*(w*.5+.24),dz0=dx/len*side*(w*.5+.24);
+      b.wall('felt',[a1[0]+dx0,a1[1]+dz0],[d1[0]+dx0,d1[1]+dz0],y-.03,yCurb,'#b5a293',len/2,.2);
+    }
+    for(const [at,joint] of [[a,seg.joinStart],[d,seg.joinEnd]]){
+      if(!joint)continue;
+      b.flat('pave',disc(at,pavement*.5,10),y-.015,white,streetFabric.paving.meters);
+    }
+  }
   strip(b,'pave',a1,d1,w+Math.min(6,w*.6),y-.018,white,streetFabric.paving.meters);
   strip(b,'road',a1,d1,w+.40,y-.002,'#dfceaf',streetFabric.road.meters);
   strip(b,'road',a1,d1,w,y,white,streetFabric.road.meters);
+  if(isEnfer)for(const [at,joint] of [[a,seg.joinStart],[d,seg.joinEnd]]){
+    if(joint)b.flat('road',disc(at,w*.5,12),y+.002,white,streetFabric.road.meters);
+  }
   if(w>5&&(!bridge || w>9)){
     const nx=dx/len,nz=dz/len,spacing=Math.max(9,Math.min(13,len/2));
     for(let s0=3;s0+1.85<len;s0+=spacing){
@@ -479,7 +530,7 @@ function makeIndex(){
       let a=p;
       for(let j=1;j<=parts;j++){
         const t=j/parts,d=[p[0]+(q[0]-p[0])*t,p[1]+(q[1]-p[1])*t];
-        get((a[0]+d[0])/2,(a[1]+d[1])/2).segments.push({a,d,street,i});a=d;
+        get((a[0]+d[0])/2,(a[1]+d[1])/2).segments.push({a,d,street,i,joinStart:j===1,joinEnd:j===parts});a=d;
       }
     }
   }
@@ -543,6 +594,24 @@ function decoration(kind,variant,stage,distant=false) {
     b.ball(-.24,4.55,1.03,.93,.88,.70,colors[2],lon,lat);
     if(!distant)b.ball(.45,4.72,-.99,.87,.87,.69,colors[1],lon,lat);
     b.tube([0,.04,0],[0,.12,0],.68,.65,'#716369',10);
+  }else if(kind==='yard-wall'||kind==='yard-fence'||kind==='yard-gate'){
+    const masonry=kind==='yard-wall',iron=kind==='yard-gate';
+    b.box(0,0,0,3.25,masonry?.78:.29,.22,masonry?'#9b6557':'#bd9e86');
+    if(masonry)b.box(0,.78,0,3.31,.075,.27,'#d2b69c');
+    else{
+      const height=iron?1.55:1.34,dye=iron?'#485657':'#5e7468';
+      b.tube([-1.60,height,0],[1.60,height,0],.043,.043,dye,4,'plain');
+      b.tube([-1.60,.44,0],[1.60,.44,0],.025,.025,dye,4,'plain');
+      for(let run=0;run<=16;run++){
+        const x=-1.6+run*.2;
+        if(iron)b.tube([x,.29,0],[x,height+.075,0],.018,.018,dye,4,'plain');
+        else if(run<16){
+          b.tube([x,.42,0],[x+.2,height,0],.013,.013,dye,4,'plain');
+          b.tube([x,height,0],[x+.2,.42,0],.013,.013,dye,4,'plain');
+        }
+      }
+    }
+    for(const x of [-1.55,1.55])b.box(x,0,0,.23,masonry?.92:iron?1.64:1.45,.28,masonry?'#aa7561':'#80786a');
   }else if(kind==='lamp'){
     b.tube([0,0,0],[0,.34,0],.32,.23,metal,9);
     b.tube([0,.3,0],[0,1.21,0],.17,.115,edge,9);
@@ -743,7 +812,7 @@ function pickProps(props,pos,visibleLimit){
 function disposeGroup(group){
   group.traverse(n=>{if(n.geometry)n.geometry.dispose();});group.removeFromParent();
 }
-export function createCity3D(scene){
+export function createCity3D(scene,{software=false}={}){
   const materials=cityMaterials(isEnfer), index=makeIndex(),root=new T.Group();root.name=isEnfer?'Maille City · Enfer':'Maille City · Paris';
   const terrain=new Batch();makeGround(terrain);
   const base=terrain.mesh(materials);
@@ -802,8 +871,8 @@ export function createCity3D(scene){
     for(let i=-span;i<=span;i++)for(let j=-span;j<=span;j++){
       const cx=sx+i,cz=sz+j,k=cx+','+cz;
       const dd=Math.hypot((cx+.5)*chunkSize-pos.x,(cz+.5)*chunkSize-pos.y);
-      if(dd>cityViewRange || dd>streetViewRange&&!index.groups.has(k))continue;
-      const detail=dd<245,skyline=dd>streetViewRange;
+      if(dd>(software?440:cityViewRange)||dd>streetViewRange&&!index.groups.has(k))continue;
+      const detail=dd<(software?130:245),skyline=dd>(software?280:streetViewRange);
       keys.add(k);next.push({key:k,detail,skyline,dist:dd});
     }
     for(const [k,entry] of chunks)if(!keys.has(k)){disposeGroup(entry.object);chunks.delete(k);}
@@ -822,7 +891,7 @@ export function createCity3D(scene){
   }
   function updateProps(pos,state){
     propGroups.clear();let shadowIndex=0;
-    for(const prop of pickProps(state?.props,pos,220)){
+    for(const prop of pickProps(state?.props,pos,software?78:220)){
       if(state.destroyed?.has?.(prop.id))continue;
       const type=prop.type||prop.kind||'bollard',h=hash(prop.id),variant=type==='tree'?h%3:0;
       const stage=propWearStage(state.propHealth?.get(prop.id));
