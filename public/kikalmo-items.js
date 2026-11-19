@@ -26,7 +26,8 @@ const tile=(group,dye,x,y,z,sx,sy,sz)=>piece(group,box,dye,x,y,z,sx,sy,sz);
 const gem=(group,dye,x,y,z,sx,sy,sz)=>piece(group,diamond,dye,x,y,z,sx,sy,sz);
 function ring(g,dye,x,y,z,sx,sy,sz,flat=false){
   const m=piece(g,ringGeo,dye,x,y,z,sx,sy,sz);
-  if(flat)m.rotation.x=Math.PI/2;else m.rotation.y=Math.PI/2;
+  if(flat){m.rotation.x=Math.PI/2;m.scale.set(sx,sz,sy);}
+  else m.rotation.y=Math.PI/2;
   return m;
 }
 function stem(g,dye,from,to,radius,taper=false){
@@ -141,7 +142,8 @@ function face(g,a,suit,masked){
   }
 }
 function crown(g,dye,trim,style){
-  ring(g,dye,-.025,.251,0,.217,.082,.231,true);
+  ball(g,dye,-.025,.227,0,.217,.055,.231);
+  ring(g,trim,-.025,.246,0,.210,.082,.224,true);
   for(let i=0;i<8;i++){
     const angle=i*Math.PI/4,x=Math.cos(angle)*.205-.023,z=Math.sin(angle)*.214;
     stem(g,dye,[x,.244,z],[x*1.12,.305+(i%2)*.045,z*1.09],.029,true);

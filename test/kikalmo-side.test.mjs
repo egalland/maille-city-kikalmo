@@ -63,6 +63,10 @@ test('every registered catalogue item builds without a portrait and meshes are a
       model.dispose();
     }
   }
+  const crown=createKikalmoModel({shape:3,headwear:17});
+  const bounds=new Box3().setFromObject(crown.group.getObjectByName('kikalmo-headwear-17'));
+  assert.ok(bounds.max.z-bounds.min.z>.44,'the crown band wraps around the whole head');
+  crown.dispose();
   const combined=createKikalmoModel({shape:2,costume:163,headwear:19,facewear:96,adornment:227,fabric:79});
   for(const part of ['costume-head-163','costume-body-163','headwear-19','facewear-96','adornment-227','fabric-79'])
     assert.ok(combined.group.getObjectByName('kikalmo-'+part),part);
