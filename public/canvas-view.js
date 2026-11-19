@@ -14,7 +14,8 @@ import {buildShotEffect,effectDuration} from './weapon-effects.js';
 import { vehicleSpec } from './vehicle-types.js';
 // Perspective software renderer for browsers without a WebGL 2 context.
 // It projects the same metre-space data, props, actors and camera boom as the GPU view.
-import {buildings,streets,water,green} from './paris-data.js';
+import {enferStyle,enferStyles,enferWall} from './enfer-architecture.js';
+import {buildings,streets,water,green,isEnfer} from './paris-data.js';
 import {monuments,cameraDistance,nearbyProps} from './paris-world.js';
 import {drawCanvasPuppet,drawCanvasCar} from './canvas-puppets.js';
 import {drawKikalmoPuppet} from './kikalmo-canvas.js';
@@ -46,7 +47,7 @@ function getSpatial(){
   const blocks=cells(),ways=cells();
   for(const o of buildings){
     const bounds=loopBounds(o.poly);
-    if(skipLandmark(o.id)||String(o.id)==='157326'||String(o.id)==='444657'||['245184969','245198908'].includes(String(o.id)))continue;
+    if(!isEnfer&&(skipLandmark(o.id)||String(o.id)==='157326'||String(o.id)==='444657'||['245184969','245198908'].includes(String(o.id))))continue;
     let area=0;for(let i=0;i<o.poly.length;i++){const a=o.poly[i],b=o.poly[(i+1)%o.poly.length];area+=a[0]*b[1]-b[0]*a[1];}
     blocks.add({o,bounds,ground:buildingGround(o.poly),wind:Math.sign(area),seed:Math.abs(Math.floor(Number(o.id)||bounds.x+bounds.y))});
   }
@@ -294,7 +295,7 @@ function parisLandmark(id,x,y){
   }
   return {m:{id,x,y},faces};
 }
-const monumentModels=[...Object.values(monuments).map(monumentModel),parisLandmark('pyramid',6284,2114),parisLandmark('obelisk',5206,1617),...grandParisModels];
+const monumentModels=isEnfer?[]:[...Object.values(monuments).map(monumentModel),parisLandmark('pyramid',6284,2114),parisLandmark('obelisk',5206,1617),...grandParisModels];
 
 export function createCanvasView(canvas,spawn,onNotice){
   let surface=canvas,g=canvas.getContext('2d',{alpha:false});
@@ -514,7 +515,7 @@ export function createCanvasView(canvas,spawn,onNotice){
     }
     function circle(x,y,r,color){mask.fillStyle=color;mask.beginPath();mask.arc(x,y,r,0,tau);mask.fill();}
     fillArea(parks,'#800000');fillArea(waters,'#c00000');
-    const arc=monuments.arc,arcVisible=Math.hypot(cx-arc.x,cy-arc.y)<radius*1.5+115;
+    const arc=monuments.arc,arcVisible=!isEnfer&&Math.hypot(cx-arc.x,cy-arc.y)<radius*1.5+115;
     if(arcVisible)circle(arc.x,arc.y,115,'#400000');
     const local=spatial.ways.around(cx,cy,radius);
     for(const curb of [true,false]){
@@ -623,7 +624,8 @@ export function createCanvasView(canvas,spawn,onNotice){
   }
   function building(item,skyline=false){
     const {o,wind,seed,bounds}=item,poly=o.poly,H=Math.max(2.2,o.h||13);
-    const glass=H>48||(bounds.x< -135&&bounds.y< -625&&H>24);
+    const enferIndex=isEnfer?enferStyle(o):-1,local=enferStyles[enferIndex];
+    const glass=!local&&(H>48||(bounds.x< -135&&bounds.y< -625&&H>24));
     const eave=glass?H-.7:H>7.5?H-Math.min(3.25,H*.15):H-.65;
     const top=poly.map(q=>[q[0]+(bounds.x-q[0])*.032,q[1]+(bounds.y-q[1])*.032,H]);
     for(let j=0;j<poly.length;j++){
@@ -636,13 +638,13 @@ export function createCanvasView(canvas,spawn,onNotice){
       const pts=[[a[0],a[1],Math.min(0,terrainHeight(a[0],a[1])-item.ground)-.12],[b[0],b[1],Math.min(0,terrainHeight(b[0],b[1])-item.ground)-.12],[b[0],b[1],crest],[a[0],a[1],crest]];
       const pp=projectPoly(pts);if(!pp||hiddenByFacade(pp))continue;
       if(skyline){
-        const color=glass?(shade?'#a2a5af':'#8e969f'):(shade?'#c5ae9c':'#ac9a94');
+        const color=local?tint(local.wall,shade?1:.85):glass?(shade?'#a2a5af':'#8e969f'):(shade?'#c5ae9c':'#ac9a94');
         queue.push({z:d,base:item.ground,draw:()=>fillPath(pp,color)});
         continue;
       }
       queue.push({z:d,base:item.ground,draw:()=>{
-        fillPath(pp,glass?shade?'#829aa1':'#657b88':tint(stone[seed%8],shade?1.00:.85));
-        const topA=top[j],topB=top[(j+1)%top.length],roofColor=roofs[seed%roofs.length];
+        fillPath(pp,glass?shade?'#829aa1':'#657b88':tint(local?.wall||stone[seed%8],shade?1.00:.85));
+        const topA=top[j],topB=top[(j+1)%top.length],roofColor=local?.roof||roofs[seed%roofs.length];
         const roofFace=[[a[0],a[1],eave],[b[0],b[1],eave],topB,topA];
         poly3(roofFace,glass?'#a5b8b5':roofColor);
         if(!glass&&d<115&&length>1.8&&H>7.5){
@@ -652,9 +654,10 @@ export function createCanvasView(canvas,spawn,onNotice){
           g.restore();
         }
         if(d>620||length<1.8)return;
-        const bays=clamp(Math.round(length/6.6),1,40),count=d>85?Math.min(3,Math.ceil(bays/4)):Math.min(16,bays),floors=clamp(Math.round((eave-3)/3.2),1,10);
+        const bays=clamp(Math.round(length/(local?.bay||6.6)),1,40),count=d>85?Math.min(3,Math.ceil(bays/4)):Math.min(16,bays),floors=clamp(Math.round((eave-3)/3.2),1,10);
         const repeats=clamp(Math.round(bays/count),1,10);
         function picture(k,detail){
+          if(local)return repeatFacade(enferWall(enferIndex,enferIndex===4?1:clamp(Math.round(eave/3),1,10)),repeats);
           const style=detail?(seed+j*3+k*5)%8:seed;
           return repeatFacade(facade(style,floors,shade,glass,detail),repeats);
         }
@@ -693,7 +696,7 @@ export function createCanvasView(canvas,spawn,onNotice){
         }
       }});
     }
-    const rooftop=projectPoly(top);if(rooftop&&H+item.ground<camH)queue.push({z:depth(bounds.x,bounds.y),draw:()=>fillPath(rooftop,roofs[seed%roofs.length])});
+    const rooftop=projectPoly(top);if(rooftop&&H+item.ground<camH)queue.push({z:depth(bounds.x,bounds.y),draw:()=>fillPath(rooftop,local?.roof||roofs[seed%roofs.length])});
   }
   function showProp(o,health){
     if(terracePanels[o.type]){
@@ -826,7 +829,7 @@ export function createCanvasView(canvas,spawn,onNotice){
       fillPath(plane,streetFabric.water.color);
     }
     const visibleWays=nearWays.filter(s=>seen(s.bounds,230)),arc=monuments.arc;
-    const atArc=Math.hypot(arc.x-p.x,arc.y-p.y)<450;
+    const atArc=!isEnfer&&Math.hypot(arc.x-p.x,arc.y-p.y)<450;
     for(const seg of nearWays)if(seg.w>=8&&seen(seg.bounds,streetViewRange)&&!seen(seg.bounds,230))
       roadRibbon(seg,0,'#8c7f81',0,seg.a,seg.b);
     if(atArc)ellipseGround(arc.x,arc.y,115,0,streetFabric.road.color);

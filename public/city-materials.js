@@ -1,6 +1,7 @@
 import {glassCloth, windowCloth, shopCloth, shopCloths, zincCloth} from './paris-applique.js';
 import {paintStreetFabric} from './street-fabric.js';
 import {paintKnit} from './wool-art.js';
+import {enferStyles,enferWall} from './enfer-architecture.js';
 import * as THREE from './three.js';
 
 function tile(width,height,paint) {
@@ -45,7 +46,7 @@ function shopTile(index){
 }
 function asphalt(c,w,h){paintStreetFabric(c,w,h,'road');}
 function paving(c,w,h){paintStreetFabric(c,w,h,'paving');}
-export function cityMaterials(){
+export function cityMaterials(enfer=false){
   const config={side:THREE.DoubleSide,vertexColors:true};
   const lambert=(map)=>new THREE.MeshLambertMaterial({...config,map});
   const material={
@@ -55,5 +56,8 @@ export function cityMaterials(){
     water:lambert(tile(128,128,(c,w,h)=>paintStreetFabric(c,w,h,'water'))),
   };
   for(let i=0;i<shopCloths.length;i++)material['shop'+i]=lambert(shopTile(i));
+  if(enfer)for(let i=0;i<enferStyles.length;i++){
+    const art=enferWall(i);material['enfer'+i]=lambert(tile(art.width,art.height,c=>c.drawImage(art,0,0)));
+  }
   return material;
 }

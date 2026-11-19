@@ -1,6 +1,7 @@
 import {makeEmoteIcon} from './emote-art.js';
 import {drawItemIcon, drawAvatar} from './sprites.js';
-import {metadata} from './paris-data.js';
+import {switchWorldURL} from './world-link.js';
+import {metadata,isEnfer} from './paris-data.js';
 import {terrainHeight} from './terrain-height.js';
 import {coreDestinations,streetAt,districtAt} from './paris-world.js';
 import {weaponDrops} from './weapon-drops.js';
@@ -82,6 +83,7 @@ function weaponCanvas(id,size) {
 }
 function gameShareURL() {
   const url=new URL(location.pathname,location.origin);
+  if(isEnfer)return switchWorldURL(url.href,'enfer');
   if(metadata.sector){
     const {lon,lat,name}=metadata.sector;
     const sector=sectorURL(url.href,lon,lat,name);
@@ -252,12 +254,26 @@ export function createPanels({game,net,editLayout,openAvatar,getState,selectWeap
     ring.addEventListener('pointercancel',cancel);ring.addEventListener('lostpointercapture',cancel);
   }
   function mapPanel() {
-    const sheet=frame('map','Plan de ville',metadata.sector?.name||'Paris et petite couronne');
+    const sheet=frame('map','Plan de ville',isEnfer?'Enfer · Pays noyonnais':metadata.sector?.name||'Paris et petite couronne');
     const pad=node('div','mc-body');
+    const worlds=node('nav','world-tabs');worlds.setAttribute('aria-label','Carte à jouer');
+    for(const [key,title,area] of [['paris','Paris','Paris et petite couronne'],['enfer','Enfer','Noyon et vallée de l’Oise']]){
+      const link=node('a');link.href=switchWorldURL(location.href,key);
+      link.append(node('strong','',title),node('small','',area));
+      if((key==='enfer')===isEnfer){
+        link.setAttribute('aria-current','page');
+        link.addEventListener('click',e=>e.preventDefault());
+      }else link.addEventListener('click',e=>{
+        if(e.button!==0||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;
+        e.preventDefault();net.stop();location.assign(link.href);
+      });
+      worlds.append(link);
+    }
+    pad.append(worlds);
     const nav=node('div','gp-mode');nav.setAttribute('role','group');nav.setAttribute('aria-label','Échelle du plan');
     const localButton=button('Plan local','',()=>switchMap('local'));
     const regionButton=button('Grand Paris','',()=>switchMap('region'));
-    nav.append(localButton,regionButton);pad.append(nav);
+    nav.append(localButton,regionButton);if(!isEnfer)pad.append(nav);
     const detail=node('div','gp-local'),regional=node('div','gp-regional');
     const map=node('div','mc-map-box');
     const canvas=node('canvas','mc-map-canvas');canvas.width=840;canvas.height=448;
@@ -296,7 +312,7 @@ export function createPanels({game,net,editLayout,openAvatar,getState,selectWeap
       finder.append(summary,label,field,result);
     }else finder.hidden=true;
     const travel=node('div','mc-travel');
-    const label=fieldLabel('Voyage rapide sur l’axe historique','mc-travel-target');
+    const label=fieldLabel(isEnfer?'Destinations du Noyonnais':'Voyage rapide sur l’axe historique','mc-travel-target');
     const row=node('form','mc-travel-row');
     const target=node('select','mc-input');target.id='mc-travel-target';
     for(const destination of coreDestinations){

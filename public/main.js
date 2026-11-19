@@ -8,6 +8,7 @@ import {createWanted,wantedRules,wantedThresholds} from './wanted.js';
 import {attachSectorTravel} from './sector-travel.js';
 import {readSectorTransfer} from './sector-transfer.js';
 import {createGame} from './game.js';
+import {isEnfer} from './paris-data.js';
 import {createNet} from './net.js';
 import {createPanels} from './panels.js';
 import {drawItemIcon} from './sprites.js';
@@ -20,6 +21,7 @@ const read=(key,defaultValue)=>{try{return localStorage.getItem('maillecity.'+ke
 const write=(key,value)=>{try{localStorage.setItem('maillecity.'+key,value);}catch{}};
 const defaultNames=['Renard','Filou','Roussi','Ficelle','Moka','Capucine','Noisette','Fauve'];
 function guestName(){return defaultNames[Math.floor(Math.random()*defaultNames.length)]+' '+String(Math.floor(Math.random()*900)+100);}
+if(isEnfer)$('#activeWorldLabel').textContent='ENFER · PAYS NOYONNAIS';
 const name=read('name',guestName());
 write('name',name);
 const weapons=weaponList.map(({id,name})=>[id,name]);
@@ -40,7 +42,7 @@ function saveLoadout(list) {
 }
 const weaponNames=new Map(weapons);
 const city=$('#city'),chat=$('#chat'),entry=$('#chatEntry');
-let settingsSound=read('sound','false')==='true',panels=null,game=null, state={weapon:'pistol',ammo:12,health:100,wanted:0,wantedPoints:0,wantedProgress:0,ownedWeapons:loadout,district:'Place de l’Étoile'}, timer=0;
+let settingsSound=read('sound','false')==='true',panels=null,game=null, state={weapon:'pistol',ammo:12,health:100,wanted:0,wantedPoints:0,wantedProgress:0,ownedWeapons:loadout,district:isEnfer?'Noyon':'Place de l’Étoile'}, timer=0;
 let touchAimEnabled=read('touchAimAssist','true')==='true';
 
 const aimMarker=$('#touchAimMarker');
@@ -87,7 +89,7 @@ function updateOnline(status,players){
 }
 let welcomed=false;
 const sectorTransfer=readSectorTransfer();
-const net=createNet({name,identity:sectorTransfer?.identity,onStatus:st=>{
+const net=createNet({name,map:isEnfer?'enfer':'paris',identity:sectorTransfer?.identity,onStatus:st=>{
   if(st==='online' && !welcomed){welcomed=true;appendChat({system:true,text:'Tu as rejoint le monde partagé.'});}
   updateOnline(st,net.players());
 },onPlayers:players=>updateOnline(net.status,players),onChat:appendChat});

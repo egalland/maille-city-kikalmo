@@ -1,5 +1,5 @@
 import {sectorInfo} from './paris-world.js';
-import {preloadTravelSector} from './paris-data.js';
+import {isEnfer,preloadTravelSector} from './paris-data.js';
 import {worldURL} from './world-link.js';
 import {adjacentSector,atSectorCut} from './sector-crossing.js';
 import {clearSectorTransfer,readSectorTransfer,retreatFromSector,storeSectorTransfer} from './sector-transfer.js';
@@ -57,6 +57,7 @@ export function attachSectorTravel(game,net,status,transfer=readSectorTransfer()
       status.hidden=false;
     }
   }else if(current.searchParams.get('halte'))game.travel(current.searchParams.get('halte'));
+  if(isEnfer)return;
   const arrived=Boolean(transfer?.target),now=Date.now(),landing=game.getPosition();
   let turnedBack=Boolean(transfer?.returning);
   const show=text=>{

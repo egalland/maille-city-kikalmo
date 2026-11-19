@@ -6,3 +6,12 @@ export function worldURL(href) {
   }
   return url;
 }
+export function selectedWorld(href){
+  return new URL(href).searchParams.get('monde')==='enfer'?'enfer':'paris';
+}
+export function switchWorldURL(href,map){
+  const url=worldURL(href);url.hash='';
+  for(const key of ['lon','lat','lieu','halte','monde'])url.searchParams.delete(key);
+  if(map==='enfer')url.searchParams.set('monde','enfer');
+  return url.href;
+}

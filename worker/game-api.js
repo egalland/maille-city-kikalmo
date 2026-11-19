@@ -46,7 +46,7 @@ const SCHEMA = [
   'CREATE INDEX IF NOT EXISTS mc_pickup_age ON mc_pickup_claims (at)'
 ];
 // Keep the public Paris records in place. Earlier named games remain isolated in storage.
-const WORLD_KEY = 'paris:public';
+const worldKeys={paris:'paris:public',enfer:'enfer:public'};
 const GONE = 25_000;
 const MAX_BATCH = 20;
 const EVENT_RETENTION = 86_400_000;
@@ -247,9 +247,8 @@ function shared(rows) {
   world.destroyed=[...broken];
   return world;
 }
-async function join(db,b,now) {
+async function join(db,b,now,room) {
   const {id,token}=b, name=clean(b.name,24)||'Kikalmo';
-  const room=WORLD_KEY;
   const q=(sql,...args)=>db.prepare(sql).bind(...args);
   const results=await db.batch([
     q('DELETE FROM mc_members WHERE seen<?',now-GONE),
@@ -386,8 +385,8 @@ function contactGuard(type,data,actor,room,id,now){
   }
   return {clause,args};
 }
-async function sync(db,b,now) {
-  const {id,token}=b,room=WORLD_KEY;
+async function sync(db,b,now,room) {
+  const {id,token}=b;
   const q=(sql,...args)=>db.prepare(sql).bind(...args);
   const inputs=Array.isArray(b.events)?b.events.slice(0,MAX_BATCH):[];
   const firePackets=new Map();
@@ -532,13 +531,16 @@ export async function handleApi(request, env) {
   try {b=JSON.parse(raw);} catch {return json({error:'json'},400);}
   if (!b || typeof b!=='object' || Array.isArray(b)) return json({error:'session'},400);
   if(generation==='paris' && b.room!==undefined && b.room!=='public')return json({error:'update_required'},410);
+  const map=b.map??'paris';
+  if(typeof map!=='string'||!Object.hasOwn(worldKeys,map)||(generation==='paris'&&map!=='paris'))return json({error:'world'},400);
+  const room=worldKeys[map];
   if (!UUID.test(b.id) || !UUID.test(b.token)) return json({error:'session'},400);
   if (!env.DB) return json({error:'storage'},503);
   await ready(env.DB);
-  if (operation==='join') return join(env.DB,b,Date.now());
+  if (operation==='join') return join(env.DB,b,Date.now(),room);
   if (operation==='leave') {
-    await env.DB.prepare('DELETE FROM mc_members WHERE room=? AND id=? AND secret=?').bind(WORLD_KEY,b.id,b.token).run();
+    await env.DB.prepare('DELETE FROM mc_members WHERE room=? AND id=? AND secret=?').bind(room,b.id,b.token).run();
     return json({left:true});
   }
-  return sync(env.DB,b,Date.now());
+  return sync(env.DB,b,Date.now(),room);
 }

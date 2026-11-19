@@ -21,3 +21,9 @@ Lancer `/usr/bin/python3 scripts/geo-extract.py` avec Python 3 et les bindings G
 ## Secteurs supplémentaires
 
 Pour un quartier choisi ailleurs dans Paris et la petite couronne, le jeu charge les quatre mêmes couches du WFS de l'IGN sur un carré de 1,32 km de côté. Il utilise le même repère métrique que le corridor embarqué. La date d’extraction du secteur correspond à son chargement réussi. Une copie locale permet de revisiter un secteur et de conserver la dernière carte disponible lorsque le réseau est indisponible. Les contours sont quantifiés au mètre et les tronçons souterrains sont exclus de la vue de surface.
+
+## Enfer · Pays noyonnais
+
+La carte couvre 55 km² autour de Noyon, jusqu’à la vallée de l’Oise. L’archive `public/map-enfer.gz` embarque les mêmes couches IGN, les noms de voirie et les altitudes des berges disponibles. Les contours sont simplifiés à 22 cm puis quantifiés au décimètre dans le repère local. Le relief est interpolé à partir des altitudes routières sur une grille de 24 m. Les étages, matières, pignons et détails de façade sont interprétés pour Maille City.
+
+Relancer `/usr/bin/python3 scripts/geo-enfer.py` avec GDAL, NumPy et SciPy pour extraire la version courante de ce périmètre.

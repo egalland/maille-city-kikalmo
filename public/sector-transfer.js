@@ -1,5 +1,5 @@
 const key='maillecity.travel.v1';
-const target=url=>[url.searchParams.get('lon'),url.searchParams.get('lat'),url.pathname].join('|');
+const target=url=>[url.searchParams.get('lon'),url.searchParams.get('lat'),url.pathname,...(url.searchParams.get('monde')==='enfer'?['enfer']:[])].join('|');
 const lifetime=180000;
 
 export function readSectorTransfer(url=new URL(location.href)){
@@ -7,6 +7,7 @@ export function readSectorTransfer(url=new URL(location.href)){
     const packet=JSON.parse(sessionStorage.getItem(key)||'null');
     if(!packet?.state||!Number.isFinite(packet.at)||Math.abs(Date.now()-packet.at)>lifetime)return null;
     if(packet.target)return packet.target===target(url)?packet:null;
+    if(url.searchParams.get('monde')==='enfer')return null;
     const old=typeof packet.key==='string'?packet.key.split('|').slice(0,2).join('|'):null;
     return old===target(url).split('|').slice(0,2).join('|')?packet:null;
   }catch{return null;}

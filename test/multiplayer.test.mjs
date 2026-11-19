@@ -191,3 +191,23 @@ test('durability from shots and collisions accumulates once and is restored on j
     assert.equal(delivered.events.filter(e=>e.type==='vehicleDamage').length,3);
   }finally{DB.close();}
 });
+
+test('Paris and Enfer keep independent presence, including when switching with the same identity',async()=>{
+  const DB=localDatabase();
+  const a=session('Filou'),b=session('Miel'),c=session('Mousse');
+  const join=(player,map)=>accepted(api(DB,'/api/world/join',{...player,map}));
+  const send=(player,map)=>accepted(api(DB,'/api/world/sync',{...player,map,x:0,y:0,state:{x:0,y:0},events:[],since:0}));
+  try{
+    await join(a,undefined);
+    await join(b,'enfer');
+    await join(c,'enfer');
+    const paris=await send(a,'paris');
+    const enfer=await send(b,'enfer');
+    assert.deepEqual(paris.players.map(p=>p.id),[a.id]);
+    assert.deepEqual(new Set(enfer.players.map(p=>p.id)),new Set([b.id,c.id]));
+    await accepted(api(DB,'/api/world/leave',{...a,map:'paris'}));
+    await join(a,'enfer');
+    assert.ok((await send(b,'enfer')).players.some(p=>p.id===a.id));
+    assert.equal((await api(DB,'/api/world/join',{...c,map:'unknown'})).status,400);
+  }finally{DB.close();}
+});

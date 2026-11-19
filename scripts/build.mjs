@@ -34,7 +34,7 @@ await mkdir('dist/.openai',{recursive:true});
 await writeFile('dist/server/index.js','const packedAssets = '+JSON.stringify(assets)+';\n'+api+'\n'+geo+'\n'+router);
 await copyFile('.openai/hosting.json','dist/.openai/hosting.json');
 const worker = (await import('../dist/server/index.js')).default;
-for (const path of ['/','/main.js','/paris-world.js','/paris-data.js','/city3d.js','/canvas-view.js','/paris-core.js','/paris-sector.js','/sector-eiffel.gz','/sector-notre-dame.gz','/sector-sacre-coeur.gz','/puppets3d.js','/three.js','/sprites.js','/game.js','/net.js','/panels.js','/brand.js','/maille.woff']) {
+for (const path of ['/','/main.js','/paris-world.js','/paris-data.js','/city3d.js','/canvas-view.js','/paris-core.js','/paris-sector.js','/sector-eiffel.gz','/sector-notre-dame.gz','/sector-sacre-coeur.gz','/map-enfer.gz','/puppets3d.js','/three.js','/sprites.js','/game.js','/net.js','/panels.js','/brand.js','/maille.woff']) {
   const response = await worker.fetch(new Request('https://test.local'+path),{});
   if (response.status !== 200 || (await response.arrayBuffer()).byteLength < 30) throw Error('Missing asset '+path);
 }

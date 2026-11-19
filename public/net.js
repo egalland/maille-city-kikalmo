@@ -15,6 +15,7 @@ const cleanName=s=>[...String(s||'Kikalmo').replace(/[\u0000-\u001f\u007f]/g,' '
 const uuid=/^[a-f\d]{8}-[a-f\d]{4}-4[a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i;
 export function createNet(options={}) {
   const {onStatus=()=>{},onPlayers=()=>{},onChat=()=>{}}=options;
+  const map=options.map==='enfer'?'enfer':'paris';
   const fetcher=options.fetcher || ((url,init)=>fetch(url,init));
   const uid=()=>crypto.randomUUID();
   const saved=options.identity, resume=uuid.test(saved?.id)&&uuid.test(saved?.token)&&Number.isSafeInteger(saved?.op)&&saved.op>=0;
@@ -155,7 +156,7 @@ export function createNet(options={}) {
     const attempt=run, joining=!joined;
     if(joining)rosterWire.reset();
     const batch=joining?[]:chooseBatch();
-    const payload={protocol:2,id,token,name,...stateEncoder.packet(state,joining),cursor,rosterBase:rosterWire.baseline()};
+    const payload={protocol:2,id,token,name,map,...stateEncoder.packet(state,joining),cursor,rosterBase:rosterWire.baseline()};
     // A burst of multi-ray weapons can reach the Worker's 32 KB body limit
     // before reaching its event-count limit. Leave overflow for the next flush.
     const encode=()=>JSON.stringify({...payload,events:batch.map(({op,type,data})=>({op,type,data}))});
@@ -282,7 +283,7 @@ export function createNet(options={}) {
   }
   function leave() {
     if (!joined) return;
-    const body=JSON.stringify({id,token});
+    const body=JSON.stringify({id,token,map});
     // Same-origin keepalive also works when a player closes the tab.
     const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),2500);
     const result=fetcher('/api/world/leave',{method:'POST',headers:{'Content-Type':'application/json'},body,keepalive:true,signal:controller.signal})

@@ -7,7 +7,8 @@ import {terracePanels} from './street-terraces.js';
 import {propWearProfile,propWearStage,trackPropWear} from './prop-wear.js';
 import * as T from './three.js';
 import * as source from './paris-data.js';
-const {buildings,streets,water}=source;
+const {buildings,streets,water,isEnfer}=source;
+import {enferStyle,enferStyles} from './enfer-architecture.js';
 import {cityMaterials} from './city-materials.js';
 import {famousLandmark,parisLandmarks} from './city-landmarks.js';
 const specialParisIds=new Set(parisLandmarks.flatMap(item=>item.ids));
@@ -252,6 +253,7 @@ function obeliskForm(){
   return b;
 }
 function specialFootprint(id,x,z) {
+  if(isEnfer)return false;
   return specialParisIds.has(id)||id==='157326'||id==='444657'||id==='245198908'||LouvreIds.has(id)||Math.hypot(x-arc.x,z-arc.z)<10||
     Math.hypot(x-grande.x,z-grande.z)<19||Math.hypot(x-pyramid.x,z-pyramid.z)<8||Math.hypot(x-obelisk.x,z-obelisk.z)<4;
 }
@@ -262,12 +264,46 @@ function flatWithHoles(batch,mat,poly,holes,height,col,scale=1){
   const pts=ring.concat(...hh),uv=pts.map(p=>[p[0]/scale,p[1]/scale]);
   for(const [a,b,c] of idx){const ids=[c,b,a];batch.tri(mat,...ids.map(i=>[pts[i][0],height,pts[i][1]]),col,ids.map(i=>uv[i]));}
 }
+function addEnferBuilding(b,building,poly,detail,skyline,h){
+  const index=enferStyle(building),{wall,roof,bay}=enferStyles[index];
+  const sections=[poly,...(building.holes||[])];
+  const lengths=poly.map(([x,z],i)=>Math.hypot(x-poly[(i+1)%poly.length][0],z-poly[(i+1)%poly.length][1]));
+  const shortest=Math.min(...lengths),longest=Math.max(...lengths);
+  const gable=detail&&poly.length===4&&shortest>2.3&&longest/shortest<4.7&&!building.holes?.length&&index!==4;
+  const eaves=gable?Math.max(h*.63,h-Math.min(2.9,shortest*.32)):h;
+  const mat=skyline?'plain':'enfer'+index;
+  for(const ring of sections){
+    for(let i=0;i<ring.length;i++){
+      const a=ring[i],d=ring[(i+1)%ring.length],len=Math.hypot(a[0]-d[0],a[1]-d[1]);
+      if(len<.15)continue;
+      b.wall(mat,a,d,0,eaves,skyline?wall:white,Math.max(1,Math.round(len/bay)),index===4?1:Math.max(1,Math.round(eaves/3)));
+    }
+  }
+  if(!gable){
+    flatWithHoles(b,skyline?'plain':'roof',poly,building.holes,h,roof,3.4);
+    return;
+  }
+  const start=lengths[0]<=lengths[1]?0:1;
+  const [a,d,c,f]=Array.from({length:4},(_,i)=>poly[(start+i)%4]);
+  const point=([x,z])=>[x,eaves,z],ridge=(a,d)=>[(a[0]+d[0])/2,h,(a[1]+d[1])/2];
+  const peak=ridge(a,d),end=ridge(c,f);
+  b.tri('felt',point(a),point(d),peak,wall);
+  b.tri('felt',point(c),point(f),end,wall);
+  b.face('roof',point(d),point(c),end,peak,roof);
+  b.face('roof',point(f),point(a),peak,end,roof);
+  if(index<3&&longest>7){
+    const x=(peak[0]*2+end[0])/3,z=(peak[2]*2+end[2])/3;
+    b.box(x,h-.35,z,.62,1.25,.72,'#aa7361');
+    b.box(x,h+.84,z,.73,.14,.82,'#784f4b');
+  }
+}
 function addBuilding(b,building,detail,skyline=false){
   const poly=distinct(building.poly);if(poly.length<3)return;
   const [cx,cz]=mean(poly);
   b.base=buildingGround(building.poly);b.foundation=true;
   if(specialFootprint(String(building.id),cx,cz))return;
   const id=hash(building.id),h=Math.max(1.9,Math.min(260,Number(building.h)||14));
+  if(isEnfer){addEnferBuilding(b,building,poly,detail,skyline,h);return;}
   const glass=h>48||(cx< -135&&cz< -625&&h>24);
   const stone=glass?['#d0d1d4','#c8c6d6','#aabdc2','#ccced5'][id%4]:stones[id%stones.length];
   const roof=slates[(id>>>3)%slates.length];
@@ -533,6 +569,7 @@ function decoration(kind,variant,stage,distant=false) {
 }
 const deckStart=[203,-800],deckEnd=[447,-681];
 function onNeuillyDeck(x,z){
+  if(isEnfer)return false;
   const dx=deckEnd[0]-deckStart[0],dz=deckEnd[1]-deckStart[1],cx=x-deckStart[0],cz=z-deckStart[1];
   const t=(cx*dx+cz*dz)/(dx*dx+dz*dz);
   return t>=-.03&&t<=1.03&&Math.abs(cx*dz-cz*dx)/Math.hypot(dx,dz)<23;
@@ -625,7 +662,7 @@ function makeGround(b) {
       b.quad('plain',[[x,z],[x+l,z+.8],[x+l+.4,z+.95],[x+.5,z+.29]],.012,seed%3?'#a9c2c2':'#688f9f');
     }
   }
-  b.base=0;b.drape=true;makePlazas(b);neuillyDeck(b);
+  b.base=0;b.drape=true;if(!isEnfer){makePlazas(b);neuillyDeck(b);}
 }
 // A reusable outer mesh carries the skyline beyond the high-detail street chunks.
 function distantGround(root){
@@ -665,21 +702,23 @@ function disposeGroup(group){
   group.traverse(n=>{if(n.geometry)n.geometry.dispose();});group.removeFromParent();
 }
 export function createCity3D(scene){
-  const materials=cityMaterials(), index=makeIndex(),root=new T.Group();root.name='Maille City · Paris';
+  const materials=cityMaterials(isEnfer), index=makeIndex(),root=new T.Group();root.name=isEnfer?'Maille City · Enfer':'Maille City · Paris';
   const terrain=new Batch();makeGround(terrain);root.add(terrain.mesh(materials));
   const distant=distantGround(root);
   function landmark(batch,site,yaw=site.yaw||0,scale=1){
     const g=batch.mesh(materials);g.rotation.y=yaw;g.position.set(site.x,terrainHeight(site.x,site.z),site.z);g.scale.setScalar(scale);root.add(g);
   }
-  landmark(historicArch(),arc);landmark(futureArch(),grande);
-  for(const site of parisLandmarks)landmark(famousLandmark(site.key,Batch),site);
-  for(const building of buildings){
-    if(!LouvreIds.has(String(building.id)))continue;
-    const poly=building.poly,[x,z]=mean(poly),a=poly[0],c=poly[1];
-    const side=Math.hypot(c[0]-a[0],c[1]-a[1]);
-    landmark(pyramidForm(),{x,z},-Math.atan2(c[1]-a[1],c[0]-a[0]),String(building.id)==='245184969'?1:side/35);
+  if(!isEnfer){
+    landmark(historicArch(),arc);landmark(futureArch(),grande);
+    for(const site of parisLandmarks)landmark(famousLandmark(site.key,Batch),site);
+    for(const building of buildings){
+      if(!LouvreIds.has(String(building.id)))continue;
+      const poly=building.poly,[x,z]=mean(poly),a=poly[0],c=poly[1];
+      const side=Math.hypot(c[0]-a[0],c[1]-a[1]);
+      landmark(pyramidForm(),{x,z},-Math.atan2(c[1]-a[1],c[0]-a[0]),String(building.id)==='245184969'?1:side/35);
+    }
+    if(buildings.some(b=>String(b.id)==='245198908'))landmark(obeliskForm(),obelisk,-.38);
   }
-  if(buildings.some(b=>String(b.id)==='245198908'))landmark(obeliskForm(),obelisk,-.38);
   const towerBatch=new Batch();
   for(const b of index.towers)addBuilding(towerBatch,b,false);
   root.add(towerBatch.mesh(materials));

@@ -2,6 +2,7 @@ import {yarnPalette} from './wool-art.js';
 // Local coordinates are metres, east and south. All map layers share the IGN projection in paris-data.
 import { buildings, streets, water, green, metadata } from './paris-data.js';
 
+import {enferStops,enferDistrict} from './enfer-places.js';
 import { terrainHeight, buildingGround } from './terrain-height.js';
 import { terraceProfiles } from './street-terraces.js';
 import { authoredWeaponDrops } from './drop-id.js';
@@ -109,7 +110,9 @@ function monumentRect(m,left,right,front,back,minHeight=0) {
   return {type:'building',id:m.id+'-'+left+':'+front+':'+minHeight,h:m.h,minHeight,
     poly:[[left,front],[right,front],[right,back],[left,back]].map(([x,z])=>modelXZ(m,x,z))};
 }
+const isEnfer=metadata.world==='enfer';
 function importedMonument(b) {
+  if(isEnfer)return false;
   const center=b.poly.reduce((sum,p)=>[sum[0]+p[0]/b.poly.length,sum[1]+p[1]/b.poly.length],[0,0]);
   for(const m of Object.values(monuments)){
     const dx=center[0]-m.x,dy=center[1]-m.y,c=Math.cos(m.yaw),s=Math.sin(m.yaw);
@@ -122,15 +125,15 @@ const eiffel={id:'eiffel',x:3257.7,y:2420.6,yaw:.802,h:330};
 const eiffelFeet=new Set(['162158','162159','162160','162699']);
 const pyramidIds=new Set(['245184969','253248239','253248246','253248248']);
 for(const b of buildings){
-  if(!b.poly?.length || eiffelFeet.has(String(b.id)) || importedMonument(b))continue;
+  if(!b.poly?.length || !isEnfer&&(eiffelFeet.has(String(b.id)) || importedMonument(b)))continue;
   const item={...b,type:'building'};
-  if(pyramidIds.has(String(b.id))){
+  if(!isEnfer&&pyramidIds.has(String(b.id))){
     item.h=String(b.id)==='245184969'?21.6:21.6*Math.hypot(b.poly[0][0]-b.poly[1][0],b.poly[0][1]-b.poly[1][1])/35;
     item.taperCenter=b.poly.reduce((pt,v)=>[pt[0]+v[0]/b.poly.length,pt[1]+v[1]/b.poly.length],[0,0]);
-  }else if(String(b.id)==='245198908')item.h=27.1;
+  }else if(!isEnfer&&String(b.id)==='245198908')item.h=27.1;
   terrain.insert(item,bounds(item.poly));
 }
-for(const m of Object.values(monuments)){
+for(const m of isEnfer?[]:Object.values(monuments)){
   if(m.x+m.side<landBounds.minX || m.x-m.side>landBounds.maxX || m.y+m.depth<landBounds.minY || m.y-m.depth>landBounds.maxY)continue;
   const local=[];
   if(m.innerDepth){
@@ -142,7 +145,7 @@ for(const m of Object.values(monuments)){
   local.push(monumentRect(m,-m.side,m.side,-m.depth,m.depth,m.clearance));
   for(const b of local)terrain.insert(b,bounds(b.poly));
 }
-if(eiffel.x+86>landBounds.minX && eiffel.x-86<landBounds.maxX && eiffel.y+86>landBounds.minY && eiffel.y-86<landBounds.maxY){
+if(!isEnfer&&eiffel.x+86>landBounds.minX && eiffel.x-86<landBounds.maxX && eiffel.y+86>landBounds.minY && eiffel.y-86<landBounds.maxY){
   for(const cx of [-50,50])for(const cz of [-50,50]){
     const pier=monumentRect(eiffel,cx-12.4,cx+12.4,cz-12.4,cz+12.4);
     // At pedestrian/camera height only the separate anchored legs occupy the ground.
@@ -163,7 +166,7 @@ for(const road of streetList){
 function prefix(text){return String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
 export const pontDeNeuilly = {start:[203,-804],end:[447,-684],halfWidth:20.5};
 function isBridge(x,y,r=0){
-  if(lineDist2(x,y,pontDeNeuilly.start,pontDeNeuilly.end) <= sq(pontDeNeuilly.halfWidth-Math.min(r,2.5)))return true;
+  if(!isEnfer&&lineDist2(x,y,pontDeNeuilly.start,pontDeNeuilly.end) <= sq(pontDeNeuilly.halfWidth-Math.min(r,2.5)))return true;
   for(const {road,a,b} of roadGrid.area(x,y,4+r)){
     if(!(road.bridge || road.level>0 || /pont de neuilly/i.test(road.name||'')))continue;
     if(lineDist2(x,y,a,b)<=sq(Math.max(2.2,road.w*.5+2.25)-Math.min(r,1)))return true;
@@ -515,7 +518,7 @@ const historicStops=[
   ['concorde','Place de la Concorde',5207,1614,/concorde/,[5207,1614]],
   ['louvre','Cour Napoléon du Louvre',6245,2099,null,[6283,2114]]
 ];
-export const coreDestinations=historicStops.map(stop=>{
+export const coreDestinations=(isEnfer?enferStops:historicStops).map(stop=>{
   if(!sector)return practicalPoint(...stop);
   const [key,label,x,y,,target]=stop;
   return {id:key,key,label,x,y,angle:Math.atan2(target[1]-y,target[0]-x)};
@@ -589,6 +592,7 @@ export const destinations=sector?[genuineSectorStop()]:coreDestinations;
 export const SPAWN=destinations[0];
 export function getTravelPoint(key){return destinations.find(d=>d.key===key)||null;}
 export function districtAt(x,y){
+  if(isEnfer)return enferDistrict(x,y);
   if(sector)return sector.name||'Secteur local';
   if(x>5940)return 'Le Louvre';
   if(x>5410)return 'Jardin des Tuileries';
@@ -634,7 +638,7 @@ function putProp(path,side,index,type,p){
   const x=p.x-Math.sin(p.angle)*offset*side,y=p.y+Math.cos(p.angle)*offset*side;
   if(destinations.some(d=>Math.hypot(x-d.x,y-d.y)<8))return;
   const nearArc=Math.hypot(x-monuments.arc.x,y-monuments.arc.y);
-  if(nearArc<128||Math.hypot(x-monuments.arche.x,y-monuments.arche.y)<58)return;
+  if(!isEnfer&&(nearArc<128||Math.hypot(x-monuments.arche.x,y-monuments.arche.y)<58))return;
   if(testPose(x,y,{radius:Math.max(r,.7)},false))return;
   for(const d of decor.area(x,y,5))if(Math.hypot(x-d.x,y-d.y)<(d.type==='tree'&&type==='tree'?6.5:2))return;
   for(const seg of roadGrid.area(x,y,6)){
@@ -649,8 +653,9 @@ for(const path of ordered){
   const road=path.road;
   if(road.kind==='path'||road.kind==='motorway'||road.level>0||path.length<21)continue;
   const major=road.kind==='primary'||/avenue|boulevard/i.test(road.name);
-  const step=major?13:27;
-  const kinds=major?['tree','lamp','tree','bench','tree','postbox','lamp','tree','bin','hydrant','tree','bollard']:['tree','bin','lamp','bench','bollard','postbox','lamp','hydrant'];
+  const country=isEnfer&&enferDistrict(...road.path[Math.floor(road.path.length/2)])==='Vallée de l’Oise';
+  const step=country?74:major?13:27;
+  const kinds=country?['tree','tree','bollard','tree']:major?['tree','lamp','tree','bench','tree','postbox','lamp','tree','bin','hydrant','tree','bollard']:['tree','bin','lamp','bench','bollard','postbox','lamp','hydrant'];
   for(const side of [-1,1]){
     let serial=0;
     for(let d=7+(path.key%13)+(side>0?3:0);d<path.length-6;d+=step){
@@ -976,12 +981,12 @@ export function paintMap(canvas,player,{full=false,peers=[],vehicles=[],pickups=
     c.fillStyle='#42333a';c.fillRect(x-1,y-1,2,2);
   }
   if(full){
-    const labels=destinations.filter(d=>['etoile','maillot','neuilly','arche','concorde','louvre','sector'].includes(d.key));
+    const labels=destinations.filter(d=>isEnfer||['etoile','maillot','neuilly','arche','concorde','louvre','sector'].includes(d.key));
     c.font='600 '+(w>450?11:9)+'px system-ui';c.textBaseline='middle';
     for(const d of labels){
       const x=px(d.x),y=py(d.y),j=['etoile','neuilly','louvre'].includes(d.key)?15:-14;
       circle(x,y,3.2,'#ffd49e','#3e3442');
-      const label=d.key==='sector'?d.label:d.key==='arche'?'La Défense':d.key==='etoile'?'Étoile':d.key==='maillot'?'Maillot':d.key==='neuilly'?'Neuilly':d.key==='concorde'?'Concorde':'Louvre';
+      const label=isEnfer?(d.key==='noyon'?'Noyon':d.key==='gare'?'Gare':d.label):d.key==='sector'?d.label:d.key==='arche'?'La Défense':d.key==='etoile'?'Étoile':d.key==='maillot'?'Maillot':d.key==='neuilly'?'Neuilly':d.key==='concorde'?'Concorde':'Louvre';
       const width=c.measureText(label).width;let lx=clamp(x-width/2,3,w-width-3);
       c.fillStyle='#2a2633e8';c.fillRect(lx-3,y+j-7,width+6,14);c.fillStyle='#fff0d6';c.fillText(label,lx,y+j);
     }
