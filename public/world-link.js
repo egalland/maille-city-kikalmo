@@ -17,3 +17,10 @@ export function switchWorldURL(href,map){
   if(map==='paris')url.searchParams.set('monde','paris');
   return url.href;
 }
+
+export function renderModeURL(href,rescue=false){
+  const url=new URL(href);
+  if(rescue)url.searchParams.set('rendu','secours');
+  else url.searchParams.delete('rendu');
+  return url.href;
+}

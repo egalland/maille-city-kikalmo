@@ -264,23 +264,48 @@ function flatWithHoles(batch,mat,poly,holes,height,col,scale=1){
   const pts=ring.concat(...hh),uv=pts.map(p=>[p[0]/scale,p[1]/scale]);
   for(const [a,b,c] of idx){const ids=[c,b,a];batch.tri(mat,...ids.map(i=>[pts[i][0],height,pts[i][1]]),col,ids.map(i=>uv[i]));}
 }
+// Small projecting pieces keep the masonry readable as the camera moves across a façade.
+function facadeRelief(b,a,d,len,outward,bays,floors,eaves,index,entry){
+  if(len<2.3)return;
+  const dx=(d[0]-a[0])/len,dz=(d[1]-a[1])/len,nx=dz*outward,nz=-dx*outward;
+  const plank=(u,v,h,top,depth,tint)=>{
+    const at=(t,off,y)=>[a[0]+dx*t+nx*off,y,a[1]+dz*t+nz*off];
+    b.face('felt',at(u,depth,h),at(v,depth,h),at(v,depth,top),at(u,depth,top),tint);
+    b.face('felt',at(u,0,top),at(v,0,top),at(v,depth,top),at(u,depth,top),tint);
+  };
+  const stone=index===4?'#d0bba1':index<2?'#c99779':'#d2b799';
+  plank(0,len,eaves-.16,eaves+.01,.17,stone);
+  const bayWidth=len/bays,storey=eaves/floors;
+  if(bayWidth<2.2)return;
+  for(let i=0;i<bays;i++){
+    const mid=(i+.5)*bayWidth,sill=bayWidth*(index===4?.20:.235);
+    for(let j=0;j<floors;j++){
+      if(entry&&i===0&&j===0)continue;
+      const level=(j+.25)*storey;
+      plank(mid-sill,mid+sill,level-.065,level+.07,index===4?.24:.13,stone);
+    }
+  }
+}
 function addEnferBuilding(b,building,poly,detail,skyline,h){
   const index=enferStyle(building),{wall,roof,bay}=enferStyles[index];
   const sections=[poly,...(building.holes||[])];
   const roofShape=!skyline?enferRoof(poly,h,index):null,eaves=roofShape?.wall??h;
   const mat=skyline?'plain':'enfer'+index;
   const vertex=([x,z],height)=>[x,height,z];
+  const outward=Math.sign(poly.reduce((sum,[x,z],i)=>{const d=poly[(i+1)%poly.length];return sum+x*d[1]-z*d[0];},0))||1;
   for(const ring of sections){
     for(let i=0;i<ring.length;i++){
       const a=ring[i],d=ring[(i+1)%ring.length],len=Math.hypot(a[0]-d[0],a[1]-d[1]);
       if(len<.15)continue;
       const bays=Math.max(1,Math.round(len/bay)),floors=index===4?1:Math.max(1,Math.round(eaves/2.75));
-      if(detail&&ring===poly&&index<3&&len>3.1&&(i+hash(building.id))%3===0){
+      const entry=detail&&ring===poly&&index<3&&len>3.1&&(i+hash(building.id))%3===0;
+      if(entry){
         const split=[a[0]+(d[0]-a[0])/bays,a[1]+(d[1]-a[1])/bays],bottom=eaves/floors;
         b.wall('enferEntry'+index,a,split,0,bottom,white);
         if(bays>1)b.wall(mat,split,d,0,bottom,white,bays-1,1);
         b.wall(mat,a,d,bottom,eaves,white,bays,floors-1);
       }else b.wall(mat,a,d,0,eaves,skyline?wall:white,bays,floors);
+      if(detail&&ring===poly&&index!==3)facadeRelief(b,a,d,len,outward,bays,floors,eaves,index,entry);
       if(!roofShape)continue;
       const splits=[a,d],left=roofShape.ridge(a),right=roofShape.ridge(d);
       if(left*right<0){const t=left/(left-right);splits.splice(1,0,[a[0]+(d[0]-a[0])*t,a[1]+(d[1]-a[1])*t]);}
@@ -299,7 +324,7 @@ function addEnferBuilding(b,building,poly,detail,skyline,h){
       const facet=roofPitch(points,roofShape.ridge,side);
       for(let i=2;i<facet.length;i++){
         const face=[facet[0],facet[i-1],facet[i]];
-        b.tri('roof',...face.map(p=>vertex(p,roofShape.top(p))),roof,face.map(([x,z])=>[x/3.2,z/3.2]));
+        b.tri('tileRoof',...face.map(p=>vertex(p,roofShape.top(p))),roof,face.map(([x,z])=>[x/3.2,z/3.2]));
       }
     }
   }
@@ -720,7 +745,10 @@ function disposeGroup(group){
 }
 export function createCity3D(scene){
   const materials=cityMaterials(isEnfer), index=makeIndex(),root=new T.Group();root.name=isEnfer?'Maille City · Enfer':'Maille City · Paris';
-  const terrain=new Batch();makeGround(terrain);root.add(terrain.mesh(materials));
+  const terrain=new Batch();makeGround(terrain);
+  const base=terrain.mesh(materials);
+  if(isEnfer)for(const surface of base.children)surface.receiveShadow=true;
+  root.add(base);
   const distant=distantGround(root);
   function landmark(batch,site,yaw=site.yaw||0,scale=1){
     const g=batch.mesh(materials);g.rotation.y=yaw;g.position.set(site.x,terrainHeight(site.x,site.z),site.z);g.scale.setScalar(scale);root.add(g);
@@ -759,7 +787,12 @@ export function createCity3D(scene){
         strip(b,'plain',seg.a,seg.d,seg.street.w,.03,'#827e84');
       }
     }
-    const object=b.mesh(materials);root.add(object);
+    const object=b.mesh(materials);
+    if(isEnfer&&!target.skyline)for(const surface of object.children){
+      surface.receiveShadow=true;
+      surface.castShadow=target.detail&&surface.material!==materials.park&&surface.material!==materials.pave&&surface.material!==materials.road;
+    }
+    root.add(object);
     const before=chunks.get(target.key);if(before)disposeGroup(before.object);
     chunks.set(target.key,{object,detail:target.detail,skyline:target.skyline});
   }
@@ -782,6 +815,7 @@ export function createCity3D(scene){
     const group=decoration(kind,variant,stage,distant).mesh(materials),instances=[];
     for(const templ of group.children){
       const mesh=new T.InstancedMesh(templ.geometry,templ.material,460);mesh.count=0;mesh.frustumCulled=false;
+      if(isEnfer){mesh.castShadow=!distant;mesh.receiveShadow=true;}
       mesh.instanceMatrix.setUsage(T.DynamicDrawUsage);root.add(mesh);instances.push(mesh);
     }
     propModels.set(k,instances);return instances;
@@ -815,6 +849,7 @@ export function createCity3D(scene){
   const update=(pos,time,worldState={})=>{
     if(!pos||!Number.isFinite(pos.x+pos.y))return;
     const initial=lastX===Infinity;distant.update(pos.x,pos.y);
+    if(isEnfer)materials.water.map.offset.set(time*.018,time*.009);
     if(initial||Math.hypot(lastX-pos.x,lastZ-pos.y)>38)setTargets(pos);
     const start=performance.now();let count=0;
     while(targets.length&&count<(initial?2:3)&&(count===0||performance.now()-start<(initial?26:4))){buildChunk(targets.shift());count++;}

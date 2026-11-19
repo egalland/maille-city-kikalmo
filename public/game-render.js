@@ -1,3 +1,5 @@
+import {enferLighting} from './enfer-lighting.js';
+import {isEnfer} from './paris-data.js';
 import {rendererFallback} from './renderer-fallback.js';
 import {makeEmoteIcon} from './emote-art.js';
 import {textileSky,sunBearing} from './textile-sky.js';
@@ -39,16 +41,22 @@ function makeShadow() {
 function hash(str){let n=2166136261;for(const ch of str){n=Math.imul(n^ch.charCodeAt(0),16777619);}return n>>>0;}
 
 export function createView(canvas,spawn,onNotice) {
-  const forceCompatible=typeof location!=='undefined'&&new URLSearchParams(location.search).get('rendu')==='compat';
+  const forceCompatible=typeof location!=='undefined'&&new URLSearchParams(location.search).get('rendu')==='secours';
   return rendererFallback(
     fallback=>createWebGLView(canvas,spawn,fallback),
     ()=>createCanvasView(canvas,spawn,onNotice),
-    {forceCompatible,report:error=>console.warn('Maille City · rendu compatible',error)}
+    {forceCompatible,report:error=>{
+      console.warn('Maille City · rendu compatible',error);
+      onNotice?.('Rendu 3D indisponible · secours 2D');
+    }}
   );
 }
 
 function createWebGLView(canvas,spawn,onLost) {
-  const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance',alpha:false,stencil:false});
+  const options={canvas,antialias:!matchMedia('(pointer:coarse)').matches,alpha:false,stencil:false};
+  let renderer;
+  try{renderer=new THREE.WebGLRenderer({...options,powerPreference:'high-performance'});}
+  catch{renderer=new THREE.WebGLRenderer({...options,powerPreference:'default',antialias:false});}
   try{return mountWebGLView(canvas,spawn,onLost,renderer);}
   catch(error){renderer.dispose();throw error;}
 }
@@ -60,9 +68,12 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   renderer.outputColorSpace=THREE.SRGBColorSpace;
   renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.00;
   const sky=makeSky();scene.add(sky);
-  scene.add(new THREE.HemisphereLight(0xfff1d7,0x8a8294,1.44));
-  const sun=new THREE.DirectionalLight(0xffe2ad,1.92);sun.position.set(Math.cos(sunBearing),1.06,Math.sin(sunBearing));scene.add(sun);
-  const fill=new THREE.DirectionalLight(0xd8ebea,.69);fill.position.set(-.6,.47,-.9);scene.add(fill);
+  const lighting=isEnfer?enferLighting(scene,renderer,touch):null;
+  if(!lighting){
+    scene.add(new THREE.HemisphereLight(0xfff1d7,0x8a8294,1.44));
+    const sun=new THREE.DirectionalLight(0xffe2ad,1.92);sun.position.set(Math.cos(sunBearing),1.06,Math.sin(sunBearing));scene.add(sun);
+    const fill=new THREE.DirectionalLight(0xd8ebea,.69);fill.position.set(-.6,.47,-.9);scene.add(fill);
+  }
   const city=createCity3D(scene), pickupDisplay=createPickupDisplay(scene);
   const camera=new THREE.PerspectiveCamera(58,1,.08,6300);
   const shadows=makeShadow();scene.add(shadows);
@@ -96,6 +107,13 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
       g.rotation.z=Math.atan(slope.x*c+slope.y*s);g.rotation.x=-Math.atan(-slope.x*s+slope.y*c);
     }
     g.visible=true;
+    if(lighting){
+      const casts=e.self||Math.hypot(e.x-camX,e.y-camY)<42;
+      if(item.casts!==casts){
+        item.casts=casts;
+        g.traverse(node=>{if(node.isMesh&&node.material&&!node.material.transparent){node.castShadow=casts;node.receiveShadow=true;}});
+      }
+    }
     item.object.update(vehicle?e:walkingPose(e),dt,t);
     return item;
   }
@@ -173,6 +191,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     cameraAim.set(camX+Math.cos(yaw)*aimForward,terrainHeight(camX+Math.cos(yaw)*aimForward,camY+Math.sin(yaw)*aimForward)+focusY+pitch*.95,camY+Math.sin(yaw)*aimForward);
     camera.lookAt(cameraAim);camera.updateMatrixWorld();
     sky.position.copy(camera.position);
+    lighting?.update(p,ground,time,snap,scale);
     if(time-lastPropTick>.30 || snap){props=nearbyProps(p.x,p.y,320);lastPropTick=time;}
     city.update(p,time,{props,destroyed,propHealth:state.propHealth,propDamageRevision:state.propDamageRevision});
     pickupDisplay.update(state.pickups,p,time);
@@ -241,6 +260,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     active=false;canvas.removeEventListener('webglcontextlost',contextLost);labels.remove();
     for(const item of models.values())item.object.dispose?.();
     bloodMesh.dispose();pickupDisplay.dispose();city.dispose?.();
+    lighting?.dispose();shadows.geometry.dispose();shadows.material.map.dispose();shadows.material.dispose();
     sky.geometry.dispose();sky.material.map.dispose();sky.material.dispose();renderer.dispose();
   }};
 }

@@ -1,6 +1,6 @@
 import {makeEmoteIcon} from './emote-art.js';
 import {drawItemIcon, drawAvatar} from './sprites.js';
-import {switchWorldURL} from './world-link.js';
+import {switchWorldURL,renderModeURL} from './world-link.js';
 import {metadata,isEnfer} from './paris-data.js';
 import {terrainHeight} from './terrain-height.js';
 import {coreDestinations,streetAt,districtAt} from './paris-world.js';
@@ -407,7 +407,8 @@ export function createPanels({game,net,editLayout,openAvatar,getState,selectWeap
     const display=node('div','mc-option-row');
     const info=node('span','mc-option-label','Rendu actif');
     const graphics=state().graphics;
-    display.append(info,node('span','mc-render-mode',graphics==='canvas'?'Perspective légère':graphics==='webgl'?'3D WebGL':'Initialisation'));
+    display.append(info,node('span','mc-render-mode',graphics==='canvas'?'Secours 2D':graphics==='webgl'?'3D WebGL':'Initialisation'));
+    if(graphics==='canvas') display.append(button('Relancer en 3D','mc-secondary',()=>location.replace(renderModeURL(location.href))));
     const confirm=node('button','mc-primary','Enregistrer');confirm.type='submit';
     const actions=node('div','mc-form-actions');
     const controls=button('Commandes','mc-secondary',()=>open('help'));

@@ -1,4 +1,4 @@
-import {worldURL,selectedWorld} from './world-link.js';
+import {worldURL,selectedWorld,renderModeURL} from './world-link.js';
 import {readSectorTransfer,retreatFromSector} from './sector-transfer.js';
 
 const canonical=worldURL(location.href);
@@ -14,14 +14,14 @@ if(canonical.hash.startsWith('#kikalmo=')){
     }
   }catch{}
 }
+if(canonical.searchParams.get('rendu')==='compat')canonical.searchParams.delete('rendu');
 if(canonical.href!==location.href)history.replaceState(history.state,'',canonical.href);
 // The loading scene remains interactive if a module fails on a slow mobile connection.
 const retry=document.getElementById('retryLoad');
 retry.onclick=()=>{
-  const recovery=new URL(location.href);
-  if(recovery.searchParams.get('rendu')==='compat'){location.reload();return;}
-  recovery.searchParams.set('rendu','compat');
-  location.replace(recovery);
+  const recovery=renderModeURL(location.href);
+  if(recovery===location.href)location.reload();
+  else location.replace(recovery);
 };
 const enfer=selectedWorld(canonical.href)==='enfer';
 if(enfer){
@@ -43,7 +43,7 @@ try {
   text.textContent=isGPU?'Le rendu 3D nécessite WebGL 2. Active l’accélération graphique ou essaie un navigateur compatible.':'Le chargement de la ville a été interrompu.';
   const url=new URL(location.href);
   if(enfer){
-    text.textContent='Enfer n’a pas pu démarrer. Réessaie en mode compatible.';
+    text.textContent='Enfer n’a pas pu démarrer. Relance le chargement.';
   }else if(url.searchParams.has('lon')){
     text.textContent='Le secteur demandé n’a pas pu être chargé. Tu peux réessayer ou revenir sur l’axe du Louvre à La Défense.';
     const back=document.getElementById('returnToCity');

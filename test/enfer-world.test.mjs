@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
+import {createRequire} from 'node:module';
 import {selectedWorld,switchWorldURL} from '../public/world-link.js';
 
 test('map links clear coordinates and room parameters from the previous map',()=>{
@@ -63,4 +64,26 @@ test('the bundled Noyonnais map opens on usable streets and includes water, terr
     for(let i=1;i<2000&&state.arrived==null;i++)last=stepDispatch(state,i/60,1/60,clear);
     assert.ok(last&&gap(last,scene)<gap(first,scene)-8,scene.label);
   }
+  const require=createRequire(import.meta.url);
+  const {createCanvas,Path2D}=require(require.resolve('@napi-rs/canvas',{paths:[process.cwd(),process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES].filter(Boolean)}));
+  const priorDocument=globalThis.document,priorPath=globalThis.Path2D;
+  globalThis.Path2D=Path2D;
+  globalThis.document={createElement:()=>createCanvas(1,1)};
+  t.after(()=>{
+    if(priorDocument)globalThis.document=priorDocument;else delete globalThis.document;
+    if(priorPath)globalThis.Path2D=priorPath;else delete globalThis.Path2D;
+  });
+  const [{Scene},{createCity3D},{enferLighting}]=await Promise.all([
+    import('../public/three.js'),import('../public/city3d.js'),import('../public/enfer-lighting.js')
+  ]);
+  const scene=new Scene(),renderer={shadowMap:{}},lighting=enferLighting(scene,renderer,false),city=createCity3D(scene);
+  t.after(()=>{city.dispose();lighting.dispose();});
+  lighting.update(SPAWN,terrainHeight(SPAWN.x,SPAWN.y),0,true);
+  city.update(SPAWN,0,{props:nearbyProps(SPAWN.x,SPAWN.y,140),destroyed:new Set()});
+  const meshes=[];
+  scene.traverse(object=>{if(object.isMesh)meshes.push(object);});
+  assert.ok(renderer.shadowMap.enabled&&renderer.shadowMap.needsUpdate);
+  assert.ok(meshes.some(mesh=>mesh.castShadow&&mesh.receiveShadow&&mesh.geometry.attributes.position.count>50));
+  assert.ok(meshes.some(mesh=>mesh.material.isMeshStandardMaterial&&mesh.material.bumpMap));
+
 });
