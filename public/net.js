@@ -1,4 +1,4 @@
-import {decodeDropId,isEligibleDropId} from './drop-id.js';
+import {matchesPickup} from './drop-id.js';
 import {createRosterWire} from './roster-wire.js';
 import {createStateEncoder} from './state-wire.js';
 
@@ -265,7 +265,7 @@ export function createNet(options={}) {
     return true;
   }
   function claimPickup(item,weapon){
-    if(decodeDropId(item)?.weapon!==weapon||!isEligibleDropId(item))return Promise.resolve({ok:false,availableAt:0});
+    if(!matchesPickup(item,weapon,map==='enfer'))return Promise.resolve({ok:false,availableAt:0});
     const clock=Date.now()+offset, availableAt=context.pickups[item]||0;
     if(!started||!joined||status!=='online'||pending.length>=MAX_QUEUE||claimingItems.has(item)||availableAt>clock)
       return Promise.resolve({ok:false,availableAt});

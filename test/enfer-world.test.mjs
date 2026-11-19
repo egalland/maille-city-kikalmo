@@ -87,4 +87,45 @@ test('the bundled Noyonnais map opens on usable streets and includes water, terr
   assert.ok(meshes.some(mesh=>mesh.castShadow&&mesh.receiveShadow&&mesh.geometry.attributes.position.count>50));
   assert.ok(meshes.some(mesh=>mesh.material.isMeshStandardMaterial&&mesh.material.bumpMap));
 
+  await t.test('walking up to an Enfer depot grants the item and equips it in the HUD',async t=>{
+    const [{createGame},{createNet},{handleApi},{localDatabase},{enferWeaponDrops}]=await Promise.all([
+      import('../public/game.js'),import('../public/net.js'),import('../worker/game-api.js'),
+      import('../scripts/local-db.mjs'),import('../public/drop-id.js')
+    ]);
+    const {setTimeout:sleep}=await import('node:timers/promises');
+    const DB=localDatabase(),requests=new Set();
+    const globals=['window','document','requestAnimationFrame','cancelAnimationFrame'];
+    const previous=globals.map(key=>globalThis[key]);
+    const document=Object.assign(new EventTarget(),{createElement:previous[1].createElement});
+    let frame,hud,loadout,game;
+    Object.assign(globalThis,{
+      window:new EventTarget(),document,
+      requestAnimationFrame:callback=>{frame=callback;return 1;},
+      cancelAnimationFrame:()=>{frame=null;}
+    });
+    const net=createNet({map:'enfer',name:'Bobine',fetcher(url,init){
+      const pending=handleApi(new Request('https://maille.test'+url,init),{DB});
+      requests.add(pending);pending.then(()=>requests.delete(pending),()=>requests.delete(pending));
+      return pending;
+    }});
+    t.after(async()=>{
+      game?.destroy();net.stop();await Promise.allSettled([...requests]);DB.close();
+      globals.forEach((key,i)=>{if(previous[i]===undefined)delete globalThis[key];else globalThis[key]=previous[i];});
+    });
+    const canvas=Object.assign(new EventTarget(),{focus(){},setPointerCapture(){}});
+    game=createGame({canvas,net,onState:value=>{hud=value;},onLoadoutChange:value=>{loadout=value;},
+      buildView:()=>({available:true,mode:'webgl',render(){},effect(){},dispose(){}})});
+    const depot=enferWeaponDrops[1];assert.ok(weaponDrops.some(drop=>drop.id===depot.id));
+    assert.equal(await net.start(),true);
+    assert.ok(game.restoreTravelState({...game.exportTravelState(),x:depot.x+1.8,y:depot.y}));
+    const now=performance.now();
+    for(let i=0;i<45&&!loadout?.includes(depot.weapon);i++){
+      frame(now+16*i);await sleep(10);
+    }
+    assert.ok(loadout?.includes(depot.weapon));
+    assert.equal(hud.weapon,depot.weapon);
+    assert.ok(hud.ammo>0);
+    assert.ok(net.world().pickups[depot.id]>net.serverTime());
+  });
+
 });

@@ -74,3 +74,9 @@ export function decodeOfficerDrop(id){
   const match=/^lo-([\w:-]{1,54}):([0-9a-z]{7,11})$/.exec(id);
   return match?{npc:match[1],stamp:parseInt(match[2],36)}:null;
 }
+
+// Client and world server accept the same kinds of pickup IDs on each map.
+export function matchesPickup(id,weapon,enfer=false){
+  if(decodeOfficerDrop(id))return enfer&&Object.values(officerWeapons).includes(weapon);
+  return decodeDropId(id)?.weapon===weapon&&isEligibleDropId(id,enfer);
+}

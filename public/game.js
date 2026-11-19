@@ -37,7 +37,7 @@ const offset=(o,angle,length)=>({x:o.x+Math.cos(angle)*length,y:o.y+Math.sin(ang
 const isInput=el=>el?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(el?.tagName);
 const weaponLabels=Object.fromEntries(weaponList.map(w=>[w.id,w.name]));
 const maxShotRange=Math.max(...weaponList.map(w=>w.range));
-const pickupRadius=1.9;
+const pickupRadius=2.6;
 const PEER_RANGE=212;
 const services={police:'police',firefighter:'firetruck',medic:'ambulance',swat:'swat'};
 const dimensions=e=>{const {halfLength,halfWidth}=vehicleSpec(e.type);return {halfLength,halfWidth};};

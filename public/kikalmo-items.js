@@ -42,6 +42,7 @@ function braid(g,dye,points,radius){
 const eachSide=fn=>{fn(-1);fn(1);};
 const ink='#251e2d',gold='#d4ae69',linen='#f6e1bd';
 export function colorsFor(id){
+  if(id===161)return ['#301d43','#81549a'];
   if(id===163)return ['#2b1844','#63427b'];
   if(id===91)return ['#3e2054','#a76db6'];
   if(id===121)return ['#30273b','#ba9862'];
@@ -66,9 +67,9 @@ const suitStyles=keyByGroup({
   creature:[27,30,41,52,56,93,139,145,146,232],
   nature:[31,39,53,54,55,118,138,230],
   hood:[40,50,98,99,100,102,104,107,108,109,110,111,114,123,124,127,135,136,143,159,233],
-  regal:[57,92,97,105,112,113,116,117,119,121,128,132,134,137,140,144,147,148,152,160,161],
+  regal:[57,92,97,105,112,113,116,117,119,121,128,132,134,137,140,144,147,148,152,160],
   hat:[103,106,115,126,129,130,141,142,150,151,153,154,156,158,162],
-  carnival:[51,155,164,231,234],sunbird:[90],dragon:[91],abyss:[163]
+  carnival:[51,155,164,231,234],sunbird:[90],dragon:[91],watcher:[161],abyss:[163]
 });
 
 const headShapes=[
@@ -108,7 +109,7 @@ function hair(g,style,primary,trim){
   }
 }
 function face(g,a,suit,masked){
-  const [d,h,w]=headShapes[a.shape],skin=a.color;
+  const [d,h,w]=headShapes[a.shape],skin=a.color,watcher=suit==='watcher';
   const head=ball(g,skin,0,0,0,d,h,w);
   head.name='kikalmo-head-volume';
   eachSide(s=>{
@@ -116,17 +117,17 @@ function face(g,a,suit,masked){
     if(masked)return;
     const x=d*.912,z=.089*s,y=.041+(a.eyes%3)*.013;
     const ir=irisPremium[a.premiumEyes]||eyeDyes[a.eyes];
-    ball(g,linen,x,y,z,.048,.050+(a.eyes===0?.012:0),.053);
-    bead(g,ir,x+.035,y-.005,z+.005*s,.023,.032,.029).name=a.premiumEyes?'kikalmo-premiumEyes-'+a.premiumEyes:'kikalmo-iris';
+    ball(g,watcher?'#7778c5':linen,x,y,z,.045,.050+(a.eyes===0?.012:0),watcher?.064:.053);
+    bead(g,watcher&&!a.premiumEyes?'#232038':ir,x+.035,y-.005,z+.005*s,.023,.032,.029).name=a.premiumEyes?'kikalmo-premiumEyes-'+a.premiumEyes:'kikalmo-iris';
     bead(g,ink,x+.049,y-.005,z+.006*s,.014,.023,.019);
     bead(g,'#fff6e1',x+.061,y+.006,z-.003*s,.009,.010,.010);
-    const brow=hairDyes[a.hair],tilt=a.eyes===4?-.022:.014;
+    const brow=watcher?'#201d2d':hairDyes[a.hair],tilt=a.eyes===4?-.022:.014;
     braid(g,brow,[[x-.011,y+.075,z-.036],[x+.009,y+.086,z],[x-.012,y+.071+tilt,z+.044]],.014);
   });
   if(!masked){
     const n=a.nose,lip=a.mouth,y=-.109-(a.shape===1?.026:0);
-    if(n!==0)ball(g,skin,d+.022,-.032,0,.045+.003*n,.030+n%3*.006,.032+n%4*.005);
-    braid(g,'#593638',[[d-.018,y+.012,-.058-lip*.004],[d+.005,y-(lip%3)*.012,0],[d-.018,y+.012,.058+lip*.004]],.010);
+    if(n!==0||watcher)ball(g,watcher?'#bc602c':skin,d+.022,-.032,0,.045+.003*n,.030+n%3*.006,.032+n%4*.005);
+    braid(g,watcher?'#575fa9':'#593638',[[d-.020,y+.017,-.060-lip*.004],[d+.001,y-.004-(lip%3)*.012,0],[d-.020,y+.017,.060+lip*.004]],watcher?.018:.010);
     if(lip===3||lip===5)bead(g,linen,d+.005,y-.001,0,.015,.010,.040);
   }
   if(!suit&&(!a.headwear||['headphones','halo','antenna','goggles','antlers'].includes(headwear[a.headwear]))){
@@ -381,6 +382,7 @@ function suitCap(g,type,dye,trim,id){
       eachSide(s=>{for(let i=0;i<5;i++)
         stem(g,i%2?trim:gold,[.013,.206,(.061+i*.025)*s],[-.039,.540-i*.040,(.070+i*.048)*s],.064,true);});
       gem(g,gold,.112,.379,0,.042,.100,.054);break;
+    case 'watcher':watcherHood(g);break;
     case 'abyss':
       hood(g,dye,trim,type);
       eachSide(s=>{
@@ -396,7 +398,135 @@ function suitCap(g,type,dye,trim,id){
       break;
   }
 }
+const watcherDyes={
+  shadow:'#291732',plum:'#562d6a',violet:'#854e98',navy:'#282842',
+  seams:'#9e729e',metal:'#bf9f69',gem:'#268e86',light:'#75e0c5'
+};
+
+function softTube(g,dye,points,width,endWidth=.006){
+  const curve=new T.CatmullRomCurve3(points.map(p=>new T.Vector3(...p)));
+  const steps=points.length*4,sides=9,frames=curve.computeFrenetFrames(steps,false);
+  const positions=[],index=[],uv=[];
+  for(let i=0;i<=steps;i++){
+    const fraction=i/steps,center=curve.getPointAt(fraction);
+    const radius=width*(1-fraction)**.67+endWidth*fraction;
+    for(let j=0;j<=sides;j++){
+      const angle=j/sides*Math.PI*2;
+      const vertex=center.clone().addScaledVector(frames.normals[i],radius*Math.cos(angle))
+        .addScaledVector(frames.binormals[i],radius*Math.sin(angle));
+      positions.push(...vertex.toArray());uv.push(j/sides,fraction);
+      if(i&&j){
+        const b=i*(sides+1)+j,a=b-sides-1;
+        index.push(a-1,b-1,a,a,b-1,b);
+      }
+    }
+  }
+  const geometry=new T.BufferGeometry();
+  geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));
+  geometry.setAttribute('uv',new T.Float32BufferAttribute(uv,2));
+  geometry.setIndex(index);geometry.computeVertexNormals();
+  g.add(new T.Mesh(geometry,yarn(dye)));
+}
+
+function jewel(g,x,y,z,size){
+  const {metal,gem:jade,light}=watcherDyes;
+  gem(g,metal,x,y,z,.026*size,.091*size,.052*size);
+  gem(g,jade,x+.021*size,y,z,.019*size,.069*size,.035*size);
+  gem(g,light,x+.034*size,y+.007*size,z-.007*size,.008*size,.042*size,.011*size);
+}
+
+function watcherHood(g){
+  const {shadow,plum,violet,navy,seams,metal}=watcherDyes;
+  ball(g,shadow,-.105,.024,0,.184,.279,.244);
+  ball(g,plum,-.161,-.084,0,.140,.224,.203);
+  eachSide(s=>{
+    const edge=[[.135,-.202,.061*s],[.121,-.158,.174*s],[.087,-.055,.237*s],[.057,.083,.243*s],[.046,.199,.183*s],[.060,.245,.070*s],[.066,.240,0]];
+    braid(g,navy,edge,.057);
+    braid(g,violet,edge.map(([x,y,z])=>[x+.023,y+.015,z*1.04]),.024);
+    braid(g,seams,edge.map(([x,y,z])=>[x+.042,y+.012,z*1.02]),.008);
+    softTube(g,plum,[[.065,.086,.223*s],[.089,-.090,.263*s],[.108,-.218,.223*s],[.153,-.235,.166*s],[.161,-.197,.128*s],[.153,-.165,.146*s]],.044,.013);
+
+    // Crown branches curve forward at the tips and backwards at the roots.
+    const crest=[
+      [[-.029,.203,.126],[.015,.318,.151],[.009,.463,.150],[.002,.520,.111],[.024,.502,.076],[.031,.460,.071],[.035,.438,.093]],
+      [[-.076,.148,.190],[-.097,.249,.251],[-.081,.397,.315],[-.046,.442,.265],[-.008,.413,.236],[.013,.369,.250],[.007,.370,.277]],
+      [[-.088,.071,.203],[-.153,.166,.272],[-.118,.251,.335],[-.076,.275,.309],[-.053,.248,.287],[-.046,.215,.305]]
+    ];
+    for(const [i,route] of crest.entries()){
+      const profile=route.map(([x,y,z])=>[x,y,z*s]);
+      softTube(g,plum,profile,.052-i*.005,.012);
+      softTube(g,violet,profile.map(([x,y,z])=>[x+.027,y+.010,z]),.018,.009);
+    }
+    jewel(g,.102,.272,.090*s,.46);
+    braid(g,metal,[[.048,.201,.131*s],[.064,.273,.114*s],[.055,.334,.155*s],[.033,.410,.185*s]],.011);
+  });
+  softTube(g,shadow,[[.024,.214,0],[.038,.351,0],[.022,.431,0],[-.021,.544,0]],.063);
+  jewel(g,.085,.334,0,1.08);
+  braid(g,metal,[[.096,.226,-.133],[.110,.258,-.051],[.111,.232,0],[.110,.258,.051],[.096,.226,.133]],.011);
+}
+
+// Each cape panel tapers to a padded tip instead of sharing a flat silhouette.
+function cloakPanel(g,dye,from,to,span){
+  const a=new T.Vector3(...from),b=new T.Vector3(...to),axis=b.clone().sub(a);
+  const across=new T.Vector3(-a.z,0,a.x).normalize();
+  const face=new T.Vector3().crossVectors(across,axis).normalize();
+  const rows=10,sides=12,pos=[],uv=[],indices=[];
+  for(let row=0;row<=rows;row++){
+    const v=row/rows,p=a.clone().lerp(b,v);
+    const section=Math.sin(Math.PI*v)**.54*(1.20-.45*v);
+    for(let side=0;side<=sides;side++){
+      const angle=side/sides*Math.PI*2,rise=Math.sin(angle),width=Math.cos(angle);
+      const point=p.clone().addScaledVector(across,width*span*section).addScaledVector(face,rise*.024*section);
+      pos.push(...point.toArray());uv.push(side/sides,v);
+      if(row&&side){
+        const d=row*(sides+1)+side,c=d-1,b=d-sides-1,a=b-1;
+        indices.push(a,b,c,b,d,c);
+      }
+    }
+  }
+  const mesh=new T.BufferGeometry();
+  mesh.setAttribute('position',new T.Float32BufferAttribute(pos,3));
+  mesh.setAttribute('uv',new T.Float32BufferAttribute(uv,2));
+  mesh.setIndex(indices);mesh.computeVertexNormals();
+  g.add(new T.Mesh(mesh,yarn(dye)));
+}
+
+function watcherMantle(g){
+  const {shadow,plum,navy,violet,seams,metal,gem:jade}=watcherDyes;
+  ball(g,shadow,-.146,-.130,0,.120,.302,.279);
+  for(let i=0;i<13;i++){
+    const angle=(i-6)*Math.PI/6.3,x=Math.cos(angle),z=Math.sin(angle);
+    cloakPanel(g,i%2?navy:plum,[x*.174,.069,z*.263],[x*.210,-.388,z*.350],.081);
+    cloakPanel(g,i%2?plum:navy,[x*.180,.125,z*.285],[x*.245,-.231,z*.316],.077);
+  }
+  eachSide(s=>{
+    for(let row=0;row<3;row++){
+      for(let i=0;i<4;i++){
+        const t=(i+.25)*.112,z=t*s,y=.081-row*.094-i*.027,x=.129-Math.abs(z)*.23-row*.009;
+        const shell=ball(g,(i+row)%3===0?plum:navy,x,y,z,.046,.093,.064);
+        shell.rotation.x=-s*(.20+i*.095);shell.rotation.z=-.22;
+      }
+    }
+    for(let i=0;i<3;i++){
+      const z=s*(.217+i*.055),y=.121-i*.020;
+      const shoulder=ball(g,i%2?plum:navy,-.040,y,z,.172,.056,.081);
+      shoulder.rotation.x=-s*.22;
+      ball(g,metal,.079,y+.021,z,.054,.023,.049);
+      ball(g,'#dcd2a9',.104,y+.022,z,.038,.014,.034);
+      bead(g,jade,.133,y+.023,z,.012,.013,.017);
+    }
+    braid(g,plum,[[.175,.041,.063*s],[.162,-.064,.109*s],[.142,-.212,.190*s],[.078,-.351,.245*s]],.039);
+    braid(g,seams,[[.199,.038,.064*s],[.189,-.074,.112*s],[.168,-.218,.193*s],[.100,-.354,.257*s]],.009);
+    braid(g,metal,[[.196,.038,.038*s],[.202,.069,.067*s],[.201,.018,.110*s],[.177,-.001,.175*s],[.112,.055,.258*s]],.012);
+    braid(g,violet,[[-.136,.090,.235*s],[-.245,-.044,.221*s],[-.263,-.195,.173*s],[-.224,-.339,.095*s]],.020);
+  });
+  jewel(g,.221,.055,0,1.19);
+  stem(g,metal,[.213,-.022,0],[.211,-.135,0],.011);
+  jewel(g,.203,-.147,0,.33);
+}
+
 function suitBody(g,type,dye,trim,id){
+  if(type==='watcher'){watcherMantle(g);return;}
   const rigid=type==='helmet',wild=type==='creature'||type==='dragon'||type==='sunbird';
   if(rigid){
     ball(g,trim,.124,-.035,0,.104,.184,.205);

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { localDatabase } from '../scripts/local-db.mjs';
 import { handleApi } from '../worker/game-api.js';
-import { authoredWeaponDrops, encodeDropId, gridDrop, officerDrop } from '../public/drop-id.js';
+import { authoredWeaponDrops, enferWeaponDrops, encodeDropId, gridDrop, officerDrop } from '../public/drop-id.js';
 import { createNet } from '../public/net.js';
 
 const spawn=authoredWeaponDrops[0];
@@ -121,4 +121,30 @@ test('Enfer officer loot needs a recent defeated NPC and has only one collector'
     const results=await Promise.all([claim(a,3),claim(b,3)]);
     assert.deepEqual(results.map(result=>result.pickupResults[0].ok).sort(),[false,true]);
   }finally{DB.close();}
+});
+
+test('Enfer clients can collect both authored weapons and police loot via the shared world',async()=>{
+  const DB=localDatabase(),requests=new Set(),received=[];
+  const net=createNet({name:'Bobine',map:'enfer',fetcher(url,init){
+    const packet=JSON.parse(init.body);
+    for(const event of packet.events||[])if(event.type==='pickup')received.push(event.data.id);
+    const pending=handleApi(new Request('https://game.test'+url,init),{DB});
+    requests.add(pending);pending.then(()=>requests.delete(pending),()=>requests.delete(pending));
+    return pending;
+  }});
+  try{
+    const starter=enferWeaponDrops[0];
+    net.publish(pose(starter));assert.equal(await net.start(),true);
+    const claim=await net.claimPickup(starter.id,starter.weapon);
+    assert.equal(claim.ok,true);assert.ok(net.world().pickups[starter.id]>net.serverTime());
+    const now=Date.now();
+    const officer={id:'service-live',type:'police',x:starter.x,y:starter.y,health:0,healthAt:now};
+    await DB.prepare("INSERT INTO mc_items (room,kind,item,seq,owner,data,at) VALUES ('enfer:public','npc',?,0,?,?,?)")
+      .bind(officer.id,net.id,JSON.stringify(officer),now).run();
+    const drop=officerDrop(officer,now);
+    assert.equal((await net.claimPickup(drop.id,drop.weapon)).ok,true);
+    assert.deepEqual(received,[starter.id,drop.id]);
+  }finally{
+    net.stop();await Promise.allSettled([...requests]);DB.close();
+  }
 });

@@ -10,7 +10,7 @@ import {Box3,Color,PerspectiveCamera,Scene,Vector3} from '../public/three.js';
 
 test('linked avatars have round heads, wearable geometry and independent joint motion',()=>{
   const canvasApi=installKikalmoRaster();
-  for(const appearance of [{shape:2,costume:163},{shape:4,headwear:210,adornment:221,premiumHair:34}]){
+  for(const appearance of [{shape:2,costume:161,color:'#6667ba'},{shape:2,costume:163},{shape:4,headwear:210,adornment:221,premiumHair:34}]){
     const person=createKikalmoModel(appearance),actor={id:'profile'};
     person.update(actor,.016,0);
     const head=person.group.getObjectByName('kikalmo-head-volume');
@@ -19,6 +19,14 @@ test('linked avatars have round heads, wearable geometry and independent joint m
       const box=new Box3().setFromBufferAttribute(part.geometry.attributes.position);
       assert.ok((box.max.x-box.min.x)*part.scale.x>.32,'depth is comparable to body width');
       assert.ok(part.material.map.isDataTexture&&!part.material.transparent,'cloth has a solid dyed surface');
+    }
+    if(appearance.costume===161){
+      const hood=person.group.getObjectByName('kikalmo-costume-head-161');
+      const mantle=person.group.getObjectByName('kikalmo-costume-body-161');
+      person.group.updateMatrixWorld(true);
+      const crest=new Box3().setFromObject(hood);
+      assert.ok(crest.max.y-person.group.getObjectByName('kikalmo-head').position.y>.64);
+      assert.ok(mantle.children.length>45,'the mantle contains separate panels, brooches and braids');
     }
     if(appearance.costume===163)assert.ok(person.group.getObjectByName('kikalmo-costume-head-163').children.length>12,'the ornament is made of meshes');
 

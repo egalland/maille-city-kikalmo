@@ -8,7 +8,7 @@ import {cleanTrafficPacket} from '../public/traffic-sync.js';
 import {normalizeAppearance} from '../public/kikalmo-schema.js';
 import {encodeRoster} from '../public/roster-wire.js';
 import {stateReferences,restoreStateFields} from '../public/state-wire.js';
-import { decodeDropId, isEligibleDropId, decodeOfficerDrop, officerLootWindow } from '../public/drop-id.js';
+import { decodeDropId, matchesPickup, decodeOfficerDrop, officerLootWindow } from '../public/drop-id.js';
 import {prepareFire,readFireSession,rememberFirePose,recordFire} from './fire-netcode.js';
 
 // The Worker owns these tables. They are initialized once per D1 binding and isolate.
@@ -281,9 +281,7 @@ async function join(db,b,now,room) {
 const airbornePickup=new Set(['jump','fall','climb','vault']);
 function recordPickup(stmts,q,{room,id,token,name,op,item,weapon,state,now}){
   const p=decodeDropId(item),officer=decodeOfficerDrop(item);
-  if(officer){
-    if(room!==worldKeys.enfer||!['smg','shotgun'].includes(weapon))return false;
-  }else if(!p||p.weapon!==weapon||!isEligibleDropId(item,room===worldKeys.enfer))return false;
+  if(!matchesPickup(item,weapon,room===worldKeys.enfer))return false;
   const match=/^pick-([0-9a-z]{7,11})-([0-9a-z]{1,10})$/.exec(op);
   if(!match)return false;
   const issued=parseInt(match[1],36);
