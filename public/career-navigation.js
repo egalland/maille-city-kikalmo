@@ -1,15 +1,27 @@
 import {careerPlaces} from './career-catalog.js';
 import {makeCareerRouter} from './career-route.js';
 export const placeSymbols={market:'M',garage:'G',station:'S',quay:'Q',police:'P'};
-let goal=null,route=[],router=null,origin=null;
+let goal=null,route=[],districtRouter=null,cityRouter=null,origin=null;
+const inDistrict=(x,y,margin)=>Math.abs(x-careerPlaces.market.x)<=margin&&Math.abs(y-careerPlaces.market.y)<=margin;
+function itinerary(streets,player,target){
+  if(inDistrict(player.x,player.y,760)&&inDistrict(target.x,target.y,760)){
+    if(!districtRouter){
+      const local=streets.filter(r=>r.path.some(([x,y])=>inDistrict(x,y,1400)));
+      districtRouter=makeCareerRouter(local);
+    }
+    const nearby=districtRouter(player,target);
+    if(nearby.length)return nearby;
+  }
+  cityRouter??=makeCareerRouter(streets);
+  return cityRouter(player,target);
+}
 export function setCareerGoal(place){
   if(goal?.id===place?.id)return;
   goal=place;route=[];origin=null;
 }
 export function paintCareerNavigation(c,player,streets,{px,py,w,h,full}){
   if(goal&&(!origin||Math.hypot(player.x-origin.x,player.y-origin.y)>18)){
-    router??=makeCareerRouter(streets);
-    route=router(player,goal);
+    route=itinerary(streets,player,goal);
     origin={x:player.x,y:player.y};
   }
   c.save();
