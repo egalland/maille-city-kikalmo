@@ -367,6 +367,9 @@ function bodyContact(x,y,opt,d,dx,dy){
   const movement=Math.hypot(dx,dy);
   return movement?[dx/movement,dy/movement,gap]:[1,0,gap];
 }
+export function vehicleContactNormal(a,b){
+  return bodyContact(a.x,a.y,a,b,0,0);
+}
 function boxBuildingNormal(x,y,opt,building){
   const angle=opt.angle||0,c=Math.cos(angle),s=Math.sin(angle),l=opt.halfLength,w=opt.halfWidth;
   const corners=[];
@@ -443,15 +446,15 @@ function leaveMultipleContacts(x,y,opt,nx,ny){
   return null;
 }
 export function moveBody(x,y,dx,dy,opt={}) {
-  let touched=null,nx=0,ny=0;
+  let touched=null,firstNormalX=0,firstNormalY=0;
   const length=Math.hypot(dx,dy),steps=Math.max(1,Math.ceil(length/(opt.halfLength ? .7 : .35)));
   const sx=dx/steps,sy=dy/steps;
   for(let i=0;i<steps;i++){
     const d=testPose(x+sx,y+sy,opt);
     if(!d){x+=sx;y+=sy;continue;}
-    if(!touched)touched=d;
     const contact=contactNormal(x,y,opt,d,sx,sy);
-    [nx,ny]=contact;
+    const [nx,ny]=contact;
+    if(!touched){touched=d;firstNormalX=nx;firstNormalY=ny;}
     // A newly received peer pose can start inside our body. Only separate dynamic
     // overlaps, sweeping the correction against walls, props and all other bodies.
     if(contact[2]<-.0001&&opt.colliders?.includes(d)){
@@ -470,7 +473,7 @@ export function moveBody(x,y,dx,dy,opt={}) {
     else if(sy && !testPose(x,y+sy,opt))y+=sy;
     else break;
   }
-  return {x,y,hit:!!touched,touched,normalX:nx,normalY:ny};
+  return {x,y,hit:!!touched,touched,normalX:firstNormalX,normalY:firstNormalY};
 }
 export function cameraDistance(x,y,height,angle,distance,endHeight=height,destroyed=EMPTY,radius=.16,ground=terrainHeight) {
   const c=Math.cos(angle),s=Math.sin(angle), step=.35;

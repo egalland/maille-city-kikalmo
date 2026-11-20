@@ -69,7 +69,7 @@ const PICKUP_REQUEST_AGE = 30_000;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const KEY = /^[\w:-]{1,68}$/;
 const ITEM_TYPES = new Set(['propDamage','destroy','vehicle','vehicleDamage','npc']);
-const EVENTS = new Set(['propDamage','destroy','vehicle','vehicleDamage','npc','emote','horn','shot','melee','alert','hit','chat']);
+const EVENTS = new Set(['vehicleShunt','propDamage','destroy','vehicle','vehicleDamage','npc','emote','horn','shot','melee','alert','hit','chat']);
 const MEMBERS_SQL = seatedRosterSQL;
 function ready(db) {
   if (!schemaReady.has(db)) {
@@ -197,10 +197,14 @@ function eventData(type,raw,now) {
     case 'melee':
       return isMeleeKind(d.kind)&&recentSwing(d.started,now)&&Number.isFinite(d.x)&&Number.isFinite(d.y)?
         {kind:d.kind,started:d.started,x:result.x,y:result.y,angle:num(d.angle,0,-7,7),lift:num(d.lift,0,0,64)}:null;
+    case 'vehicleShunt': {
+      if(!key(d.id)||!isVehicleType(d.type)||![d.x,d.y,d.vx,d.vy,d.spin].every(Number.isFinite))return null;
+      return {id:d.id,type:d.type,x:result.x,y:result.y,vx:num(d.vx,0,-37,37),vy:num(d.vy,0,-37,37),spin:num(d.spin,0,-2.7,2.7)};
+    }
     case 'vehicle': {
       if(!key(d.id))return null;
       const occupied=!!d.occupied;
-      const out={...result,id:d.id,occupied,...(!occupied?{expiresAt:now+abandonedFor}:{})};
+      const out={...result,id:d.id,occupied,...(!occupied&&d.shifted?{shifted:true}:{}),...(!occupied?{expiresAt:now+abandonedFor}:{})};
       if(occupied&&d.eject&&Number.isFinite(d.eject.x+d.eject.y+d.eject.angle)&&Math.hypot(d.eject.x-result.x,d.eject.y-result.y)<=5)
         out.eject={x:d.eject.x,y:d.eject.y,angle:num(d.eject.angle,0,-7,7),at:now};
       return out;
@@ -514,7 +518,7 @@ async function sync(db,b,now,room) {
   for (const input of inputs) {
     const {type}=dict(input);
     let {op}=dict(input);
-    if(member.seatedDriver&&['vehicle','pickup','fire','melee','hit','shot','propDamage','destroy'].includes(type))continue;
+    if(member.seatedDriver&&['vehicle','vehicleShunt','pickup','fire','melee','hit','shot','propDamage','destroy'].includes(type))continue;
     if(type==='seat'&&key(op)){
       const seat=dict(input.data),leave=seat.leave===true;
       if(leave||(UUID.test(seat.driver)&&key(seat.car)))requestSeat(stmts,q,{room,id,name,op,now,aliveSince:now-GONE,driver:seat.driver,car:seat.car,leave});
@@ -566,6 +570,13 @@ async function sync(db,b,now,room) {
       }
       if(data.cause==='weapon' && distance>weaponCatalog[data.weapon].range+20)continue;
       propOps.set(op,data.impactId);
+    }
+    if(type==='vehicleShunt'){
+      const source=actor.vehicle||priorState.vehicle;
+      if(!source||source.id===data.id||!Number.isFinite(actor.x+actor.y)||Math.hypot(actor.x-data.x,actor.y-data.y)>16)continue;
+      data.source=source.id;
+      guard={clause:`WHERE NOT EXISTS (SELECT 1 FROM mc_events WHERE room=? AND player=? AND type='vehicleShunt'
+        AND at>? AND json_extract(data,'$.id')=?)`,args:[room,id,now-320,data.id]};
     }
     if(type==='horn'){
       if(!actor.vehicle||!Number.isFinite(actor.x+actor.y))continue;

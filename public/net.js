@@ -9,7 +9,7 @@ const actionPoses=new Set(['jump','fall','vault','climb','land','carAir']);
 const cosmeticQueue=new Set(['emote','alert','shot','horn']);
 const socialQueue=new Set(['chat','emote']);
 const combatActions=new Set(['fire','shot','hit','melee']);
-const onlineOnly=new Set([...combatActions,'chat','alert','horn','emote','seat']);
+const onlineOnly=new Set([...combatActions,'vehicleShunt','chat','alert','horn','emote','seat']);
 const COMBAT_WINDOW=1400;
 const MAX_BATCH=20, MAX_QUEUE=120;
 const blankWorld=()=>({destroyed:[],vehicles:{},npcs:{},pickups:{},propHealth:{},vehicleDamage:{}});
@@ -139,6 +139,7 @@ export function createNet(options={}) {
     const now=Date.now(), clock=serverTime();
     pending=pending.filter(e=>{
       if(e.type==='fire'&&Number.isFinite(e.data?.firedAt))return clock-e.data.firedAt<=2200;
+      if(e.type==='vehicleShunt')return now-e.queuedAt<=800;
       if(cosmeticQueue.has(e.type))return now-e.queuedAt<=3500;
       return true;
     });

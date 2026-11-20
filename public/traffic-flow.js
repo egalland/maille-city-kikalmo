@@ -15,7 +15,7 @@ function makeBody(entity,traffic=false){
   const speed=hasSpeed?entity.speed:Math.hypot(entity.vx||0,entity.vy||0);
   const vx=entity.vx??(c*speed),vy=entity.vy??(s*speed);
   const radius=spec?Math.hypot(spec.halfLength,spec.halfWidth):(entity.r??entity.radius??.40);
-  return {id:entity.id,x:entity.x,y:entity.y,c,s,length:spec?.halfLength||0,width:spec?.halfWidth||0,radius,vx,vy,traffic};
+  return {id:entity.id,type:entity.type,x:entity.x,y:entity.y,c,s,length:spec?.halfLength||0,width:spec?.halfWidth||0,radius,vx,vy,traffic};
 }
 function bodyAt(body,pose){
   body.x=pose.x;body.y=pose.y;body.c=Math.cos(pose.angle);body.s=Math.sin(pose.angle);
@@ -386,7 +386,7 @@ export function createTrafficFlow(sample,chooseDetour){
     if(Math.abs(delta)<1.5)car.speed+=(speed-car.speed)*.35;
   }
 
-  function advance(car,bodies,dt,blockedPose){
+  function advance(car,bodies,dt,blockedPose,onVehicleContact){
     const adjust=clamp(car.correction*.8,-2.25,2.25);
     let target=car.target+adjust;
     // Position correction may catch up on an open road, never beyond a stop or a slower leader.
@@ -401,11 +401,15 @@ export function createTrafficFlow(sample,chooseDetour){
     const distance=car.distance+movement,pose=sample(car.seed.routeId,distance);
     if(!pose)return false;
     const probe=bodyAt({...car.body},pose);
-    let blocked=bodies.some(other=>{
+    const obstruction=bodies.find(other=>{
       if(other===car.body)return false;
       const opposing=other.length && other.c*probe.c+other.s*probe.s<-.84;
       return touches(probe,other,opposing ? .025 : .065);
     });
+    let blocked=!!obstruction;
+    if(onVehicleContact&&obstruction?.length&&car.speed>1.5){
+      onVehicleContact({...car.seed,...car.pose,vx:car.body.c*car.speed,vy:car.body.s*car.speed},obstruction);
+    }
     if(!blocked && blockedPose && car.roadChecked<distance){
       const ahead=sample(car.seed.routeId,distance+.42);
       blocked=blockedPose(pose.x,pose.y,pose.angle,car.spec);
@@ -419,7 +423,7 @@ export function createTrafficFlow(sample,chooseDetour){
     return true;
   }
 
-  function step(seeds,{dt=0,epoch=Date.now(),blockers=[],observer=null,excluded=new Set(),checkpoints=[],blockedPose,recycleAfter=0}={}){
+  function step(seeds,{dt=0,epoch=Date.now(),blockers=[],observer=null,excluded=new Set(),checkpoints=[],blockedPose,onVehicleContact,recycleAfter=0}={}){
     const actualDt=clamp(dt,0,.5);
     const fixed=blockers.filter(b=>b&&Number.isFinite(b.x)&&Number.isFinite(b.y)).map(b=>makeBody(b));
     const candidates=new Map(seeds.filter(s=>s.routeId!=null&&!excluded.has(s.id)).map(s=>[s.id,s]));
@@ -459,7 +463,7 @@ export function createTrafficFlow(sample,chooseDetour){
       }
       for(const car of states){
         if(!cars.has(car.seed.id))continue;
-        const advanced=advance(car,bodies,elapsed,blockedPose);
+        const advanced=advance(car,bodies,elapsed,blockedPose,onVehicleContact);
         if(car.speed<.32&&car.target<.42)car.stalledSince??=tick;
         else car.stalledSince=null;
         const stalled=car.stalledSince==null?0:tick-car.stalledSince;
