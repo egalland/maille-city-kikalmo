@@ -834,10 +834,13 @@ function containsArea(item,x,z){
 }
 function groundTile(batch,x0,z0,n,lakes,parks,country){
   const near=item=>item.maxX>=x0&&item.minX<=x0+chunkSize&&item.maxZ>=z0&&item.minZ<=z0+chunkSize;
-  const wet=lakes.filter(near),green=parks.filter(near),step=chunkSize/n,points=[];
+  const wet=lakes.filter(near),green=parks.filter(near),points=[];
+  if(wet.length&&!country)n=Math.max(n,32);
+  else if(wet.length)n=Math.max(n,16);
+  const step=chunkSize/n;
   for(let j=0;j<=n;j++)for(let i=0;i<=n;i++){
     const x=x0+i*step,z=z0+j*step,lake=wet.find(q=>containsArea(q,x,z));
-    points.push([x,lake?lake.level-.8:baseTerrainHeight(x,z)-.07,z]);
+    points.push([x,lake?lake.level-.85:baseTerrainHeight(x,z)-.07,z]);
   }
   for(let j=0;j<n;j++)for(let i=0;i<n;i++){
     const k=j*(n+1)+i,a=points[k],b=points[k+n+1],c=points[k+n+2],d=points[k+1];
@@ -853,11 +856,11 @@ function makeGround(b) {
     const poly=distinct(w.poly);if(poly.length<3)continue;
     b.base=waterLevel(w);
     flatWithHoles(b,'water',poly,w.holes,.004,white,streetFabric.water.meters);
-    for(let i=0;i<poly.length;i++){
-      const a=poly[i],d=poly[(i+1)%poly.length];
-      const bank=Math.max(0,Math.min(5,baseTerrainHeight(a[0],a[1])-b.base));
-      b.wall('felt',a,d,-.12,bank,'#b69e92',Math.max(1,Math.hypot(d[0]-a[0],d[1]-a[1])/4),1);
-      strip(b,'plain',a,d,1.05,.008,'#99abb0',2.5);
+    for(const ring of [poly,...(w.holes||[])])for(let i=0;i<ring.length;i++){
+      const a=ring[i],d=ring[(i+1)%ring.length],length=Math.hypot(d[0]-a[0],d[1]-a[1]);
+      if(length<.06)continue;
+      b.wall('felt',a,d,-.26,.16,'#9f9477',Math.max(1,length/2.2),1);
+      strip(b,'plain',a,d,.26,.010,'#8bb1a8',1);
     }
     const px=poly.map(p=>p[0]),pz=poly.map(p=>p[1]),x0=Math.min(...px),z0=Math.min(...pz),x1=Math.max(...px),z1=Math.max(...pz);
     for(let z=z0+4;z<z1;z+=12)for(let x=x0+((Math.floor(z/11)%5)*4);x<x1;x+=24){
@@ -906,7 +909,7 @@ function disposeGroup(group){
   group.traverse(n=>{if(n.geometry)n.geometry.dispose();});group.removeFromParent();
 }
 export function createCity3D(scene,{software=false}={}){
-  const materials=cityMaterials(isEnfer), index=makeIndex(),root=new T.Group();root.name=isEnfer?'Maille City · Enfer':'Maille City · Paris';
+  const materials=cityMaterials(isEnfer), index=makeIndex(),root=new T.Group();root.name=isEnfer?'Maille City':'Maille City · Paris';
   if(isEnfer)materials.signalLight=new T.MeshBasicMaterial({vertexColors:true,side:T.DoubleSide,toneMapped:false});
   root.userData.cpuStaticCity=software;root.userData.cpuRevision=0;
   const terrain=new Batch();makeGround(terrain);
@@ -1039,7 +1042,7 @@ export function createCity3D(scene,{software=false}={}){
       if(!propGroups.has(k))propGroups.set(k,{items:[],type,variant,stage,distant});
       propGroups.get(k).items.push(prop);
       const tree=type==='tree',lamp=type==='lamp',radius=tree?1.38:lamp?.42:.45;
-      helper.position.set(prop.x+radius*.55,terrainHeight(prop.x+radius*.55,prop.y+radius*.13)+.105,prop.y+radius*.13);helper.rotation.set(-Math.PI/2,0,-.30);
+      helper.position.set(prop.x+radius*.55,(tree?baseTerrainHeight(prop.x+radius*.55,prop.y+radius*.13):terrainHeight(prop.x+radius*.55,prop.y+radius*.13))+.035,prop.y+radius*.13);helper.rotation.set(-Math.PI/2,0,-.30);
       helper.scale.set(radius*(tree?1.8:1.5),radius*.76,1);helper.updateMatrix();
       if(shadowIndex<460)groundShadows.setMatrixAt(shadowIndex++,helper.matrix);
     }
@@ -1049,7 +1052,7 @@ export function createCity3D(scene,{software=false}={}){
       const meshes=propSet(type,variant,stage,distant);
       items.forEach((p,i)=>{
         const h=hash(p.id),scale=type==='tree'?.87+(h%41)/100:1;
-        helper.position.set(p.x,terrainHeight(p.x,p.y),p.y);helper.rotation.set(0,p.angle===undefined?(h%628)/100:-p.angle,0);helper.scale.setScalar(scale);helper.updateMatrix();
+        helper.position.set(p.x,type==='tree'?baseTerrainHeight(p.x,p.y)-.10:terrainHeight(p.x,p.y),p.y);helper.rotation.set(0,p.angle===undefined?(h%628)/100:-p.angle,0);helper.scale.setScalar(scale);helper.updateMatrix();
         for(const m of meshes)m.setMatrixAt(i,helper.matrix);
       });
       for(const m of meshes){m.count=items.length;m.instanceMatrix.needsUpdate=true;}

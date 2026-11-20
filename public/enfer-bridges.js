@@ -212,3 +212,17 @@ export function bridgeGround(x,y,base,heading,previousHeight){
   if(oriented)for(const s of nearbyRoads.get(id)||[])consider(s);
   return height;
 }
+
+// Only the actual span is a flight obstacle. Road approaches and their
+// smoothed shoulders are for wheels, independent of the rotorcraft.
+export function bridgeDeckHeight(x,y,base){
+  let top=base;
+  for(const span of cells.get(key(x,y))||[]){
+    if(!span.profile.ends)continue;
+    const station=projection(span,x,y);
+    const distance=Math.hypot(x-span.a[0]-span.x*station,y-span.a[1]-span.y*station);
+    if(distance<=span.profile.width)
+      top=Math.max(top,heightAt(span.profile,span.start+station,base));
+  }
+  return top;
+}

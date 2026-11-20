@@ -26,9 +26,9 @@ retry.onclick=()=>{
 };
 const enfer=selectedWorld(canonical.href)==='enfer';
 if(enfer){
-  document.title='Maille City · Enfer';
-  document.getElementById('loadingText').textContent='Ouverture d’Enfer en laine…';
-  document.getElementById('city').setAttribute('aria-label','Enfer en laine, monde 3D à la troisième personne');
+  document.title='Maille City · Monde 3D';
+  document.getElementById('loadingText').textContent='Ouverture de Maille City en laine…';
+  document.getElementById('city').setAttribute('aria-label','Maille City en laine, monde 3D à la troisième personne');
 }
 const crossing=readSectorTransfer(canonical);
 if(crossing?.target){
@@ -45,7 +45,7 @@ try {
   text.textContent=isGPU?'Le rendu 3D nécessite WebGL 2. Active l’accélération graphique ou essaie un navigateur compatible.':'Le chargement de la ville a été interrompu.';
   const url=new URL(location.href);
   if(enfer){
-    text.textContent='Enfer n’a pas pu démarrer. Relance le chargement.';
+    text.textContent='Maille City n’a pas pu démarrer. Relance le chargement.';
   }else if(url.searchParams.has('lon')){
     text.textContent='Le secteur demandé n’a pas pu être chargé. Tu peux réessayer ou revenir sur l’axe du Louvre à La Défense.';
     const back=document.getElementById('returnToCity');

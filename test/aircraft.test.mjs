@@ -85,14 +85,18 @@ test('keyboard helicopter bailout, inherited momentum and fall injury work along
     assert.ok(game.restoreTravelState({...game.exportTravelState(),...door,vehicle:null,vx:0,vy:0}));
     ticks(4);game.action('vehicle');ticks(10);assert.ok(hud.piloting);
     const byKeyboard=field.type==='helicopter';
-    if(byKeyboard)keyboard(' ',true);else game.setFlightVertical(1);
+    if(byKeyboard)keyboard('r',true);else game.setFlightVertical(1);
     ticks(65);
-    if(byKeyboard)keyboard(' ',false);else game.setFlightVertical(0);
+    if(byKeyboard)keyboard('r',false);else game.setFlightVertical(0);
     ticks(10);
     assert.ok(hud.flightHeight>=8);assert.equal(published.vehicle.type,field.type);
     assert.ok(draw.entities.find(e=>e.self).lift>8);
     if(byKeyboard){
       assert.equal(hud.canBail,true);
+      const hoverHeight=draw.p.lift;
+      keyboard('f',true);ticks(26);keyboard('f',false);
+      assert.ok(draw.p.lift<hoverHeight-.6,'F lowers the helicopter with the keyboard');
+      keyboard('r',true);ticks(15);keyboard('r',false);
       game.setDrive(0,1);ticks(22);
       const before={x:draw.p.x,y:draw.p.y,lift:draw.p.lift,speed:published.speed};
       assert.ok(before.speed>5);
@@ -109,9 +113,9 @@ test('keyboard helicopter bailout, inherited momentum and fall injury work along
     assert.equal(hud.canBail,false);
     game.action('vehicle');ticks(5);assert.ok(hud.piloting);
     game.setDrive(.4,.5);ticks(15);game.setDrive(0,0);ticks(55);
-    if(byKeyboard)keyboard('Control',true);else game.setFlightVertical(-1);
+    if(byKeyboard)keyboard('f',true);else game.setFlightVertical(-1);
     ticks(150);
-    if(byKeyboard)keyboard('Control',false);else game.setFlightVertical(0);
+    if(byKeyboard)keyboard('f',false);else game.setFlightVertical(0);
     assert.equal(hud.flightHeight,0);game.action('vehicle');ticks(9);
     assert.equal(hud.inVehicle,false);assert.ok(!contactAt(draw.p.x,draw.p.y,{radius:.42}));
   }
@@ -202,7 +206,7 @@ test('a healthy Libellule covers 360 km/h over measured distance and banks throu
   const stopped=planAutorotation(setup,world,pier);
   assert.ok(validFlightPath(stopped)&&stopped.at(-1)[0]<1.5);
   const blocked=stepAircraft('helicopter',setup,{throttle:1},.075,{...world,contact:(x,y,opt)=>pier(x,y,opt.footWorldZ)});
-  assert.ok(blocked.speed===0&&blocked.impact>99&&blocked.x<1.5);
+  assert.ok(blocked.speed<0&&blocked.impact>99&&blocked.x<1.5&&blocked.verticalSpeed<0&&blocked.recovery>0);
 });
 
 test('the mobile passenger action leaves a moving helicopter at cabin height and preserves its momentum',async t=>{
@@ -225,4 +229,18 @@ test('the mobile passenger action leaves a moving helicopter at cabin height and
   assert.equal(leaves,1);assert.ok(!hud.inVehicle&&game.getPosition().airborne);
   assert.ok(Math.abs(published.lift-31)<1.5);assert.ok(published.vx>15);
   ticks(8);assert.ok(published.lift<32&&published.x>field.x+4);
+});
+
+test('crossing a surveyed deck preserves altitude, and descending can land on a deck from above',()=>{
+  const world={ground:()=>0,deck:x=>x>=2&&x<17?7:0,water:()=>null,contact:()=>false};
+  let craft={x:0,y:0,angle:0,lift:15,speed:12};
+  for(let i=0;i<80;i++){
+    craft=stepAircraft('helicopter',craft,{throttle:.12},1/50,world);
+    assert.equal(craft.altitude,15);
+  }
+  assert.ok(craft.x>17);
+  craft={x:6,y:0,angle:0,lift:12,speed:0};
+  for(let i=0;i<220;i++)craft=stepAircraft('helicopter',craft,{vertical:-1},1/50,world);
+  assert.equal(craft.altitude,7);
+  assert.equal(craft.verticalSpeed,0);
 });

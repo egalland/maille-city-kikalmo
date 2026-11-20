@@ -14,7 +14,7 @@ import {textileSky,sunBearing} from './textile-sky.js';
 import {createBleedFibers} from './bleed-fibers.js';
 import {createBleedMesh} from './bleed-mesh.js';
 import {fiberLifetime,impactFibers} from './puppet-combat.js';
-import {terrainHeight,terrainGradient,walkingPose} from './terrain-height.js';
+import {baseTerrainHeight,terrainHeight,terrainGradient,walkingPose} from './terrain-height.js';
 import {buildShotEffect,effectDuration} from './weapon-effects.js';
 import {propDebris} from './prop-wear.js';
 import { vehicleSpec } from './vehicle-types.js';
@@ -117,7 +117,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     item.used=inFrame;const g=item.object.group;
     g.userData.followedByCamera=!!e.self;
     const angle=e.angle||0;
-    const ground=terrainHeight(e.x,e.y,e.angle,item.roadFloor),swim=e.motion==='swim' && !vehicle;
+    const ground=vehicle&&isAircraft(e.type)?baseTerrainHeight(e.x,e.y):terrainHeight(e.x,e.y,e.angle,item.roadFloor),swim=e.motion==='swim' && !vehicle;
     item.roadFloor=ground;
     const offset=swim?swimGround(e.x,e.y)-ground-.67:0;
     item.waterOffset=item.waterOffset==null?offset:item.waterOffset+(offset-item.waterOffset)*blend(9,dt);
@@ -143,7 +143,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   function badge(e,label,bubble){
     let el=names.get(e.id);
     if(!el){el=document.createElement('span');el.className='world-label';labels.append(el);names.set(e.id,el);}
-    el._used=inFrame;projection.set(e.x,(e.motion==='swim'?swimGround(e.x,e.y)-.67:terrainHeight(e.x,e.y,e.angle))+(e.lift||0)+(e.isCar?vehicleSpec(e.type).height+.43:2.14),e.y);projection.project(camera);
+    el._used=inFrame;projection.set(e.x,(e.motion==='swim'?swimGround(e.x,e.y)-.67:e.isCar&&isAircraft(e.type)?baseTerrainHeight(e.x,e.y):terrainHeight(e.x,e.y,e.angle))+(e.lift||0)+(e.isCar?vehicleSpec(e.type).height+.43:2.14),e.y);projection.project(camera);
     const visible=projection.z>0&&projection.z<1&&Math.abs(projection.x)<1.1&&Math.abs(projection.y)<1;
     el.hidden=!visible;if(!visible)return;
     el.style.left=(50+50*projection.x)+'%';el.style.top=(50-50*projection.y)+'%';
@@ -206,7 +206,8 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     const follow=car?chase+Math.max(0,model.halfLength-2)*1.24+(isAircraft(car.type)?2.8:0):5.25;
     const swimming=p.motion==='swim'&&!car;
     cameraFloor=swimming?undefined:terrainHeight(p.x,p.y,p.angle,state.snap?undefined:cameraFloor);
-    const followGround=swimming?swimGround:(x,y)=>terrainHeight(x,y,p.angle,cameraFloor);
+    const aircraft=car&&isAircraft(car.type),airBase=aircraft?baseTerrainHeight(p.x,p.y):0;
+    const followGround=aircraft?()=>airBase:swimming?swimGround:(x,y)=>terrainHeight(x,y,p.angle,cameraFloor);
     const feet=(p.lift||0)-(swimming?.55:0);
     const focusY=feet+(car?Math.max(1.35,model.height*.77):1.17),lift=feet+(car?Math.max(2.92,model.height+1.05):2.18);
     const snap=state.snap || Math.hypot(camX-p.x,camY-p.y)>25 || inFrame===1;
@@ -218,7 +219,8 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     const available=clamp(cameraDistance(camX,camY,focusY,back,goal,wantedY,destroyed,.31,followGround),.24,goal);
     cameraArm=snap?available:Math.min(available,cameraArm+(available-cameraArm)*blend(6,dt));
     const armHeight=ground+focusY+(groundBehind-ground+wantedY-focusY)*cameraArm/goal;
-    camera.position.set(camX+Math.cos(back)*cameraArm,armHeight+.12,camY+Math.sin(back)*cameraArm);
+    const jolt=(state.vehicleImpact||0)*Math.sin(time*35)*.19;
+    camera.position.set(camX+Math.cos(back)*cameraArm,armHeight+.12+jolt,camY+Math.sin(back)*cameraArm);
     const aimForward=car?6.3:4.15;
     cameraAim.set(camX+Math.cos(yaw)*aimForward,followGround(camX+Math.cos(yaw)*aimForward,camY+Math.sin(yaw)*aimForward)+focusY+pitch*.95,camY+Math.sin(yaw)*aimForward);
     driverView.set(cockpit,model,p,ground,state.steering,state.vehiclePitch);

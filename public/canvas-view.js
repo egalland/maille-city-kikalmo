@@ -15,6 +15,7 @@ import {baseTerrainHeight,terrainHeight,terrainGradient,roadHeight,buildingGroun
 import {terracePanels} from './street-terraces.js';
 import {propDebris,propWearProfile,propWearStage,trackPropWear} from './prop-wear.js';
 import {buildShotEffect,effectDuration} from './weapon-effects.js';
+import {isAircraft} from './airfield.js';
 import { vehicleSpec } from './vehicle-types.js';
 // Perspective software renderer for browsers without a WebGL 2 context.
 // It projects the same metre-space data, props, actors and camera boom as the GPU view.
@@ -490,7 +491,7 @@ export function createCanvasView(canvas,spawn,onNotice){
       for(let i=0;i<=strips;i++){
         const offset=(2*i/strips-1)*(d*sideLimit+3);
         const x=camX+fx*d-fy*offset,y=camY+fy*d+fx*offset;
-        row.push([x,y,-.18]);
+        row.push([x,y,-.12,baseTerrainHeight(x,y)]);
       }
       if(previous)for(let i=0;i<strips;i++){
         const a=row[i],b=row[i+1],c=previous[i+1],e=previous[i];
@@ -759,8 +760,9 @@ export function createCanvasView(canvas,spawn,onNotice){
       }
       projectionBase=null;return;
     }
-    const base=at(o.x,o.y,0),height=o.type==='tree'?Math.max(4.7,o.h):o.h||1;
-    if(!base||base.d>295)return;const top=at(o.x,o.y,height);if(!top)return;
+    const tree=o.type==='tree',ground=tree?baseTerrainHeight(o.x,o.y)-.10:undefined;
+    const base=at(o.x,o.y,0,ground),height=tree?Math.max(4.7,o.h):o.h||1;
+    if(!base||base.d>295)return;const top=at(o.x,o.y,height,ground);if(!top)return;
     const ph=base.y-top.y;if(ph<2||base.x<-ph||base.x>w+ph)return;
     const stage=propWearStage(health),pixelsPerMetre=f/base.d;
     const heading=Math.atan2(o.y-camY,o.x-camX)-(o.angle||0);
@@ -853,12 +855,14 @@ export function createCanvasView(canvas,spawn,onNotice){
     followX+=(p.x-followX)*blend;followY+=(p.y-followY)*blend;
     const model=car?vehicleSpec(car.type):null;
     fx=Math.cos(yaw);fy=Math.sin(yaw);const goal=car?8.15+Math.max(0,model.halfLength-2)*1.24+Math.min(heli?5.5:2.25,Math.abs(state.speed||0)*.065):5.25;
-    const swimming=!car&&p.motion==='swim',followGround=swimming?swimGround:(x,y)=>terrainHeight(x,y,p.angle);
+    const swimming=!car&&p.motion==='swim',aircraft=car&&isAircraft(car.type);
+    const airBase=aircraft?baseTerrainHeight(p.x,p.y):0;
+    const followGround=aircraft?()=>airBase:swimming?swimGround:(x,y)=>terrainHeight(x,y,p.angle);
     const lift=(p.lift||0)-(swimming?.55:0),focus=lift+(car?Math.max(1.35,model.height*.77):1.17),wantedH=lift+(car?Math.max(2.92,model.height+1.05):2.18)+pitch*2.8;
     const ground=followGround(followX,followY),backGround=followGround(followX-fx*goal,followY-fy*goal),look=car?6.3:4.15;
     const dist=clamp(cameraDistance(followX,followY,focus,yaw+Math.PI,goal,wantedH,destroyed,.16,followGround),.3,goal);
     arm=snap?dist:Math.min(dist,arm+(dist-arm)*(1-Math.exp(-6*frameDt)));
-    camX=followX-fx*arm;camY=followY-fy*arm;camH=ground+focus+(backGround-ground+wantedH-focus)*arm/goal+.12;
+    camX=followX-fx*arm;camY=followY-fy*arm;camH=ground+focus+(backGround-ground+wantedH-focus)*arm/goal+.12+(state.vehicleImpact||0)*Math.sin(time*35)*.19;
     const tilt=Math.atan2(followGround(followX+fx*look,followY+fy*look)+focus+pitch*.95-camH,arm+look);
     sin=Math.sin(tilt);cos=Math.cos(tilt);horizon=h*.5+f*Math.tan(tilt);sideLimit=w/(2*f)+.1;
     if(Math.hypot(cacheX-p.x,cacheY-p.y)>35){
@@ -883,8 +887,25 @@ export function createCanvasView(canvas,spawn,onNotice){
       fillPath(plane,streetFabric.park.color);
     }
     for(const {a,bounds,level} of waters)if(a.poly.length>=3&&seen(bounds,1000)){
-      projectionBase=level;const plane=projectPoly(a.poly.map(q=>[q[0],q[1],0]));projectionBase=null;
-      fillPath(plane,streetFabric.water.color);
+      const rings=[a.poly,...(a.holes||[])].map(ring=>projectPoly(ring.map(([x,y])=>[x,y,0,level]))).filter(Boolean);
+      if(!rings.length)continue;
+      g.save();
+      g.beginPath();
+      for(const ring of rings){
+        g.moveTo(ring[0].x,ring[0].y);
+        for(const point of ring.slice(1))g.lineTo(point.x,point.y);
+        g.closePath();
+      }
+      const colour=g.createLinearGradient(0,Math.max(0,horizon),0,h);
+      colour.addColorStop(0,'#769f9f');colour.addColorStop(1,'#3e767e');
+      g.fillStyle=colour;g.fill('evenodd');
+      g.clip('evenodd');
+      g.strokeStyle='#91b8ac';g.lineWidth=1.5;g.stroke();
+      g.globalAlpha=.29;g.strokeStyle='#c3d8c8';g.lineWidth=.7;
+      for(let y=Math.max(0,horizon);y<h;y+=Math.max(2,Math.floor((y-horizon)*.061))){
+        g.beginPath();g.moveTo(0,y);g.lineTo(w,y+.9);g.stroke();
+      }
+      g.restore();
     }
     const visibleWays=nearWays.filter(s=>seen(s.bounds,230)),arc=monuments.arc;
     const atArc=!isEnfer&&Math.hypot(arc.x-p.x,arc.y-p.y)<450;
@@ -995,7 +1016,8 @@ export function createCanvasView(canvas,spawn,onNotice){
     const playerBody=uprightBody(state.entities.find(e=>e.self));
     for(const e of state.entities){
       const swimmer=e.motion==='swim'&&!e.isCar;
-      const roadOffset=terrainHeight(e.x,e.y,e.angle)-terrainHeight(e.x,e.y);
+      const ground=terrainHeight(e.x,e.y);
+      const roadOffset=(e.isCar&&isAircraft(e.type)?baseTerrainHeight(e.x,e.y):terrainHeight(e.x,e.y,e.angle))-ground;
       const lift=swimmer?swimGround(e.x,e.y)-terrainHeight(e.x,e.y)-.67:(e.lift||0)+roadOffset,base=at(e.x,e.y,lift),high=e.isCar?vehicleSpec(e.type).height:1.78,top=at(e.x,e.y,lift+high);
       if(!base||!top||base.d>(e.isCar?160:96)||base.d<.61)continue;
       const ph=base.y-top.y;if(ph<2||base.x<-ph*2||base.x>w+ph*2)continue;

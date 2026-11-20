@@ -84,6 +84,7 @@ export function drawStreetTree(b, variant, stage=0, distant=false) {
   const species = variant%trees.length, t = trees[species], sections = distant ? 4 : 6;
   const point = y => [t.lean*(y/t.tip)**1.3 + .09*Math.sin(y*1.34+species)*y/t.tip, y, .105*Math.sin(y*.87)*y/t.tip];
   const heights = [0,.25,2.0,3.3,4.35,5.35,t.tip];
+  branch(b,[0,-.50,0],point(.08),t.girth*1.24,t.girth*1.58,t.bark,sections);
   const radii = [1.65,1,.83,.66,.50,.30,.07].map(r=>r*t.girth);
   for (let i=0;i<heights.length-1;i++) {
     branch(b,point(heights[i]),point(heights[i+1]),radii[i],radii[i+1],i<3?t.bark:t.wood,sections);

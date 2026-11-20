@@ -286,8 +286,27 @@ function makeBody(look,high,seated=false){
     cord(head,[[.158,.248,.156*sign],[.192,.259,.131*sign],[.217,.25,.099*sign]],.014,pal.shade);
   }
   if(human){
-    addPart(head,humanNose,0,0,0,1,1,1,pal.inner,0,0,0,faceSurface);
-    cord(head,[[.234,.012,-.052],[.246,.007,-.011],[.248,.012,.023],[.24,.022,.057]],.007,pal.shade);
+    const cut=look.pick%6,smile=cut===0||cut===3;
+    addPart(head,humanNose,0,0,0,1,1,1,pal.fur,0,0,0,faceSurface);
+    cord(head,[[.236,.021,-.061],[.25,.016,-.026],[.252,.018,.023],[.24,smile?.039:.020,.062]],.0058,pal.shade);
+    cord(head,[[.242,.003,-.03],[.255,.002,0],[.244,.007,.035]],.005,pal.inner);
+    for(const side of [-1,1]){
+      const z=n=>side*n;
+      cord(head,[[.242,.225,z(.075)],[.225,.243,z(.123)],[.186,.23,z(.174)]],.009,pal.shade);
+      cord(head,[[.294,.095,z(.022)],[.278,.078,z(.040)],[.265,.076,z(.043)]],.005,pal.inner);
+      small(head,.186,.097,z(.17),.025,.022,.043,pal.inner,.05,-.60*side,0,faceSurface);
+      if(cut===3){
+        small(head,-.019,.055,z(.292),.010,.014,.009,'#e6bd73',0,0,0,'plain');
+        cord(head,[[-.02,.048,z(.294)],[-.019,.025,z(.301)],[-.005,.024,z(.294)]],.004,'#caa46a');
+      }
+      if(cut===2||cut===5){
+        cord(head,[[.257,.192,z(.065)],[.247,.209,z(.126)],[.225,.197,z(.174)],
+          [.229,.149,z(.165)],[.253,.139,z(.116)],[.262,.157,z(.073)],[.257,.192,z(.065)]],.0065,'#51434f');
+        cord(head,[[.230,.191,z(.171)],[.171,.200,z(.224)],[.046,.183,z(.264)]],.006,'#51434f');
+      }
+    }
+    if(cut===2||cut===5)cord(head,[[.259,.186,-.067],[.269,.198,0],[.259,.186,.067]],.0055,'#51434f');
+    if(cut===4)cord(head,[[.233,.042,-.067],[.251,.061,-.022],[.252,.058,0],[.251,.063,.022],[.233,.040,.067]],.012,pal.shade);
   }else{
     if(animal!=='fox')ball(head,.213,.075,0,.142,.073,.102,pal.cream,0,0,0,faceSurface);
     small(head,animal==='fox'?.386:.323,.106,0,.045,.037,.053,colors.ink,0,0,.13,faceSurface);
@@ -303,9 +322,14 @@ function makeBody(look,high,seated=false){
   const eyes=joint(head,'eyes',0,.174,0);
   for(const side of [-1,1]){
     const skinX=human?.213:.215,skinZ=human?.128:.120;
-    ball(eyes,skinX,.001,side*skinZ,human?.021:.038,human?.047:.059,human?.044:.049,'#f5e7c9',0,-.56*side,0,'plain');
+    ball(eyes,skinX,.001,side*skinZ,human?.022:.038,human?.032:.059,human?.041:.049,'#f5e7c9',0,-.56*side,0,'plain');
     const inset=human?.015:.026;
-    small(eyes,skinX+inset,.001,side*(skinZ+inset*.56),human?.012:.018,human?.035:.043,human?.025:.031,colors.ink,0,-.56*side,0,'plain');
+    if(human){
+      const iris=['#596f66','#80594a','#62798b'][look.pick%3];
+      small(eyes,skinX+.019,.001,side*(skinZ+.012),.012,.025,.024,iris,0,-.56*side,0,'plain');
+      small(eyes,skinX+.026,.001,side*(skinZ+.017),.008,.015,.014,colors.ink,0,-.56*side,0,'plain');
+      cord(head,[[.231,.177,side*.093],[.232,.201,side*.128],[.200,.184,side*.166]],.0047,pal.inner);
+    }else small(eyes,skinX+inset,.001,side*(skinZ+inset*.56),.018,.043,.031,colors.ink,0,-.56*side,0,'plain');
     small(eyes,skinX+inset*1.6,.014,side*(skinZ+inset*.86),.006,.009,.009,'#fff2d8',0,0,0,'plain');
   }
   // Wrap raised strand seams behind the head. They read from the follow camera when the face is hidden.
@@ -421,6 +445,11 @@ export function createPuppet(type='fox',color,seed=0){
     if(long)addPart(equipment,geo.box,.04,.144,0,.071,.09,.06,'#a96a4f');
     batchGroup(equipment);
   }
+  const human=animal==='human';
+  if(human){
+    const width=[.94,1.03,.98,.91,1.08,1.01][pick%6],height=[1.02,1.04,.99,.95,1.05,.98][pick%6];
+    lod.scale.set(1,height,width);
+  }
   const hero=type==='fox',ragRig=createRagdollRig(bone),farDistance=lod.levels[1].distance;
   function update(pose={},dt=1/60,time=0){
     ragRig.restore();
@@ -447,7 +476,8 @@ export function createPuppet(type='fox',color,seed=0){
     bone.head.position.y=.49+.30*squash+.009*Math.cos(phase*2-.6)*rel;
     bone.head.rotation.z=motion.lean*.36+.022*b*rel+.057*impact+.009*(1-rel)*idleBreath;
     bone.head.rotation.x=-motion.roll*.55;
-    bone.head.rotation.y=-motion.twist*.61-turn*.145+.14*em*Math.sin(phaseIdle*7);
+    const lookAround=human&&rel<.2?.10*Math.sin(phaseIdle*.83+pick)*Math.sin(phaseIdle*.41+pick*.1)**4:0;
+    bone.head.rotation.y=-motion.twist*.61-turn*.145+.14*em*Math.sin(phaseIdle*7)+lookAround;
     const blinkCycle=(phaseIdle+pick*.113)%3.63;
     bone.eyes.scale.y=1-.91*Math.max(0,1-Math.abs(blinkCycle-.10)/.079);
     for(const s of [-1,1]){

@@ -23,7 +23,13 @@ export function chassisDamage(type,{cause,speed,weapon,part,swingKind}){
     const factor=part==='engine'?.50:part==='glass'?.09:partMask[part]>1?.10:.31;
     return Math.max(1,Math.round(weaponCatalog[weapon].damage*factor*vulnerability));
   }
-  if(cause!=='crash'||!Number.isFinite(speed)||speed<5.5)return 0;
+  if(cause!=='crash'||!Number.isFinite(speed))return 0;
+  if(type==='helicopter'){
+    if(speed<=3.2)return 0;
+    const closing=speed-3;
+    return Math.min(105,Math.max(1,Math.round(closing*.72+.18*closing**2)));
+  }
+  if(speed<5.5)return 0;
   const closing=Math.min(85,speed)-4.5;
   return Math.min(76,Math.max(1,Math.round((.12*closing+.037*closing**2)*vulnerability)));
 }

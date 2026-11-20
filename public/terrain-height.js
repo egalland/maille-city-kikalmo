@@ -1,15 +1,16 @@
 // World coordinates and heights are metres. XY are east/south. Source: IGN BD TOPO road Z.
-import {bridgeGround,roadGround} from './enfer-bridges.js';
+import {bridgeGround,bridgeDeckHeight,roadGround} from './enfer-bridges.js';
+import {riverbanks} from './riverbanks.js';
 import {grid,waterLevels} from './paris-heights.js';
 
 const bytes=Uint8Array.from(atob(grid.data),char=>char.charCodeAt(0));
 const data=new DataView(bytes.buffer);
 const packaged={...grid,values:Float32Array.from({length:bytes.length/2},(_,i)=>data.getInt16(i*2,true)/10)};
-let surface=packaged,buildingBases=new WeakMap();
+let surface=packaged,buildingBases=new WeakMap(),shoreGround=null;
 const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
 const cubic=(a,b,c,d,t)=>b+.5*t*(c-a+t*(2*a-5*b+4*c-d+t*(3*(b-c)+d-a)));
 
-export function baseTerrainHeight(x,y){
+function surveyHeight(x,y){
   const {cols,rows,step,values}=surface;
   const u=clamp((x-surface.x)/step,0,cols-1),v=clamp((y-surface.y)/step,0,rows-1);
   const i=Math.floor(u),j=Math.floor(v),t=u-i,s=v-j;
@@ -17,7 +18,10 @@ export function baseTerrainHeight(x,y){
   const row=k=>{const n=k*cols;return cubic(values[n+i0],values[n+i],values[n+i2],values[n+i3],t);};
   return cubic(row(Math.max(0,j-1)),row(j),row(Math.min(rows-1,j+1)),row(Math.min(rows-1,j+2)),s);
 }
+export function baseTerrainHeight(x,y){return shoreGround?shoreGround(x,y):surveyHeight(x,y);}
+export function selectRiverbanks(waters){shoreGround=waters?.length?riverbanks(waters,surveyHeight,waterLevel).ground:null;}
 export function terrainHeight(x,y,heading,previousHeight){return bridgeGround(x,y,baseTerrainHeight(x,y),heading,previousHeight);}
+export function aircraftDeck(x,y){return bridgeDeckHeight(x,y,baseTerrainHeight(x,y));}
 export function roadHeight(road,index,x,y){return roadGround(road,index,x,y,baseTerrainHeight(x,y));}
 export function terrainGradient(x,y,heading){
   const h=Number.isFinite(heading)?terrainHeight(x,y,heading):undefined;
@@ -32,7 +36,7 @@ export function buildingGround(poly){
   const base=baseTerrainHeight(x/n,y/n);buildingBases.set(poly,base);return base;
 }
 export function selectSectorTerrain(field){
-  buildingBases=new WeakMap();
+  buildingBases=new WeakMap();shoreGround=null;
   if(field&&field.values?.length===field.cols*field.rows)surface=field;
   else surface=packaged;
 }
@@ -78,7 +82,7 @@ export function waterLevel(w){
   const measured=w.elevation??waterLevels[w.poly[0].join(',')];
   if(Number.isFinite(measured))return measured;
   let low=Infinity,left=Infinity,right=-Infinity,top=Infinity,bottom=-Infinity;
-  for(const [x,y] of w.poly){low=Math.min(low,baseTerrainHeight(x,y));left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);}
+  for(const [x,y] of w.poly){low=Math.min(low,surveyHeight(x,y));left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);}
   return Math.max(right-left,bottom-top)>650?Math.min(low-1.5,25.7+(left+right)*.0001):low-.45;
 }
 

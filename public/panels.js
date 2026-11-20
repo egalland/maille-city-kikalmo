@@ -36,8 +36,8 @@ const shortcuts = [
   ['Utiliser l’arme équipée', ['Clic gauche', 'F']],
   ['Frapper au corps à corps', ['V']],
   ['Tourner la caméra', ['Glisser clic droit']],
-  ['Monter en altitude', ['Espace']],
-  ['Descendre et se poser', ['Ctrl']],
+  ['Monter en altitude', ['R']],
+  ['Descendre et se poser', ['F']],
   ['Klaxonner au volant', ['K']],
   ['Changer le mode des phares', ['P']],
   ['Recentrer à pied ou changer de vue au volant', ['C']],
@@ -273,7 +273,7 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
     ring.addEventListener('pointercancel',cancel);ring.addEventListener('lostpointercapture',cancel);
   }
   function mapPanel() {
-    const sheet=frame('map','Carte',isEnfer?'Enfer':metadata.sector?.name||'Paris et petite couronne');
+    const sheet=frame('map','Carte',isEnfer?'Maille City':metadata.sector?.name||'Paris et petite couronne');
     const pad=node('div','mc-body');
     const nav=node('div','gp-mode');nav.setAttribute('role','group');nav.setAttribute('aria-label','Échelle du plan');
     const localButton=button('Plan local','',()=>switchMap('local'));
@@ -329,7 +329,7 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
       finder.append(summary,label,field,result,follow);
     }else finder.hidden=true;
     const travel=node('div','mc-travel');
-    const label=fieldLabel(isEnfer?'Destinations d’Enfer':'Voyage rapide sur l’axe historique','mc-travel-target');
+    const label=fieldLabel(isEnfer?'Destinations de Maille City':'Voyage rapide sur l’axe historique','mc-travel-target');
     const row=node('form','mc-travel-row');
     const target=node('select','mc-input');target.id='mc-travel-target';
     for(const destination of coreDestinations){
@@ -428,14 +428,14 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
     }
     const {repeatWindow, repeatStep, maxRepeatBonus, calmDelay, decayRate}=wantedTuning;
     rules.append(pointsList,node('p','mc-guide-aside','La même infraction répétée en moins de '+repeatWindow+' s rapporte '+Math.round(repeatStep*100)+' % de plus par répétition, jusqu’à +'+Math.round(maxRepeatBonus*100)+' %.'));
-    alert.append(levels,node('p','mc-guide-aside','Après '+calmDelay+' s sans infraction, l’alerte baisse. À Enfer, échappe à la vue des policiers pour la faire baisser dès 10 s.'),rules);
+    alert.append(levels,node('p','mc-guide-aside','Après '+calmDelay+' s sans infraction, l’alerte baisse. À Maille City, échappe à la vue des policiers pour la faire baisser dès 10 s.'),rules);
 
     const controls=node('details','mc-guide-details');
     controls.append(node('summary','','Commandes clavier et souris'),keyRows());
     const mobile=node('section','mc-guide-section');
     mobile.append(node('h3','','Commandes tactiles'),node('p','','À pied, déplace légèrement le joystick pour marcher, puis pousse-le vers le bord pour courir. Glisse sur le décor pour tourner la caméra. Au volant, braque avec les flèches à gauche et utilise les pédales à droite. Si le bouton Sortir devient Sauter, le véhicule roule assez vite pour que ton personnage parte en roulade. La voiture continue sur sa lancée.'));
     mobile.append(node('p','','Maintiens le bouton de tir pour accrocher une cible devant toi. Un réticule apparaît dessus. Glisse le pouce sur ce bouton pour ajuster la visée, puis relâche pour arrêter de tirer.'));
-    if(isEnfer)mobile.append(node('h3','','Piloter dans Enfer'),node('p','','Sur la carte, choisis le H de l’hélistation ou le A du mât d’amarrage, puis « Guider vers ce lieu ». Monte à bord avec E ou la commande de véhicule. Les touches de direction orientent l’appareil et le font avancer. Espace fait monter, Ctrl fait descendre. Sur écran tactile, maintiens Monter ou Descendre et utilise les flèches pour tourner. En hélicoptère, E ou Sauter permet de quitter la cabine en vol. La hauteur et la vitesse comptent à la réception. Pour quitter le dirigeable, pose-toi et ralentis.'));
+    if(isEnfer)mobile.append(node('h3','','Piloter dans Maille City'),node('p','','Sur la carte, choisis le H de l’hélistation ou le A du mât d’amarrage, puis « Guider vers ce lieu ». Monte à bord avec E ou la commande de véhicule. Les touches de direction orientent l’appareil et le font avancer. R fait monter et F fait descendre. Sur écran tactile, maintiens Monter ou Descendre et utilise les flèches pour tourner. En hélicoptère, E ou Sauter permet de quitter la cabine en vol. La hauteur et la vitesse comptent à la réception. Pour quitter le dirigeable, pose-toi et ralentis.'));
     const health=node('section','mc-guide-section');
     health.append(node('h3','','Vie et soins'),node('p','','Utilise une trousse avec H ou le bouton de soins. Un ambulancier peut te soigner et remplir ta trousse. À zéro point de vie, un compte à rebours indique quand tu reviens dans le jeu.'));
     const guide=node('a','mc-secondary','Guide du quartier et carnet de version');

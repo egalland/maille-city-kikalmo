@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#223037">
-<meta name="description" content="Explore Enfer en laine avec tes amis, à pied ou au volant.">
-<title>Maille City · Enfer</title>
+<meta name="description" content="Explore Maille City en laine avec tes amis, à pied ou au volant.">
+<title>Maille City · Monde 3D</title>
 <link rel="icon" href="/favicon.png">
 <link rel="preload" href="/dm-serif.woff" as="font" type="font/woff" crossorigin>
 <link rel="stylesheet" href="/style.css">
@@ -37,15 +37,15 @@
   </div>
 </header>
 <main class="scene" id="scene" aria-label="Ville jouable">
-  <canvas id="city" tabindex="0" aria-label="Enfer en laine, monde 3D à la troisième personne"></canvas>
+  <canvas id="city" tabindex="0" aria-label="Maille City en laine, monde 3D à la troisième personne"></canvas>
   <span id="careerPin" class="career-pin" hidden></span>
   <div class="scene-shade" aria-hidden="true"></div>
   <span id="touchAimMarker" aria-hidden="true" hidden><svg viewBox="0 0 28 28" focusable="false">
     <path d="M3 10V7a4 4 0 0 1 4-4h3m8 0h3a4 4 0 0 1 4 4v3m0 8v3a4 4 0 0 1-4 4h-3m-8 0H7a4 4 0 0 1-4-4v-3"/>
   </svg></span>
   <section data-hud="district" class="district" aria-label="Position actuelle">
-    <button type="button" class="district-line map-world-entry" data-panel="map" aria-label="Ouvrir le plan"><i data-icon="pin"></i><span id="activeWorldLabel">ENFER · VILLE EN LAINE</span></button>
-    <h2 id="district">Enfer</h2><span id="street" class="street"></span>
+    <button type="button" class="district-line map-world-entry" data-panel="map" aria-label="Ouvrir le plan"><i data-icon="pin"></i><span id="activeWorldLabel">MAILLE CITY · VILLE EN LAINE</span></button>
+    <h2 id="district">Maille City</h2><span id="street" class="street"></span>
     <button class="career-badge" id="careerBadge" aria-haspopup="dialog" title="Missions et garage (N)" hidden><i data-icon="pack"></i><b>Missions</b><span id="careerBalance">— ₣</span></button>
     <div class="career-target" id="careerTarget" hidden><strong id="careerInstruction"></strong><small id="careerDetail"></small><button id="careerAction" type="button" hidden></button></div>
   </section>
@@ -114,12 +114,12 @@
       <button type="button" data-hud="fire" id="fire" data-action="fire" aria-label="Utiliser l’arme équipée" title="Utiliser l’arme équipée"><i data-icon="aim"></i><span></span></button></div>
   </div>
   <div id="weaponTracker" class="weapon-tracker" hidden><span id="trackArrow" aria-hidden="true">↑</span><span id="trackDistance"></span></div>
-  <div class="scene-load" id="loadScene" role="status"><div class="load-frame"><img src="/favicon.png" alt=""><strong>Maille City</strong><span id="loadingText">Ouverture d’Enfer en laine…</span><div class="load-progress"></div><button id="retryLoad" type="button" hidden>Réessayer</button><a id="returnToCity" hidden>Revenir avenue de la Grande Armée</a></div></div>
+  <div class="scene-load" id="loadScene" role="status"><div class="load-frame"><img src="/favicon.png" alt=""><strong>Maille City</strong><span id="loadingText">Ouverture de Maille City en laine…</span><div class="load-progress"></div><button id="retryLoad" type="button" hidden>Réessayer</button><a id="returnToCity" hidden>Revenir avenue de la Grande Armée</a></div></div>
   <div id="panels"></div>
 </main>
 <footer class="keybar">
   <div class="keys-desktop">
-    <span><kbd>ZQSD</kbd> Déplacer</span><span id="flightShortcut" hidden><kbd>Espace</kbd> Monter <kbd>Ctrl</kbd> Descendre</span><span id="traversalShortcut"><kbd>Espace</kbd><span>Sauter</span></span><span class="shoot-key"><kbd><i data-icon="mouse"></i></kbd><span id="primaryVerb">Tirer</span></span><span class="melee-key"><kbd>V</kbd> Frapper</span><span id="rideShortcut"><kbd>E</kbd><span>Véhicule</span></span><span class="camera-key"><kbd>Clic droit</kbd> Caméra</span>
+    <span><kbd>ZQSD</kbd> Déplacer</span><span id="flightShortcut" hidden><kbd>R</kbd> Monter <kbd>F</kbd> Descendre</span><span id="traversalShortcut"><kbd>Espace</kbd><span>Sauter</span></span><span class="shoot-key"><kbd><i data-icon="mouse"></i></kbd><span id="primaryVerb">Tirer</span></span><span class="melee-key"><kbd>V</kbd> Frapper</span><span id="rideShortcut"><kbd>E</kbd><span>Véhicule</span></span><span class="camera-key"><kbd>Clic droit</kbd> Caméra</span>
     <button data-panel="weapons"><kbd>TAB</kbd> Roue d’armes</button><button data-panel="emotes"><kbd>B</kbd> Émotes</button><button id="chatKey"><kbd>T</kbd> Chat</button>
   </div>
   <div class="keys-mobile"><button data-panel="weapons"><i data-icon="aim"></i>Armes</button><button data-panel="emotes"><i data-icon="smile"></i>Émotes</button><button data-panel="map"><i data-icon="map"></i>Carte</button><button id="chatMobile"><i data-icon="chat"></i>Chat</button></div>

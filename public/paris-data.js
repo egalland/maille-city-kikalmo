@@ -1,6 +1,6 @@
 import {selectedWorld} from './world-link.js';
 import {selectBridgeDecks} from './enfer-bridges.js';
-import {selectSectorTerrain,baseTerrainHeight} from './terrain-height.js';
+import {selectSectorTerrain,selectRiverbanks,baseTerrainHeight} from './terrain-height.js';
 import {bundledSectors} from './sector-crossing.js';
 import {readMapArchive} from './map-archive.js';
 async function readPreset(key) {
@@ -46,4 +46,7 @@ selectSectorTerrain(data.relief);
 export const {buildings,streets,water,green,metadata}=data;
 export const isEnfer=metadata.world==='enfer';
 export const enclosureRows=isEnfer?(await import('./enfer-enclosures.js')).enclosureRows:[];
-if(isEnfer)selectBridgeDecks(streets,water,baseTerrainHeight);
+if(isEnfer){
+  selectRiverbanks(water);
+  selectBridgeDecks(streets,water,baseTerrainHeight);
+}

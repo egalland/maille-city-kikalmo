@@ -41,7 +41,7 @@ export async function readMapArchive(key,{fetcher=globalThis.fetch,storage}={}){
   if(!enfer)return download(url,true);
   if(compressed){
     try{return await download(url,true);}
-    catch(error){console.warn('Archive Enfer, bascule vers le chargement compatible.',error);}
+    catch(error){console.warn('Archive Maille City, bascule vers le chargement compatible.',error);}
   }
   return download(compatibilityURL,false);
 }

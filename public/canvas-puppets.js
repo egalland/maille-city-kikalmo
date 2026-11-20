@@ -120,8 +120,8 @@ function drawTail(c,coat,phase,rear,side){
 export function drawCanvasPuppet(c,o,x,groundY,height,time=0,viewAngle=0){
   if(!o||!Number.isFinite(height)||height<1)return;
   const t=Number(time)||0,role=o.local||o.player?'fox':o.type||'pedestrian';
-  const {type,animal,pelt,coat:dress,trim,service}=puppetAppearance(role,o.color,o.id!=null?String(o.id):o.seed??0);
-  const hero=type==='fox';
+  const {type,animal,pelt,coat:dress,trim,service,pick}=puppetAppearance(role,o.color,o.id!=null?String(o.id):o.seed??0);
+  const hero=type==='fox',human=animal==='human',cut=pick%6;
   const {fur,cream}=pelt;
   const pose=o.pose||o,rear=Math.cos(viewAngle||0),profile=Math.sin(viewAngle||0);
   const gait=sampleLocomotion(pose,t,motionSeed(o.id??o.seed));
@@ -132,8 +132,19 @@ export function drawCanvasPuppet(c,o,x,groundY,height,time=0,viewAngle=0){
   if(animal!=='human'){ear(c,-1,animal,fur,rear,stride);ear(c,1,animal,fur,rear,-stride);}
   panel(c,animal==='fox'||animal==='cat'?foxHead:roundHead,fur,[-32,-85,64,49]);
   if(animal==='human'){
-    shape(c,'M-29 -64 Q-34 -83 -13 -90 Q10 -95 25 -80 Q32 -74 29 -62 L19 -70 Q4 -70 -3 -77 Q-11 -69 -24 -69 Z',pelt.shade,outline,1.3,true);
-    bead(c,-29,-57,3.9,6,fur,null);bead(c,29,-57,3.9,6,fur,null);
+    const hair=[
+      'M-29 -64 Q-34 -83 -13 -90 Q10 -95 25 -80 Q32 -74 29 -62 L19 -70 Q4 -70 -3 -77 Q-11 -69 -24 -69 Z',
+      'M-29 -66 Q-28 -87 -10 -89 Q15 -91 28 -74 L28 -64 Q7 -71 -19 -69 Z',
+      'M-29 -58 Q-38 -73 -25 -85 Q-18 -92 -2 -87 Q19 -97 30 -77 L29 -65 Q8 -67 -1 -76 Q-16 -65 -25 -66 Z',
+      'M-32 -54 Q-34 -73 -24 -83 Q13 -105 30 -76 Q35 -68 34 -50 L27 -46 Q27 -66 14 -73 Q-6 -68 -25 -66 L-26 -48 Z',
+      'M-29 -69 Q-27 -84 -12 -89 Q17 -88 26 -76 L28 -68 Q8 -76 -19 -70 Z',
+      'M-30 -68 Q-32 -86 -9 -91 Q22 -93 30 -75 L32 -67 L-24 -63 Z'
+    ];
+    shape(c,hair[cut],cut===1||cut===5?dress:pelt.shade,outline,1.15,true);
+    for(const side of [-1,1]){
+      bead(c,side*28,-57,3.4,5.5,fur,null);
+      if(cut===3)bead(c,side*29,-53,1.6,2.1,'#eac984',null);
+    }
   }
   if(rear>.3&&animal!=='human'){
     const tufted=animal==='fox'||animal==='cat';
@@ -154,15 +165,24 @@ export function drawCanvasPuppet(c,o,x,groundY,height,time=0,viewAngle=0){
       if(animal==='raccoon')bead(c,s*7.8,-58.5,7.2,7,pelt.shade,null,0,s*.15);
       const ex=s*7.4;
       stitch(c,[[ex-3,-66],[ex,-67],[ex+2.2,-66.6]],1.35,pelt.shade);
-      bead(c,ex,-58,4.5,6.3,'#fff0c9',outline,.8);
-      bead(c,s*7.5+profile*1.2,-57.3,2.2,4.1,outline,null);
+      bead(c,ex,-58,4.5,human?3.4:6.3,'#fff0c9',outline,.65);
+      if(human){
+        bead(c,s*7.5+profile*1.2,-57.9,2.2,2.65,['#596f66','#80594a','#62798b'][cut%3],null);
+        if(cut===2||cut===5)bead(c,ex,-58,5.5,4.2,'transparent','#51434f',.9);
+      }
+      bead(c,s*7.5+profile*1.2,-57.3,human?1.20:2.2,human?1.5:4.1,outline,null);
       bead(c,s*7.6+profile*1.2-.3,-59.4,.75,1,'#fffbde',null);
     }
     if(animal!=='human')bead(c,0,-48.5,11*facing+3,6.2,cream,null);
     bead(c,0,-52,3.8,2.7,animal==='human'?cream:outline,null);stitch(c,[[-1.5,-53],[-.4,-53.4],[.5,-53.3]],.65,'#ead1ac');
     for(const s of [-1,1])for(let k=0;k<2;k++){
       const px=s*(4.4+k*2.35);stitch(c,[[px-.55,-47.7-k*.6],[px+.5,-47.2-k*.6]],.7,pelt.shade);}
-    shape(c,'M0 -50 Q0 -45 4 -46',null,outline,1);c.restore();
+    if(human){
+      shape(c,cut===0||cut===3?'M-4 -47 Q1 -43 6 -48':'M-4 -46 Q1 -48 5 -46',null,pelt.shade,1);
+      if(cut===4)shape(c,'M-6 -49 Q-2 -52 0 -50 Q3 -52 6 -49',null,pelt.shade,1.6);
+      if(cut===2||cut===5)stitch(c,[[-2,-58],[0,-59],[2,-58]],.85,'#51434f');
+    }else shape(c,'M0 -50 Q0 -45 4 -46',null,outline,1);
+    c.restore();
   }
   if(service)hat(c,type,rear,profile);
   }

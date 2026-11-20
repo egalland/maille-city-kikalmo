@@ -10,7 +10,11 @@ export function createHelicopter(THREE,{geo,addPart,batchGroup,cord,carTrim,upda
   function box(parent,x,y,z,sx,sy,sz,tone,rx=0,ry=0,rz=0){
     return addPart(parent,geo.box,x,y,z,sx,sy,sz,tone,rx,ry,rz);
   }
-  oval(shell,.26,.89,0,1.57,.48,.83,paint);
+  const belly=new THREE.SphereGeometry(1,32,12,0,Math.PI*2,Math.acos(.19/.48),Math.PI-Math.acos(.19/.48));
+  addPart(shell,belly,.26,.89,0,1.57,.48,.83,paint,0,0,0,'yarn');
+  const floor=new THREE.SphereGeometry(1,32,5,0,Math.PI*2,0,Math.PI/2);
+  addPart(shell,floor,.26,1.071,0,1.44,.009,.76,dark,0,0,0,'felt');
+  box(shell,.67,1.014,0,1.45,.025,1.13,'#4b555a');
   oval(shell,-.62,1.34,0,.71,.61,.73,paint);
   oval(shell,-.58,1.88,0,.61,.29,.49,teal);
   // Transparent bubble canopy surrounds two independent occupied seats.
@@ -22,15 +26,20 @@ export function createHelicopter(THREE,{geo,addPart,batchGroup,cord,carTrim,upda
     carTrim(shell,[.22,1.09,s(.78)],[.13,1.95,s(.49)],.030,dark);
     for(let i=0;i<6;i++)carTrim(shell,[-.54+i*.11,.87,s(.805)],[-.51+i*.11,.92,s(.80)],.013,cream);
     box(shell,.43,.92,s(.70),.22,.05,.043,metal);
-    oval(shell,.43,.93,s(.32),.31,.095,.23,dark);
-    oval(shell,.15,1.13,s(.32),.10,.29,.22,dark);
+    oval(shell,.43,1.08,s(.32),.29,.043,.22,teal);
+    oval(shell,.15,1.27,s(.32),.086,.23,.20,dark);
     for(const x of [-.67,.90])carTrim(shell,[x,.61,s(.52)],[x-.08,.14,s(.83)],.056,metal);
     cord(shell,[[-1.38,.12,s(.83)],[-.86,.092,s(.83)],[.70,.092,s(.83)],[1.39,.13,s(.83)],[1.55,.24,s(.83)]],.074,dark);
     oval(shell,1.21,.78,s(.49),.17,.095,.10,cream,'glow');
     oval(shell,-.93,1.12,s(.58),.115,.082,.069,side>0?'#70bf92':'#e27267','glow');
     for(let i=0;i<4;i++)box(shell,-.86+i*.13,1.84,s(.47),.048,.15,.03,dark,side*.2,0,-.24);
   }
-  carTrim(shell,[.98,1.04,-.34],[.88,1.27,-.34],.026,dark);
+  box(shell,1.15,1.22,0,.17,.19,.83,dark,0,0,-.16);
+  for(const z of [-.24,-.085,.075,.23]){
+    oval(shell,1.068,1.256,z,.014,.036,.037,cream);
+    oval(shell,1.051,1.256,z,.007,.025,.025,'#4e686d');
+  }
+  carTrim(shell,[.98,1.07,-.34],[.88,1.27,-.34],.026,dark);
   carTrim(shell,[.88,1.275,-.49],[.88,1.275,-.19],.034,dark);
   carTrim(shell,[.59,1.99,0],[1.69,1.15,0],.033,cream);
   carTrim(shell,[-1.02,1.31,0],[-3.38,1.59,0],.12,paint);
