@@ -2,7 +2,8 @@ import {drawCabinDriver} from './cabin-art.js';
 import {appearanceKey} from './kikalmo-avatar.js';
 import {yarnPalette} from './wool-art.js';
 import {puppetAppearance} from './puppet-dyes.js';
-import {puppetKnit} from './puppet-material.js';
+import {puppetKnit,puppetFelt} from './puppet-material.js';
+import {jacketPattern,headPattern,dressCivilian,travelerScarf,foxBib,foxCrown,outerFoxEar} from './figure-tailoring.js';
 import {motionSeed,sampleLocomotion} from './locomotion-pose.js';
 import * as THREE from './three.js';
 import { createStreetVehicle, isStreetVehicle } from './street-vehicles.js';
@@ -25,6 +26,7 @@ const surfaces={
   yarn:new THREE.MeshLambertMaterial({color:0xffffff,vertexColors:true,map:puppetKnit()}),
   glass:new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.17,depthWrite:false,side:THREE.DoubleSide}),
   plain:new THREE.MeshLambertMaterial({color:0xffffff,vertexColors:true}),
+  felt:new THREE.MeshLambertMaterial({color:0xffffff,vertexColors:true,map:puppetFelt()}),
   glow:new THREE.MeshBasicMaterial({color:0xffffff,vertexColors:true}),
 };
 const unpacked=new WeakMap();
@@ -104,17 +106,17 @@ function earWedge(dir){
 }
 const ears=[earWedge(-1),earWedge(1)];
 function earModel(head,side,animal,pal){
-  const e=joint(head,side<0?'earL':'earR',-.045,.315,.178*side),s=side>0?1:0;
+  const e=joint(head,side<0?'earL':'earR',-.045,.315,.178*side);
   if(animal==='bear'){
     ball(e,0,.055,0,.08,.11,.102,pal.shade);ball(e,.047,.058,0,.053,.073,.079,pal.inner);
   }else if(animal==='rabbit'){
     ball(e,-.016,.143,0,.074,.22,.085,pal.fur,.18*side,0,.09);ball(e,.038,.15,.002*side,.039,.16,.049,pal.inner,.18*side,0,.09);
   }else{
-    addPart(e,ears[s],0,.0,0,1,1,1,pal.fur);
-    addPart(e,ears[s],.048,.017,0,.54,.76,.68,pal.inner);
-    addPart(e,ears[s],.064,.026,-.004*side,.42,.53,.5,pal.cream);
-    addPart(e,ears[s],-.024,.177,.031*side,.33,.33,.36,pal.shade);
-    cord(e,[[-.06,.042,.042*side],[-.062,.08,.04*side],[-.048,.142,.041*side]],.008,pal.cream);
+    e.position.y=.297;
+    addPart(e,outerFoxEar,0,0,0,1,1,1,pal.shade,.10*side);
+    addPart(e,outerFoxEar,.019,-.013,0,1,.89,.95,pal.fur,.10*side);
+    addPart(e,outerFoxEar,.060,.018,.005*side,.47,.65,.61,pal.inner,.10*side);
+    cord(e,[[.082,.015,-.037*side],[.076,.050,0],[.065,.104,.011*side]],.009,pal.cream);
   }
   return e;
 }
@@ -144,17 +146,6 @@ function addFoxCape(torso,cloth){
     }
     cord(cape,points,y<-.34?.010:.006,y<-.34?colors.trim:'#80c9a5');
   }
-  // The gold embroidered spool reads from the chase camera on the back of the cape.
-  const badge=joint(cape,'embroidery',-.379,-.25,0);
-  badge.rotation.z=-.52;
-  ball(badge,0,0,0,.012,.08,.069,'#205b63');
-  const gold='#ffd27c';
-  cord(badge,[[-.011,.052,-.045],[-.017,.055,0],[-.011,.052,.045]],.009,gold);
-  cord(badge,[[-.012,-.047,-.045],[-.017,-.052,0],[-.012,-.047,.045]],.009,gold);
-  for(let i=0;i<3;i++){const yy=-.025+i*.021;cord(badge,[[-.017,yy,-.033],[-.024,yy+.015,0],[-.017,yy+.023,.033]],.006,gold);}
-  // Bake the embroidered badge into the cape batch rather than another animated joint.
-  badge.updateMatrix();
-  for(const part of [...badge.children]){part.applyMatrix4(badge.matrix);cape.add(part);}cape.remove(badge);
   return cape;
 }
 function serviceUniform(torso,head,type,cloth,edge){
@@ -190,44 +181,65 @@ function makeBody(look,high){
   const group=new THREE.Group(),core=joint(group,'core',0,.69,0),torso=joint(core,'torso',0,.065,0);
   const head=joint(core,'head',.025,.49,0);
   const fur=pal.fur;
-  ball(torso,0,-.025,0,.193,.277,.223,out[0]);
-  ball(torso,.015,.26,0,.113,.13,.121,isFox?colors.deepTeal:out[0]);
+  const small=(parent,x,y,z,sx,sy,sz,c,rx=0,ry=0,rz=0,style='yarn')=>
+    addPart(parent,geo.littleBall,x,y,z,sx,sy,sz,c,rx,ry,rz,style);
+  const stitches={part:addPart,small,cord};
+  // The yoke reaches the arm joints, closing the gap under each raised sleeve.
+  addPart(torso,jacketPattern,0,0,0,1,1,1,out[0]);
+  small(torso,.006,.252,0,.119,.135,.13,isFox?colors.deepTeal:out[0]);
   ball(torso,.01,-.224,0,.156,.089,.182,'#4d5262');
-  ball(head,.005,.124,0,.279,.252,.291,fur);
+  const human=animal==='human', faceSurface=high?'felt':'yarn';
+  if(human)addPart(head,headPattern,0,0,0,1,1,1,fur,0,0,0,faceSurface);
+  else addPart(head,high?geo.detailBall:geo.littleBall,-.006,.120,0,.269,.245,.284,fur,0,0,0,faceSurface);
   if(animal==='human'){
     const kind=look.pick%6;
     if(kind!==4){
-      ball(head,-.045,.261,0,.263,kind===1?.179:.145,.285,pal.shade,0,0,-.17);
-      ball(head,-.166,.179,0,.146,kind===2?.219:.156,.273,pal.shade);
+      small(head,-.053,.259,0,.255,kind===1?.176:.141,.277,pal.shade,0,0,-.17);
+      small(head,-.160,.177,0,.140,kind===2?.2:.153,.261,pal.shade);
+      if(high && kind<4){
+        // Finger waves are broad pieces of felt with a subtle parting sewn over the crown.
+        for(let strand=0;strand<3;strand++){
+          const z=-.135+strand*.098;
+          cord(head,[[-.237,.23,z*.94],[-.207,.345,z],[.009,.39-.018*Math.abs(strand-1),z+.027],[.169,.308,z+.065]],.019,pal.shade);
+        }
+        small(head,.115,.277,-.078,.128,.066,.151,pal.shade,-.24,0,-.26);
+      }
     }
-    if(kind===2)ball(head,-.275,.141,.035,.118,.106,.112,pal.shade);
-    if(kind===3)for(const s of [-1,1])ball(head,-.053,.032,s*.226,.123,.18,.079,pal.shade,0,0,.08);
-    if(kind===5){
-      ball(head,-.018,.319,0,.285,.086,.295,edge);
-      ball(head,.179,.283,.014,.198,.027,.204,cloth);
+    if(kind===2)small(head,-.252,.13,.040,.116,.103,.110,pal.shade);
+    if(kind===3)for(const side of [-1,1])small(head,-.064,.035,side*.22,.12,.164,.064,pal.shade,0,0,.08);
+    if(kind===1||kind===5){
+      small(head,-.025,.324,0,.278,.092,.285,cloth);
+      small(head,.134,.294,-.006,.192,.031,.220,edge,0,0,-.075);
     }
-    for(const s of [-1,1])ball(head,-.022,.118,s*.275,.087,.10,.052,fur);
+    for(const side of [-1,1]){
+      small(head,-.042,.10,side*.257,.072,.087,.044,fur,0,0,0,faceSurface);
+      if(high)small(head,-.042,.102,side*.291,.034,.042,.015,pal.inner,0,0,0,faceSurface);
+    }
+    dressCivilian(torso,head,look,high,stitches);
   }
   if(!high){
     for(const s of [-1,1]){
       let y=.145;
-      if(animal==='rabbit')ball(head,-.025,.382,s*.170,.065,.183,.066,fur,.16*s);
-      else if(animal==='bear')ball(head,-.035,.319,s*.205,.067,.086,.08,fur);
+      if(animal==='rabbit')small(head,-.025,.382,s*.170,.065,.183,.066,fur,.16*s);
+      else if(animal==='bear')small(head,-.035,.319,s*.205,.067,.086,.08,fur);
       else if(animal!=='human')addPart(head,ears[s<0?0:1],-.025,.294,.158*s,.88,.91,.87,fur);
-      if(animal!=='human')ball(head,.155,.078,s*.119,.153,.104,.143,pal.cream);
-      ball(head,.217,y+.018,s*.14,.045,.057,.032,colors.ink);
-      ball(core,.039,-.522,s*.115,.128,.144,.075,colors.boot);
-      ball(core,-.029,-.313,s*.236,.08,.126,.070,out[0]);
+      if(animal!=='human')small(head,.155,.078,s*.119,.153,.104,.143,pal.cream);
+      small(head,.219,y+.024,s*.136,.038,.048,.031,colors.ink);
+      small(core,.039,-.522,s*.115,.128,.144,.075,colors.boot);
+      small(core,-.029,-.313,s*.236,.08,.126,.070,out[0]);
     }
-    ball(head,.265,.094,0,.057,.046,.07,animal==='human'?pal.inner:colors.ink);
-    if(isFox){ball(core,-.254,-.096,.12,.23,.09,.095,fur,.1,.3,.32);ball(core,-.44,-.016,.216,.123,.075,.07,pal.cream);}
+    small(head,.265,.094,0,.057,.046,.07,animal==='human'?pal.inner:colors.ink);
+    if(isFox){
+      small(torso,-.076,.189,0,.217,.067,.235,'#d79b5a');
+      small(torso,-.095,-.046,0,.23,.187,.244,cloth);
+      small(core,-.254,-.096,.12,.23,.09,.095,fur,.1,.3,.32);small(core,-.44,-.016,.216,.123,.075,.07,pal.cream);}
     if(service){
       const tone=type==='firefighter'?'#deb05e':type==='medic'?'#efe3c6':cloth;
-      ball(head,0,.333,0,.286,.103,.285,tone);
-      if(type==='police'||type==='swat')ball(head,.115,.287,0,.20,.030,.235,colors.ink);
-      else if(type==='firefighter')ball(head,-.016,.287,0,.318,.028,.318,'#b38755');
+      small(head,0,.333,0,.286,.103,.285,tone);
+      if(type==='police'||type==='swat')small(head,.115,.287,0,.20,.030,.235,colors.ink);
+      else if(type==='firefighter')small(head,-.016,.287,0,.318,.028,.318,'#b38755');
       if(type==='medic'){
-        ball(torso,-.152,0,.035,.11,.146,.14,'#d9c6a3');
+        small(torso,-.152,0,.035,.11,.146,.14,'#d9c6a3');
         addPart(torso,geo.box,-.263,.015,.036,.014,.074,.022,edge);
         addPart(torso,geo.box,-.264,.015,.036,.014,.021,.073,edge);
       }
@@ -235,33 +247,43 @@ function makeBody(look,high){
     batchGroup(head);batchGroup(core);batchGroup(torso);
     return group;
   }
-  // Cheek tufts and double yarn brows give the fox a different profile from the rounder passersby.
   for(const sign of [-1,1]){
-    if(animal!=='human')ball(head,.129,.069,sign*.147,.165,.115,.143,pal.cream,.15*sign,0,-.09);
-    if(animal==='fox'||animal==='cat'){
-      const tuft=taper([[.13,.055,sign*.22],[.10,.07,sign*.284],[.07,.122,sign*.345]],[.069,.051,.002],7);
-      addPart(head,tuft,0,0,0,1,1,1,pal.cream);
+    if(!human) {
+      // Lower the cheek pads under the eyes; a tapered tip gives the fox's
+      // profile a continuous sweep from the cream bib into its ears.
+      addPart(head,geo.ball,.096,.051,sign*.146,.149,.100,.134,pal.cream,.20*sign,0,-.09,faceSurface);
+      if(animal==='fox'||animal==='cat'){
+        const tuft=taper([[.113,.036,sign*.212],[.073,.049,sign*.266],[.017,.111,sign*.327]],[.066,.047,.002],8);
+        addPart(head,tuft,0,0,0,1,1,1,pal.cream,0,0,0,faceSurface);
+      }
+      if(animal==='raccoon')small(head,.173,.184,sign*.149,.081,.073,.089,pal.shade,.16*sign);
+      earModel(head,sign,animal,pal);
     }
-    if(animal==='raccoon')ball(head,.191,.175,sign*.15,.086,.081,.086,pal.shade,.18*sign);
-    const cheekCross=[[.114,.08,.276],[.100,.065,.286],[.08,.091,.289]];
-    cord(head,cheekCross.map(([x,y,z])=>[x,y,z*sign]),.006,'#dbad83');
-    cord(head,[[.18,.255,.164*sign],[.20,.256,.132*sign],[.231,.243,.098*sign]],.010,pal.shade);
-    if(animal!=='human')earModel(head,sign,animal,pal);
+    cord(head,[[.158,.248,.156*sign],[.192,.259,.131*sign],[.217,.25,.099*sign]],.014,pal.shade);
   }
-  if(animal==='human'){
-    ball(head,.267,.108,0,.061,.055,.06,pal.inner);
-    cord(head,[[.262,.048,-.061],[.273,.033,0],[.262,.048,.061]],.009,pal.shade);
+  if(animal==='fox'){
+    addPart(head,foxBib,0,0,0,1,1,1,pal.cream,0,0,0,faceSurface);
+    addPart(head,foxCrown,0,0,0,1,1,1,pal.shade,0,0,0,faceSurface);
+  }
+  if(human){
+    small(head,.254,.110,0,.055,.057,.053,pal.inner,0,0,-.18,faceSurface);
+    cord(head,[[.234,.012,-.052],[.246,.007,-.011],[.248,.012,.023],[.24,.022,.057]],.007,pal.shade);
   }else{
-    ball(head,.250,.074,0,.126,.081,.109,pal.cream);
-    ball(head,.340,.104,0,.062,.042,.072,colors.ink,0,0,.12);
+    ball(head,.213,.075,0,.142,.073,.102,pal.cream,0,0,0,faceSurface);
+    small(head,.323,.106,0,.054,.039,.058,colors.ink,0,0,.13,faceSurface);
+    small(head,.365,.117,.012,.009,.008,.012,'#b09a97',0,0,0,'plain');
+    cord(head,[[.336,.080,0],[.327,.054,0],[.306,.046,.041],[.298,.054,.062]],.006,'#69434b');
+    for(const side of [-1,1])for(let i=0;i<2;i++)
+      small(head,.22+.020*i,.072+.013*i,side*(.116-.016*i),.009,.008,.010,pal.shade,0,0,0,faceSurface);
   }
-  ball(head,.381,.122,-.015,.016,.01,.022,'#dfbea2',0,0,0,'plain');
-  cord(head,[[.333,.079,-.047],[.346,.061,0],[.32,.043,.047]],.007,'#855e55');
-  const eyes=joint(head,'eyes',0,.179,0);
-  for(const s of [-1,1]){
-    ball(eyes,.205,0,s*.129,.072,.093,.061,'#fff0cd',.17*s,.14*s,0,'plain');
-    ball(eyes,.253,-.002,s*.148,.04,.068,.035,colors.ink,.17*s,.16*s,0,'plain');
-    ball(eyes,.285,.021,s*.151,.014,.020,.018,'#fff6d7',0,0,0,'plain');
+  // The irises follow each eye's outward normal. Previously the second eye's
+  // pupil and the human nose highlight hung clear of the face in profile.
+  const eyes=joint(head,'eyes',0,.174,0);
+  for(const side of [-1,1]){
+    const skinX=human?.215:.221,skinZ=human?.128:.117;
+    ball(eyes,skinX,.001,side*skinZ,.044,.067,.053,'#f5e7c9',0,-.56*side,0,'plain');
+    small(eyes,skinX+.031,.001,side*(skinZ+.017),.026,.049,.034,colors.ink,0,-.56*side,0,'plain');
+    small(eyes,skinX+.049,.017,side*(skinZ+.030),.009,.013,.012,'#fff2d8',0,0,0,'plain');
   }
   // Wrap raised strand seams behind the head. They read from the follow camera when the face is hidden.
   for(const s of [-1,1])for(let i=0;i<3;i++){
@@ -275,7 +297,7 @@ function makeBody(look,high){
     const a=j*TAU/16;collar.push([.133*Math.cos(a),.181-.018*Math.max(0,Math.cos(a)),.162*Math.sin(a)]);
   }
   cord(torso,collar,.012,out[1]);
-  if(!service&&!isFox){
+  if(!service&&!isFox&&!human){
     if(look.pick%3===0){
       cord(torso,[[-.15,.02,-.1],[-.184,-.02,0],[-.16,.02,.11]],.018,out[1]);
       ball(torso,-.177,-.123,.159,.054,.093,.073,pal.shade);
@@ -286,9 +308,9 @@ function makeBody(look,high){
     cord(torso,[[-.151,.089,-.114],[-.182,.048,0],[-.151,.089,.114]],.006,'#77636c');
     for(const y of [-.06,.025,.104])ball(torso,.192,y,0,.012,.022,.024,out[1],0,0,0,'plain');
   }
-  serviceUniform(torso,head,type,out[0],out[1]);
+  if(service)serviceUniform(torso,head,type,out[0],out[1]);
   if(isFox){
-    addFoxCape(torso,cloth);
+    travelerScarf(addFoxCape(torso,cloth),head,look,stitches);
     const clasp=look.skinId==='braise'?'#e29b70':look.skinId==='bruyere'?'#a68eaf':look.skinId==='foret'?'#afbc78':'#6fe0c9';
     for(const side of [-1,1]){
       cord(torso,[[.007,.172,.213*side],[-.097,.165,.184*side],[-.173,.114,.156*side]],.014,clasp);
@@ -308,16 +330,17 @@ function makeBody(look,high){
     const elbow=joint(arm,'elbow'+side,.008,-.162,.040*s);
     const knee=joint(leg,'knee'+side,-.012,-.141,0);
     addPart(arm,taper([[0,0,0],[.003,-.085,.031*s],[.008,-.17,.040*s]],[.071,.069,.058],8),0,0,0,1,1,1,sleeve);
+    small(arm,-.002,-.012,.002*s,.076,.08,.077,sleeve);
     addPart(elbow,taper([[0,.012,0],[.013,-.080,.014*s],[.04,-.15,.01*s]],[.059,.054,.047],8),0,0,0,1,1,1,sleeve);
     ball(elbow,.037,-.107,.010*s,.063,.043,.063,isFox?colors.trim:out[1]);
-    ball(elbow,.061,-.166,.011*s,.085,.083,.080,colors.glove,.1*s,0,.05);
-    ball(elbow,.111,-.149,-.018*s,.043,.057,.042,colors.glove);
-    for(let k=0;k<2;k++)cord(elbow,[[.041+k*.033,-.168,.083*s],[.047+k*.027,-.193,.079*s]],.0045,'#aa8974');
+    const hand=human?fur:isFox?pal.shade:colors.glove;
+    small(elbow,.054,-.17,.011*s,.069,.083,.062,hand,.1*s,0,.05,faceSurface);
+    small(elbow,.091,-.151,-.021*s,.039,.051,.036,hand,0,0,0,faceSurface);
     addPart(leg,taper([[0,0,0],[-.009,-.074,0],[-.012,-.147,0]],[.075,.071,.06],8),0,0,0,1,1,1,'#454052');
     addPart(knee,taper([[0,.009,0],[.007,-.054,0],[.016,-.114,0]],[.061,.057,.051],8),0,0,0,1,1,1,'#454052');
-    ball(knee,.029,-.134,0,.081,.068,.073,'#8b675c');
-    ball(knee,.073,-.211,.002*s,.147,.088,.093,colors.boot,0,0,-.08);
-    ball(knee,.078,-.253,.002*s,.15,.039,.095,colors.sole);
+    small(knee,.017,-.13,0,.083,.088,.075,isFox?'#a77650':'#736269');
+    small(knee,.067,-.203,.002*s,.146,.09,.095,colors.boot,0,0,-.09);
+    small(knee,.072,-.250,.002*s,.151,.037,.097,colors.sole);
     cord(knee,[[.093,-.154,-.046],[.111,-.150,0],[.094,-.156,.046]],.006,'#c69a75');
   }
   if(animal==='fox'||animal==='raccoon'||animal==='cat'){

@@ -10,7 +10,11 @@ const furColors={
   bear:{fur:'#aa7857',cream:'#e9c69f',shade:'#795443',inner:'#ce9581'},
   raccoon:{fur:'#a4a3a4',cream:'#eee0c6',shade:'#625967',inner:'#c49899'}
 };
-const skin=['#d8a47e','#8d5a43','#bb805b','#edbd97','#a36b57'];
+const complexions=[
+  ['#d8a47e','#c28e73'],['#8d5a43','#9e6c56'],['#bb805b','#ae725b'],
+  ['#edbd97','#d89e86'],['#a36b57','#ab7461']
+];
+const foxShadows={lagon:'#9e5843',bruyere:'#765972',foret:'#795c48',braise:'#a96543'};
 const crews={
   police:['cat','#3e596e','#bac9c3'],medic:['rabbit','#ece0bc','#568f85'],
   firefighter:['bear','#874c50','#e8bd68'],swat:['raccoon','#414958','#829895']
@@ -23,7 +27,10 @@ export function puppetAppearance(role,color,seed=0){
   const crew=crews[type],animal=type==='fox'?'fox':type==='human'?'human':crew?.[0]||wildlife[pick%4];
   const fox=type==='fox'?foxSkin(color):null;
   const dye=(pick+(typeof color==='string'?motionSeed(color)%coats.length:0))%coats.length;
-  return {type,pick,animal,skinId:fox?.id,pelt:animal==='human'?{fur:skin[pick%skin.length],cream:'#e7aa8f',shade:'#674c45',inner:'#cb8d75'}:fox?{...furColors.fox,fur:fox.fur,cream:fox.cream}:furColors[animal],service:!!crew,
+  const [skin,nose]=complexions[pick%complexions.length];
+  const pelt=animal==='human'?{fur:skin,cream:'#e7aa8f',shade:'#674c45',inner:nose}:
+    fox?{...furColors.fox,fur:fox.fur,cream:fox.cream,shade:foxShadows[fox.id]}:furColors[animal];
+  return {type,pick,animal,skinId:fox?.id,pelt,service:!!crew,
     coat:crew?.[1]||(fox?.coat||coats[dye]),
     trim:crew?.[2]||(type==='fox'?yarnPalette.ochre:'#dbc59b')};
 }
