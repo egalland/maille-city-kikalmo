@@ -61,3 +61,23 @@ test('car, compact, sedan, sports car, taxi and patrol share three-dimensional s
     assert.ok(!objects[1].visible);assert.ok(objects[0].visible);car.dispose();
   }
 });
+
+test('a cab renders the actual customer and passenger together, animates its door and switches lights by range and deceleration',async()=>{
+  const {automaticLights,doorOpening}=await import('../public/vehicle-signals.js');
+  const {cityClimate}=await import('../public/city-climate.js');
+  assert.ok(automaticLights(cityClimate(0)));
+  assert.equal(automaticLights({rain:0,lamps:.1}),false);
+  const cab=createCar('taxi');
+  const update=(args,dt=.025)=>cab.update({driver:true,passenger:true,passengerSkin:'bruyere',self:true,headlamps:true,speed:9,...args},dt,5);
+  const part=name=>cab.group.getObjectByName(name);
+  update({fare:true,doorOpen:doorOpening(1000,1400,1)});
+  assert.ok(part('Portière ouverte').rotation.y>.7);
+  assert.ok(part('Client du taxi').visible&&part('Passager assis').visible&&part('Conducteur assis').visible);
+  assert.ok(part('Feux de croisement').visible);
+  assert.ok(!part('Feux stop').visible);
+  update({fare:false,doorOpen:doorOpening(1000,2100,1),speed:7});
+  assert.ok(part('Feux stop').visible&&!part('Portière ouverte').visible&&!part('Client du taxi').visible);
+  update({signalDetail:false});assert.ok(!part('Feux stop').visible&&!part('Feux de croisement').visible);
+  update({wrecked:true});assert.ok(!part('Feux de croisement').visible);
+  cab.dispose();
+});

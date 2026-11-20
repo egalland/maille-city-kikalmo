@@ -897,28 +897,60 @@ function seatedFigure(role,skin,seed,atWheel){
 }
 function updateSeatedFigures(host,pose,occupants,seed){
   const mount=host.userData.seats3D;
-  for(const [index,active] of [pose.driver,pose.passenger].entries()){
-    const seat=occupants[index],player=index?!!pose.passengerSkin:!!(pose.peer||pose.self);
+  for(const [index,active] of [pose.driver,pose.passenger,pose.fare].entries()){
+    const seat=occupants[index],player=index===2?false:index?!!pose.passengerSkin:!!(pose.peer||pose.self);
     const skin=index?pose.passengerSkin:pose.driverSkin,identity=player?'fox/'+skin:'human';
     if(!active){if(seat.figure)seat.figure.visible=false;continue;}
     if(seat.identity!==identity){
       seat.figure?.removeFromParent();
       seat.figure=seatedFigure(player?'fox':'human',skin,seed+index,index===0);
-      seat.figure.name=index?'Passager assis':'Conducteur assis';
-      seat.figure.position.set(mount.x,mount.y,(index?1:-1)*mount.spacing);
+      seat.figure.name=['Conducteur assis','Passager assis','Client du taxi'][index];
+      seat.figure.position.set(mount.x-(index===2?.60:0),mount.y,(index?1:-1)*mount.spacing);
       seat.figure.scale.setScalar(mount.scale);host.add(seat.figure);seat.identity=identity;
     }
     seat.figure.visible=true;
   }
 }
 
+const headLens=new THREE.MeshBasicMaterial({color:'#fff6c0'});
+const stopLens=new THREE.MeshBasicMaterial({color:'#ff3527'});
+const lampPool=new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.20,depthWrite:false,
+  blending:THREE.AdditiveBlending,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2});
+const beamShape=new THREE.BufferGeometry();
+beamShape.setAttribute('position',new THREE.Float32BufferAttribute([0,0,-.12,0,0,.12,1,.014,1,1,.014,-1],3));
+beamShape.setAttribute('color',new THREE.Float32BufferAttribute([1,.84,.50,1,.84,.50,.01,.009,.007,.01,.009,.007],3));
+beamShape.setIndex([0,1,2,0,2,3]);
+function makeVehicleSignals(type,spec){
+  const front=new THREE.Group(),rear=new THREE.Group();
+  front.name='Feux de croisement';rear.name='Feux stop';
+  // Positions follow the lamps modelled into each family, accounting for frame scaling.
+  const shaped=type==='compact'||type==='sport',bus=type==='bus',van=['van','firetruck','swat','ambulance'].includes(type);
+  const lamp=shaped?[.99,.49,.66,.98,.50,.66]:bus?[1.00,.284,.65,1.0,.35,.76]:
+    van?[.861,.467,.60,.969,.50,.70]:spec.openSeat?[.89,.75,0,.86,.62,0]:
+    type==='pickup'?[.96,.52,.67,.97,.53,.73]:[.922,.49,.658,.905,.49,.705];
+  for(const side of spec.openSeat?[0]:[-1,1]){
+    function lens(group,material,x,y,z,scale){
+      const mesh=new THREE.Mesh(geo.littleBall,material);
+      mesh.scale.set(.057,scale,scale*1.23);
+      mesh.position.set(x*spec.halfLength,y*spec.height,side*z*spec.halfWidth);group.add(mesh);
+    }
+    lens(front,headLens,lamp[0],lamp[1],lamp[2],.083);
+    lens(rear,stopLens,-lamp[3],lamp[4],lamp[5],.080);
+    const pool=new THREE.Mesh(beamShape,lampPool);
+    pool.position.set(spec.halfLength*.92,.085,side*.5*spec.halfWidth);
+    pool.scale.set(6.8,1,1.25);pool.rotation.y=side*-.055;
+    front.add(pool);
+  }
+  return {front,rear};
+}
 const frayedChassis=new THREE.MeshLambertMaterial({color:'#493940'});
 const flameYarn=new THREE.MeshBasicMaterial({color:'#f8a451'});
 const cottonSmoke=new THREE.MeshBasicMaterial({color:'#82747e',transparent:true,opacity:.42,depthWrite:false});
 export function createCar(type='car',color,seed=0){
   const body=createCarBody(type,color,seed),spec=vehicleSpec(type?.type??type);
   let wear=null,cabin=null,door=null,wreck=null,hiddenIntact=null;
-  const intact=[...body.group.children],seated=[{},{}];
+  const intact=[...body.group.children],seated=[{},{},{}];
+  let signals=null,signalSpeed=null,brakeFlash=0;
   function updateWreck(damaged){
     if(!damaged){
       if(wreck)wreck.visible=false;
@@ -954,7 +986,10 @@ export function createCar(type='car',color,seed=0){
       const paint=fleetPaint[type] || (/^#(?:[a-f\d]{3}){1,2}$/i.test(color||'')?color:carPaint[Math.abs((Number(seed)||0)*1741)%carPaint.length|0]);
       const span=Math.min(1.18,spec.halfLength*.57),h=spec.height;
       addPart(door,geo.box,-span*.5,h*.353,0,span,h*.295,.067,paint);
-      addPart(door,geo.box,-span*.51,h*.568,0,span*.85,h*.151,.036,'#6e959f');
+      if(body.windowHost?.userData.seats3D){
+        carBox(door,-span*.49,h*.69,0,span*.91,.038,.030,paint);
+        for(const x of [-span*.93,-span*.055])carBox(door,x,h*.59,0,.032,h*.205,.029,paint);
+      }else addPart(door,geo.box,-span*.51,h*.568,0,span*.85,h*.151,.036,'#6e959f');
       addPart(door,geo.box,-span*.71,h*.463,.036,.18,.047,.048,'#dccba8',0,0,0,'plain');
       batchGroup(door);body.group.add(door);
     }
@@ -1021,7 +1056,22 @@ export function createCar(type='car',color,seed=0){
       map.needsUpdate=true;
     });
   }
-  function update(pose={},dt,time=0){
+  function updateSignals(pose,dt){
+    const current=Math.abs(Number(pose.speed)||0),decelerating=signalSpeed!==null&&signalSpeed-current>Math.max(.075,2.2*dt);
+    signalSpeed=current;
+    brakeFlash=decelerating?.28:Math.max(0,brakeFlash-dt);
+    const near=pose.signalDetail!==false&&!pose.wrecked;
+    const front=near&&pose.headlamps,rear=near&&(pose.brake||brakeFlash>0);
+    if(!signals&&!front&&!rear)return;
+    if(!signals){
+      signals=makeVehicleSignals(type,spec);
+      body.group.add(signals.front,signals.rear);
+    }
+    signals.front.visible=!!front;signals.rear.visible=!!rear;
+  }
+  function update(pose={},dt=.016,time=0){
+    updateSignals(pose,dt);
+    if(!body.windowHost?.userData.seats3D&&pose.fare&&!pose.passenger)pose={...pose,passenger:true};
     body.update(pose,dt,time);updateCabin(pose);updateDoor(pose.doorOpen);updateWreck(pose.wrecked);
     const stage=chassisStage(pose.chassisHp);
     if(!stage){if(wear)wear.group.visible=false;return;}
@@ -1069,5 +1119,5 @@ export function createCar(type='car',color,seed=0){
       puff.scale.setScalar(.075+.34*age);
     });
   }
-  return {...body,update,dispose(){for(const seat of seated)seat.figure?.removeFromParent();if(door)for(const part of door.children)part.geometry.dispose();if(wreck)for(const part of wreck.children)part.geometry.dispose();if(cabin){cabin.group.removeFromParent();for(const pane of cabin.group.children)pane.geometry.dispose();for(const picture of cabin.pictures){picture.map.dispose();picture.material.dispose();}}body.dispose();}};
+  return {...body,update,dispose(){for(const seat of seated)seat.figure?.removeFromParent();if(signals){signals.front.removeFromParent();signals.rear.removeFromParent();}if(door)for(const part of door.children)part.geometry.dispose();if(wreck)for(const part of wreck.children)part.geometry.dispose();if(cabin){cabin.group.removeFromParent();for(const pane of cabin.group.children)pane.geometry.dispose();for(const picture of cabin.pictures){picture.map.dispose();picture.material.dispose();}}body.dispose();}};
 }

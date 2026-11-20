@@ -246,6 +246,9 @@ test('two playable clients board one car, follow the same drive and release the 
   await poll(()=>rider.hud.passenger&&driver.scene.entities.find(e=>e.self)?.passenger,'both clients see the rider seated');
   assert.equal(rider.scene.entities.filter(e=>e.vehicle?.id===driven.vehicle.id).length,1);
   assert.ok(!driver.scene.entities.some(e=>e.id===rider.net.id));
+  const initial=rider.scene.entities.find(e=>e.id===driver.net.id).headlamps;
+  driver.game.action('headlamps');driver.game.setFarePassenger(driven.vehicle.id);
+  await poll(()=>rider.scene.entities.some(e=>e.id===driver.net.id&&e.headlamps!==initial&&e.fare),'lights and taxi customer replicate alongside player passenger');
   driver.game.setDrive(0,1);
   await poll(()=>Math.hypot(rider.scene.p.x-driven.x,rider.scene.p.y-driven.y)>1.4,'rider follows driver motion');
   driver.game.setDrive(0,0);
