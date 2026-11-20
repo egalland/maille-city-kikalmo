@@ -38,6 +38,11 @@ for (const path of ['/','/main.js','/paris-world.js','/paris-data.js','/city3d.j
   const response = await worker.fetch(new Request('https://test.local'+path),{});
   if (response.status !== 200 || (await response.arrayBuffer()).byteLength < 30) throw Error('Missing asset '+path);
 }
+// Check the published field guide against the assets actually packed in the Worker.
+const guide=await worker.fetch(new Request('https://test.local/carnet.html'),{});
+for(const [,src] of (await guide.text()).matchAll(/<img\b[^>]*\bsrc="([^"]+)"/g)){
+  if(!assets[src]?.type.startsWith('image/'))throw Error('Missing field guide image '+src);
+}
 const map=await worker.fetch(new Request('https://test.local/map-enfer.json'),{});
 if(map.headers.get('content-encoding')!=='gzip'||!map.headers.get('content-type')?.includes('json'))
   throw Error('Missing browser-compatible map response');

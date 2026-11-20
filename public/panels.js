@@ -5,7 +5,7 @@ import {addSocialControls} from './social-controls.js';
 import {readRadio,storeRadio} from './car-radio.js';
 import {airfields} from './airfield.js';
 import {careerPlaces} from './career-catalog.js';
-import {placeSymbols} from './career-navigation.js';
+import {placeSymbols,heritageWaypoints} from './career-navigation.js';
 import {foxSkins} from './puppet-dyes.js';
 import {makeEmoteIcon} from './emote-art.js';
 import {drawItemIcon, drawAvatar} from './sprites.js';
@@ -43,7 +43,7 @@ const shortcuts = [
   ['Recentrer à pied ou changer de vue au volant', ['C']],
   ['Recharger', ['R']],
   ['Utiliser une trousse de secours', ['H']],
-  ['Entrer, sortir ou sauter d’un hélicoptère en vol', ['E']],
+  ['Monter, descendre ou sauter d’un véhicule en marche', ['E']],
   ['Roue d’armes', ['Tab']],
   ['Changer d’arme', ['Molette']],
   ['Émotes', ['B']],
@@ -359,14 +359,16 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
         const stop=coreDestinations.find(d=>'car-'+d.key===car.id);
         return {...car,id:'parking/'+car.id,name:vehicleSpec(car.type).label+' · '+(stop?.label||streetAt(car.x,car.y))};
       });
-      const venues=[...Object.values(careerPlaces),...airfields,...parking];
+      const venues=[...Object.values(careerPlaces),...airfields,...parking,...heritageWaypoints];
       const lots=node('optgroup','');lots.label='Stationnements habituels';
+      const monuments=node('optgroup','');monuments.label='Églises et mairies';
       for(const place of venues){
         const mark=placeSymbols[place.id];
         const option=node('option','',mark?mark+' · '+place.name:place.name);
-        option.value=place.id;(mark?selector:lots).append(option);
+        option.value=place.id;(place.symbol?monuments:mark?selector:lots).append(option);
       }
       if(parking.length)selector.append(lots);
+      if(monuments.children.length)selector.append(monuments);
       const focus=button('Voir le quartier des missions','mc-secondary',()=>{
         zoom=!zoom;focus.textContent=zoom?'Voir toute la ville':'Voir le quartier des missions';renderCurrent?.();
       });
@@ -431,7 +433,7 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
     const controls=node('details','mc-guide-details');
     controls.append(node('summary','','Commandes clavier et souris'),keyRows());
     const mobile=node('section','mc-guide-section');
-    mobile.append(node('h3','','Commandes tactiles'),node('p','','À pied, déplace légèrement le joystick pour marcher, puis pousse-le vers le bord pour courir. Glisse sur le décor pour tourner la caméra. Au volant, braque avec les flèches à gauche. À droite, utilise les pédales pour accélérer, freiner ou reculer.'));
+    mobile.append(node('h3','','Commandes tactiles'),node('p','','À pied, déplace légèrement le joystick pour marcher, puis pousse-le vers le bord pour courir. Glisse sur le décor pour tourner la caméra. Au volant, braque avec les flèches à gauche et utilise les pédales à droite. Si le bouton Sortir devient Sauter, le véhicule roule assez vite pour que ton personnage parte en roulade. La voiture continue sur sa lancée.'));
     mobile.append(node('p','','Maintiens le bouton de tir pour accrocher une cible devant toi. Un réticule apparaît dessus. Glisse le pouce sur ce bouton pour ajuster la visée, puis relâche pour arrêter de tirer.'));
     if(isEnfer)mobile.append(node('h3','','Piloter dans Enfer'),node('p','','Sur la carte, choisis le H de l’hélistation ou le A du mât d’amarrage, puis « Guider vers ce lieu ». Monte à bord avec E ou la commande de véhicule. Les touches de direction orientent l’appareil et le font avancer. Espace fait monter, Ctrl fait descendre. Sur écran tactile, maintiens Monter ou Descendre et utilise les flèches pour tourner. En hélicoptère, E ou Sauter permet de quitter la cabine en vol. La hauteur et la vitesse comptent à la réception. Pour quitter le dirigeable, pose-toi et ralentis.'));
     const health=node('section','mc-guide-section');
