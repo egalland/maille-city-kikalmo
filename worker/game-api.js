@@ -2,14 +2,14 @@ import {armorySchema,openArmory,readArmory,privateAmmo} from './armory.js';
 import {reportSchema,reportPlayer} from './social.js';
 import {withJacket} from '../public/outfit-shop.js';
 import {seatSchema,seatedRosterSQL,attachPassengers,requestSeat,continueFlightSeat} from './vehicle-seats.js';
-import {abandonedFor,disconnectedFor,wreckFor,wreckExpired} from '../public/vehicle-lifecycle.js';
+import {abandonedFor,disconnectedFor,wreckFor,wreckExpired,replacementDelay} from '../public/vehicle-lifecycle.js';
 import {hitSeverity, woundDuration, activeBleeding} from '../public/bleeding.js';
 import {weaponCatalog} from '../public/weapon-catalog.js';
 import {propMaxHealth, vehiclePropDamage} from '../public/prop-damage.js';
 import {validFlightPath,sampleAutorotation,flightSampleMs} from '../public/autorotation.js';
 import {airfields,isAircraft,flightCeiling} from '../public/airfield.js';
 import {isVehicleType,vehicleSpec} from '../public/vehicle-types.js';
-import {chassisDamage,partMask,incendiaryImpact,vehicleBurnDelay,blastRadius,blastDamage} from '../public/vehicle-damage.js';
+import {chassisDamage,partMask,incendiaryImpact,ignitionHealth,meleeWearFloor,vehicleBurnDelay,blastRadius,blastDamage} from '../public/vehicle-damage.js';
 import {meleeMoves} from '../public/melee-moves.js';
 import {cleanTrafficPacket} from '../public/traffic-sync.js';
 import {normalizeAppearance} from '../public/kikalmo-schema.js';
@@ -55,6 +55,19 @@ const SCHEMA = [
   'CREATE INDEX IF NOT EXISTS mc_pickup_item ON mc_pickup_claims (room,item,available DESC) WHERE ok=1',
   'CREATE INDEX IF NOT EXISTS mc_pickup_active ON mc_pickup_claims (room,available) WHERE ok=1',
   'CREATE INDEX IF NOT EXISTS mc_pickup_age ON mc_pickup_claims (at)',
+  // Older tabs can still send their last driving pose after the tow. Release the shared
+  // seat on retirement and keep repeated heartbeats from advertising the removed car.
+  `CREATE TRIGGER IF NOT EXISTS mc_tow_driver AFTER UPDATE OF kind ON mc_items
+    WHEN NEW.kind='vehicleRetired' BEGIN
+      UPDATE mc_members SET state=json_set(state,'$.vehicle',null,'$.speed',0,'$.lift',0,'$.moving',json('false'))
+      WHERE room=NEW.room AND json_extract(state,'$.vehicle.id')=NEW.item;
+    END`,
+  ...['INSERT','UPDATE OF state'].map((action,i)=>`CREATE TRIGGER IF NOT EXISTS mc_towed_pose_${i}
+    AFTER ${action} ON mc_members WHEN json_extract(NEW.state,'$.vehicle.id') IS NOT NULL AND EXISTS (
+      SELECT 1 FROM mc_items WHERE room=NEW.room AND kind='vehicleRetired'
+      AND item=json_extract(NEW.state,'$.vehicle.id') AND at>NEW.seen)
+    BEGIN UPDATE mc_members SET state=json_set(state,'$.vehicle',null,'$.speed',0,'$.lift',0,'$.moving',json('false'))
+      WHERE room=NEW.room AND id=NEW.id; END`),
   ...armorySchema,
   ...reportSchema,
   ...seatSchema
@@ -279,7 +292,7 @@ function events(rows) {
   return rows.map(r=>({seq:r.seq,player:r.player,name:r.name,type:r.type,data:JSON.parse(r.data),at:r.at}));
 }
 function shared(rows,now) {
-  const world={destroyed:[],vehicles:{},npcs:{},pickups:{},propHealth:{},vehicleDamage:{}};
+  const world={destroyed:[],vehicles:{},npcs:{},pickups:{},propHealth:{},vehicleDamage:{},retiredVehicles:{}};
   const broken=new Set();
   for (const r of rows) {
     if (r.kind==='destroy') broken.add(r.item);
@@ -301,10 +314,27 @@ function shared(rows,now) {
       const wear=JSON.parse(r.data);
       if(!wreckExpired(wear,now))world.vehicleDamage[r.item]=wear;
     }
+    if(r.kind==='vehicleRetired'&&r.at>now)world.retiredVehicles[r.item]=r.at;
     if (r.kind==='npc') world.npcs[r.item]=JSON.parse(r.data);
   }
   world.destroyed=[...broken];
   return world;
+}
+// Retire both the parked pose and the damage row atomically. Keep only the ID and its
+// replacement deadline so new browsers also leave the deterministic spawn empty.
+const sweptVehicles=new WeakMap();
+async function sweepVehicles(db,room,now,joining){
+  const sweep=sweptVehicles.get(db)||{};
+  if(!joining&&sweep[room]>now-3000&&sweep[room]<=now)return;
+  const end="coalesce(nullif(json_extract(data,'$.explodeAt'),0),json_extract(data,'$.disabledAt'),0)";
+  await db.batch([
+    db.prepare(`DELETE FROM mc_items WHERE room=? AND kind='vehicle' AND item IN
+      (SELECT item FROM mc_items WHERE room=? AND kind='vehicleDamage' AND ${end} BETWEEN 1 AND ?)`).bind(room,room,now-wreckFor),
+    db.prepare(`UPDATE mc_items SET kind='vehicleRetired',at=${end}+?,data='{}',owner=''
+      WHERE room=? AND kind='vehicleDamage' AND ${end} BETWEEN 1 AND ?`).bind(wreckFor+replacementDelay,room,now-wreckFor),
+    db.prepare("DELETE FROM mc_items WHERE room=? AND kind='vehicleRetired' AND at<=?").bind(room,now)
+  ]);
+  sweep[room]=now;sweptVehicles.set(db,sweep);
 }
 async function join(db,b,now,room) {
   const {id,token}=b, name=clean(b.name,24)||'Kikalmo';
@@ -421,7 +451,7 @@ function npcHitStatement(q,{room,id,op,name,data,now},guard) {
 // A start and its single contact get stable operation IDs even across network retries.
 const swingOp=started=>'swing-'+started.toString(36);
 function vehicleImpact(raw,actor,previous){
-  const {id,type,cause,weapon,speed,x,y,angle,part:impactPart,blast,range}=dict(raw);
+  const {id,type,cause,weapon,speed,x,y,angle,part:impactPart,blast,range,swingAt,swingKind}=dict(raw);
   const part=cause==='weapon'&&typeof impactPart==='string'&&Object.hasOwn(partMask,impactPart)?impactPart:'body';
   if(!key(id)||!isVehicleType(type)||![x,y,actor.x,actor.y].every(Number.isFinite))return null;
   const distance=Math.hypot(x-actor.x,y-actor.y);
@@ -432,12 +462,15 @@ function vehicleImpact(raw,actor,previous){
   }
   if(cause==='weapon'){
     if(!Object.hasOwn(weaponCatalog,weapon)||distance>weaponCatalog[weapon].range+12)return null;
+  }else if(cause==='melee'){
+    if(!Object.hasOwn(meleeMoves,swingKind)||!Number.isSafeInteger(swingAt)||actor.vehicle||
+      distance>vehicleSpec(type).halfLength+meleeMoves[swingKind].reach+1.1)return null;
   }else if(cause!=='crash'||distance>15||!(actor.vehicle||previous.vehicle))return null;
-  const damage=chassisDamage(type,{cause,speed,weapon,part});
-  return damage?{id,type,cause,x:num(x),y:num(y),angle:num(angle,0,-7,7),part,damage,...(cause==='crash'?{speed:num(speed,0,0,42)}:{})}:null;
+  const damage=chassisDamage(type,{cause,speed,weapon,part,swingKind});
+  return damage?{id,type,cause,x:num(x),y:num(y),angle:num(angle,0,-7,7),part,damage,...(cause==='melee'?{swingAt,swingKind}:{}),...(cause==='crash'?{speed:num(speed,0,0,85)}:{})}:null;
 }
 function vehicleDamageStatement(q,{room,id,op,name,data,now},guard){
-  const ignite="(coalesce(json_extract(old,'$.fireAt'),0)>0 OR (next_hp<=32 AND ignition=1))";
+  const ignite=`(coalesce(json_extract(old,'$.fireAt'),0)>0 OR (next_hp<=${ignitionHealth} AND ignition=1))`;
   const blastGuard=data.cause==='blast'?` AND EXISTS (
       SELECT 1 FROM mc_items source
       LEFT JOIN mc_items pos ON pos.room=source.room AND pos.kind='vehicle' AND pos.item=source.item
@@ -451,20 +484,22 @@ function vehicleDamageStatement(q,{room,id,op,name,data,now},guard){
     )`:'';
   const blastArgs=data.cause==='blast'?[room,data.blast,now-4200,now+250,data.x,blastRadius+3,data.y,blastRadius+3,room,now-5800,data.blast,data.id]:[];
   return q(`WITH prior AS (
-    SELECT (SELECT data FROM mc_items WHERE room=? AND kind='vehicleDamage' AND item=?
-      AND coalesce(nullif(json_extract(data,'$.explodeAt'),0),json_extract(data,'$.disabledAt'),0) NOT BETWEEN 1 AND ?) AS old
-  ), item AS (
-    SELECT old,coalesce(json_extract(old,'$.hp'),100) AS hp,
-      max(0,coalesce(json_extract(old,'$.hp'),100)-?) AS next_hp,? AS ignition FROM prior
+    SELECT (SELECT data FROM mc_items WHERE room=? AND kind='vehicleDamage' AND item=?) AS old
+  ), stats AS (SELECT old,coalesce(json_extract(old,'$.hp'),100) AS hp FROM prior), item AS (
+    SELECT old,hp,max(min(?,hp),hp-?) AS next_hp,? AS ignition FROM stats
   ) INSERT OR IGNORE INTO mc_events (room,player,op,name,type,data,at)
   SELECT ?,?,?,?,'vehicleDamage',json_set(?,'$.hp',next_hp,'$.damage',hp-next_hp,
     '$.parts',coalesce(json_extract(old,'$.parts'),0)|?,'$.repairedAt',coalesce(json_extract(old,'$.repairedAt'),0),
     '$.disabledAt',CASE WHEN next_hp=0 AND NOT ${ignite} THEN ? ELSE 0 END,
     '$.fireAt',CASE WHEN ${ignite} THEN coalesce(nullif(json_extract(old,'$.fireAt'),0),?) ELSE 0 END,
+    '$.fireHp',CASE WHEN ${ignite} THEN coalesce(nullif(json_extract(old,'$.fireHp'),0),max(1,next_hp)) ELSE 0 END,
     '$.explodeAt',CASE WHEN ${ignite} THEN
       coalesce(nullif(json_extract(old,'$.explodeAt'),0),coalesce(nullif(json_extract(old,'$.fireAt'),0),?)+?) ELSE 0 END),?
-  FROM item ${guard.clause||'WHERE 1'} AND hp>0`+blastGuard,room,data.id,now-wreckFor,data.damage,Number(incendiaryImpact(data)),room,id,op,name,JSON.stringify(data),
-    partMask[data.part]||0,now,now,now,vehicleBurnDelay,now,...guard.args,...blastArgs);
+  FROM item ${guard.clause||'WHERE 1'} AND hp>next_hp
+    AND coalesce(nullif(json_extract(old,'$.explodeAt'),0),?+1)>?
+    AND NOT EXISTS (SELECT 1 FROM mc_items WHERE room=? AND kind='vehicleRetired' AND item=? AND at>?)`+blastGuard,
+    room,data.id,data.cause==='melee'?meleeWearFloor:0,data.damage,Number(incendiaryImpact(data)),room,id,op,name,JSON.stringify(data),
+    partMask[data.part]||0,now,now,now,vehicleBurnDelay,now,...guard.args,now,now,room,data.id,now,...blastArgs);
 }
 function contactGuard(type,data,actor,room,id,now){
   const kind=data.swingKind||data.kind,range=meleeMoves[kind].reach+.5+1.75;
@@ -483,7 +518,8 @@ function contactGuard(type,data,actor,room,id,now){
     args.push(actor.x,actor.y,room,data.target,now-GONE,now,range*range,actor.lift||0);
   }else{
     const x=data.recoil?.fromX??data.x,y=data.recoil?.fromY??data.y;
-    if(Math.hypot(actor.x-x,actor.y-y)>range)return null;
+    const radius=type==='vehicleDamage'?vehicleSpec(data.type).halfLength:0;
+    if(Math.hypot(actor.x-x,actor.y-y)>range+radius)return null;
   }
   return {clause,args};
 }
@@ -616,8 +652,12 @@ async function sync(db,b,now,room) {
       stmts.push(q(accept+` WHERE NOT EXISTS (
         SELECT 1 FROM mc_items i JOIN mc_members m ON m.room=i.room AND m.id=i.owner
         WHERE i.room=? AND i.kind='vehicle' AND i.item=? AND i.owner<>? AND m.seen>?
-          AND (json_extract(m.state,'$.vehicle.id')=i.item OR i.at>?)) ${flightGuard}`,
-        ...values,room,data.id,id,now-GONE,now-6500,...flightArgs));
+          AND (json_extract(m.state,'$.vehicle.id')=i.item OR i.at>?)) ${flightGuard}
+        AND NOT EXISTS (SELECT 1 FROM mc_items WHERE room=? AND item=? AND
+          ((kind='vehicleRetired' AND at>?) OR (kind='vehicleDamage' AND
+            ((? AND (json_extract(data,'$.hp')<=0 OR json_extract(data,'$.fireAt')>0)) OR
+            coalesce(nullif(json_extract(data,'$.explodeAt'),0),json_extract(data,'$.disabledAt'),0) BETWEEN 1 AND ?))))`,
+        ...values,room,data.id,id,now-GONE,now-6500,...flightArgs,room,data.id,now,Number(data.occupied),now-wreckFor));
     } else if(type==='chat'){
       stmts.push(q(accept+" WHERE (SELECT count(*) FROM mc_events WHERE room=? AND player=? AND type='chat' AND at>?)<6",...values,room,id,now-5000));
     } else if(type==='vehicleDamage'){
@@ -639,10 +679,10 @@ async function sync(db,b,now,room) {
       // Use the stored payload and sequence. Retrying an older operation cannot rewind a car.
       stmts.push(q(`INSERT INTO mc_items (room,kind,item,seq,owner,data,at)
         SELECT room,type,json_extract(data,'$.id'),seq,CASE WHEN type='vehicle' THEN json_extract(data,'$.owner') ELSE '' END,data,at
-        FROM mc_events WHERE room=? AND player=? AND op=? AND type=?
+        FROM mc_events WHERE room=? AND player=? AND op=? AND type=? AND at=?
         ON CONFLICT (room,kind,item) DO UPDATE SET
         seq=excluded.seq,owner=excluded.owner,data=excluded.data,at=excluded.at
-        WHERE excluded.seq>mc_items.seq`,room,id,op,type));
+        WHERE excluded.seq>mc_items.seq`,room,id,op,type,now));
     }
   }
   const membersIndex=stmts.length;
@@ -662,7 +702,8 @@ async function sync(db,b,now,room) {
   const result=await db.batch(stmts);
   const propAccepted=propOps.size?result[propIndex].results.filter(r=>propOps.get(r.op)===r.impact).map(r=>r.impact):[];
   const feed=events(result[membersIndex+1].results);
-  const denied=claims.size ? result[membersIndex+2].results.filter(c=>c.owner && c.owner!==id) : [];
+  const claimOwners=claims.size?new Map(result[membersIndex+2].results.map(c=>[c.id,c.owner])):new Map();
+  const denied=[...claims].filter(car=>claimOwners.get(car)!==id).map(car=>({id:car,owner:claimOwners.get(car)||''}));
   const pickupResults=pickupOps.size?result[pickupIndex].results.filter(r=>pickupOps.get(r.op)===r.item)
     .map(r=>({op:r.op,id:r.item,ok:r.ok===1,availableAt:r.available})):undefined;
   // Always advance beyond scanned effects, including an entirely distant page. Hits, chat,
@@ -690,6 +731,7 @@ export async function handleApi(request, env) {
   if (!UUID.test(b.id) || !UUID.test(b.token)) return json({error:'session'},400);
   if (!env.DB) return json({error:'storage'},503);
   await ready(env.DB);
+  if(['join','sync','career'].includes(operation))await sweepVehicles(env.DB,room,Date.now(),operation==='join');
   if(operation==='partners')return json(await runPartners(env.DB,b,room,Date.now(),GONE));
   if(operation==='report')return json(await reportPlayer(env.DB,b,room,Date.now()));
   if (operation==='career') return json(await runCareer(env.DB,b,room,Date.now()));

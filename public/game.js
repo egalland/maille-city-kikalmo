@@ -14,11 +14,11 @@ import {officerKit} from './officer-kit.js';
 import {stepVehicleBody} from './vehicle-motion.js';
 import {createArmorLayer,withJacket} from './outfit-shop.js';
 import {foxSkin} from './puppet-dyes.js';
-import {abandonedFor,disconnectedFor,exitDriverFor,parkingExpired,wreckExpired} from './vehicle-lifecycle.js';
+import {abandonedFor,disconnectedFor,exitDriverFor,parkingExpired,wreckExpired,replacementAt} from './vehicle-lifecycle.js';
 import {officerDrop} from './drop-id.js';
 import {createStreetAudio} from './street-audio.js';
 import {reactionTo,reactionGoal} from './pedestrian-reaction.js';
-import {chassisDamage,chassisHealth,chassisHealthAt,burnProgress,blastRadius,blastDamage,vehicleBurnDelay,enginePower,damagedTires,vehiclePart,nextChassis} from './vehicle-damage.js';
+import {chassisDamage,chassisHealth,chassisHealthAt,burnProgress,blastRadius,blastDamage,vehicleBurnDelay,enginePower,chassisGrip,damagedTires,vehiclePart,nextChassis} from './vehicle-damage.js';
 import { SPAWN, destinations, districtAt, streetAt, nearbyProps, blocked, swimmingSurface, contactAt, moveBody, vehicleContactNormal, supportAt, cameraDistance, routeAgents, sampleTrafficRoute, trafficVehicleAt, trafficAlternatives, getTravelPoint, paintMap } from './paris-world.js';
 import { nearbyDrivableStreets } from './paris-world.js';
 import {isEnfer} from './paris-data.js';
@@ -102,7 +102,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   const displacedDrivers=new Map(),officerFiring=new Map();
   const policeReports=new Map();
   let crouched=false,knownByPolice=false,lastThreat=-Infinity,custody=0;
-  const vehicleWear=new Map(),exploded=new Set(),reactions=new Map(),audio=createStreetAudio();
+  const retiredVehicles=new Map(),vehicleWear=new Map(),exploded=new Set(),reactions=new Map(),audio=createStreetAudio();
   const propHealth=new Map(),confirmedProps=new Map(),soloProps=new Map(),pendingImpacts=new Map(),rewardedProps=new Set();
   let propDamageRevision=0,impactNumber=0;
   const displacedCars=createVehicleDisplacements(),lastShunt=new Map();
@@ -151,9 +151,18 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     return net?.emit?.(type,data);
   }
   const vehicleId=v=>v.vehicle?.id||v.vehicleId||v.id;
+  const retired=id=>(retiredVehicles.get(id)||0)>epoch;
+  function retireVehicle(id,until){
+    if(until>epoch)retiredVehicles.set(id,until);
+    if(car?.id===id)dropCar(true);
+    if(passengerSeat?.car===id)releasePassenger();
+    if(boarding?.vehicle.id===id)cancelBoarding();
+    carsShared.delete(id);displacedCars.delete(id);vehicleWear.delete(id);exploded.delete(id);
+  }
   const vehicleHealth=v=>chassisHealthAt(vehicleWear.get(vehicleId(v)),epoch);
   function receiveChassis(d,local=false){
-    if(!d?.id||wreckExpired(d,epoch)||!Number.isFinite(d.hp))return;
+    if(!d?.id||!Number.isFinite(d.hp)||retired(d.id))return;
+    if(wreckExpired(d,epoch)){if(replacementAt(d)>epoch)retireVehicle(d.id,replacementAt(d));return;}
     const previous=vehicleWear.get(d.id),previousRepair=previous?.repairedAt||0,repair=d.repairedAt||0;
     if(repair<previousRepair||(repair===previousRepair&&d.hp>=chassisHealth(previous?.hp)))return;
     if(repair>previousRepair)exploded.delete(d.id);
@@ -166,7 +175,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   }
   function damageChassis(v,details){
     const damage=chassisDamage(v.type,details);
-    if(!damage||vehicleHealth(v)===0)return;
+    if(!damage||vehicleHealth(v)===0||retired(vehicleId(v)))return;
     const hit={id:vehicleId(v),type:v.type||'car',x:v.x,y:v.y,angle:v.angle??p.angle,...details};
     if(net?.status==='online'&&emit('vehicleDamage',hit)!==false)return;
     receiveChassis(nextChassis(vehicleWear.get(hit.id),hit,damage,epoch),true);
@@ -493,7 +502,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     if(!traversal.grounded||p.lift>.5)return null;
     let closest=null,best=4.4;
     for(const v of [...remotes.filter(e=>e.isCar),...cars]){
-      if((v.lift||0)>.35||v.flightPath&&!v.landed)continue;
+      if(retired(vehicleId(v))||vehicleWear.get(vehicleId(v))?.fireAt||(v.lift||0)>.35||v.flightPath&&!v.landed)continue;
       if(v.peer&&(vehicleSpec(v.type).openSeat||Math.abs(v.speed)>2.5||cabinPassengers.has(v.vehicle.id)))continue;
       if(!v.peer&&v.owner&&v.occupied||vehicleHealth(v)===0||dist(p,v)>vehicleSpec(v.type).halfLength+5)continue;
       for(const door of vehicleDoorways(v)){
@@ -776,8 +785,10 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     const world=net?.world?.()||{};
     settleTravelClaim(roster,world);
     syncPropDamage(world);
+    for(const [id,until] of Object.entries(world.retiredVehicles||{}))if(until>epoch&&!retired(id))retireVehicle(id,until);
     for(const wear of Object.values(world.vehicleDamage||{}))receiveChassis(wear);
     for(const [id,d] of Object.entries(world.vehicles||{})){
+      if(retired(id))continue;
       const current=carsShared.get(id);
       if(!current||!(current.protect>epoch)){
         const merged={...d,lastSeen:d.lastSeen||current?.lastSeen||epoch};
@@ -792,7 +803,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     remotes=[];let shadowCars;
     const viewAt=peerViewTime(epoch),gaitBlend=blend(7.5,dt);
     for(const e of peers.values()){
-      const d=e.data;
+      const d=retired(e.data.vehicle?.id)?{...e.data,vehicle:null,moving:false,speed:0}:e.data;
       if(d.passenger)continue;
       if(dist(d,p)>PEER_RANGE){e.x=d.x;e.y=d.y;e.angle=d.angle||0;continue;}
       const pose=readPeerMotion(e,viewAt);
@@ -850,6 +861,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     const role=d.kind,type=services[role];
     if(age<0||age>(isEnfer?76:42.5)||!type||dist(d,p)>350)return;
     const vehicleId=d.id+'-car',footId=d.id+'-foot';
+    if(retired(vehicleId)||vehicleWear.get(vehicleId)?.fireAt||vehicleWear.get(vehicleId)?.hp===0)return;
     const playerBody=car?collisionBody({...p,...car,isCar:true,vx,vy,speed}):
       pedestrianBody({...p,player:true,vx,vy,down:life.down,stunned:incapacitated(),ragdoll:ragdollPose(life.ragdoll,p.angle,epoch)});
     const bodies=[playerBody,...[...actors,...remotes,...cars,...trafficBlockers]
@@ -1034,9 +1046,8 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       }
       if(parkingExpired(value,epoch))carsShared.delete(key);
     }
-    for(const [key,value] of vehicleWear)if(wreckExpired(value,epoch)&&!activeIds.has(key)){
-      vehicleWear.delete(key);carsShared.delete(key);exploded.delete(key);
-    }
+    for(const [id,wear] of vehicleWear)if(wreckExpired(wear,epoch))retireVehicle(id,replacementAt(wear));
+    for(const [id,until] of retiredVehicles)if(until<=epoch)retiredVehicles.delete(id);
     if(trafficTick<=0){trafficTick=.09;routeClock=epoch;const list=routeAgents(p.x,p.y,130,epoch);
       routeActors=list.actors;routeCars=list.cars;}
     const extrap=clamp((epoch-routeClock)/1000,0,.12);
@@ -1046,7 +1057,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     const previousBodies=incidents.size?[...cars,...actors].map(collisionBody):[];
     actors=routeActors.map(step);cars=[];
     const occupied=new Set(remotes.map(r=>r.vehicle?.id).filter(Boolean));if(car)occupied.add(car.id);
-    const excluded=new Set([...occupied,...carsShared.keys()]);
+    const excluded=new Set([...occupied,...carsShared.keys(),...retiredVehicles.keys()]);
     if(boarding){
       excluded.add(boarding.vehicle.id);
       if(!occupied.has(boarding.vehicle.id))
@@ -1063,22 +1074,23 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       actors.push({...driver});
     }
     const ambient=[];
-    for(const wear of vehicleWear.values())if(chassisHealthAt(wear,epoch)===0&&!occupied.has(wear.id)&&!carsShared.has(wear.id)&&dist(wear,p)<145)
-      cars.push({...wear,isCar:true,moving:false,speed:0});
+    for(const wear of vehicleWear.values()){
+      if(wear.hp!==0&&!wear.fireAt)continue;
+      excluded.add(wear.id);
+      if(!occupied.has(wear.id)){
+        const parked=carsShared.get(wear.id),pose=parked&&!parked.occupied?parked:wear;
+        if(dist(pose,p)<145)cars.push({...wear,...pose,id:wear.id,isCar:true,noDriver:true,moving:false,speed:0});
+      }
+    }
     for(const raw of routeCars){
       if(vehicleHealth(raw)===0)continue;
       if(excluded.has(raw.id))continue;
       if(raw.routeId){
         const wear=vehicleWear.get(raw.id);
-        if(wear?.fireAt){
-          excluded.add(raw.id);
-          cars.push({...raw,...wear,isCar:true,moving:false,move:false,noDriver:true,speed:0,cabinStopped:true});continue;
-        }
         const driver=npcShared.get(raw.id+'-driver');
         if(npcHealthAt(driver,epoch)>0){
-          const onRoad=(suspension?.lift||0)<.035;
-      const tyres=damagedTires(vehicleWear.get(raw.id)?.parts);
-          ambient.push(tyres?{...raw,speed:raw.speed*(1-.12*tyres),cruiseSpeed:raw.cruiseSpeed*(1-.12*tyres)}:raw);
+          const pace=wear?Math.sqrt(enginePower(wear.hp))*(1-.12*damagedTires(wear.parts)):1;
+          ambient.push(pace<1?{...raw,speed:raw.speed*pace,cruiseSpeed:raw.cruiseSpeed*pace}:raw);
         }
         else{
           const pose=carsShared.get(raw.id)||driver;
@@ -1089,6 +1101,8 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       else cars.push({...step(raw),isCar:true});
     }
     for(const d of carsShared.values()){
+      const wear=vehicleWear.get(d.id);
+      if(wear?.fireAt||wear?.hp===0)continue;
       if(occupied.has(d.id)||boarding?.vehicle.id===d.id||d.occupied&&(peers.has(d.owner)||d.owner===net?.id))continue;
       const pose=d.flightPath?sampleAutorotation(d,epoch):{moving:false,speed:0};
       if(dist(d.flightPath?pose:d,p)<135)cars.push({...d,angle:d.angle||0,isCar:true,...pose});
@@ -1199,10 +1213,10 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     const at={x,y},entities=new Map();
     const add=e=>{if(dist(e,at)<62)entities.set(e.id,e);};
     nearby.actors.forEach(add);
-    for(const v of nearby.cars)if(!occupied.has(v.id))add({...v,isCar:true});
+    for(const v of nearby.cars)if(!occupied.has(v.id)&&!retired(v.id)&&!(world.retiredVehicles?.[v.id]>epoch))add({...v,isCar:true});
     // Prefer the simulated or replicated pose when the nominal clock has run ahead of a queue.
     for(const v of [...cars,...Object.values(world.vehicles||{}),...carsShared.values()]){
-      if(parkingExpired(v,epoch)||wreckExpired(vehicleWear.get(v.id),epoch))continue;
+      if(retired(v.id)||world.retiredVehicles?.[v.id]>epoch||parkingExpired(v,epoch)||wreckExpired(vehicleWear.get(v.id),epoch))continue;
       entities.delete(v.id);if(!occupied.has(v.id))add({...v,isCar:true});
     }
     for(const a of actors){entities.delete(a.id);add(a);}
@@ -1241,6 +1255,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       if(typeof v.color==='string'&&/^#[a-f\d]{6}$/i.test(v.color))ride.color=v.color;
       if(typeof v.skin==='string'&&/^[\w-]{1,40}$/.test(v.skin))ride.skin=v.skin;
     }
+    if(ride&&(retired(ride.id)||net?.world?.().retiredVehicles?.[ride.id]>epoch||wreckExpired(s.vehicle.chassis,epoch)))ride=null;
     const angle=safeAngle(s.angle);
     for(const id of net?.world?.().destroyed||[])destroyed.add(id);
     const q=travelSpot(s.x,s.y,angle,ride,s.sourceId,clearance);
@@ -1345,6 +1360,14 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     const targets=[...actors.filter(e=>!e.down).map(e=>({...e,r:WALKER_RADIUS,hitKind:'npc'})),
       ...remotes.filter(e=>!e.isCar&&!e.down).map(e=>({...e,r:PLAYER_RADIUS,hitKind:'peer'})),
       ...nearbyProps(p.x,p.y,3).filter(e=>softProp(e)&&!destroyed.has(e.id)).map(e=>({...e,hitKind:'prop'}))];
+    // Aim at the nearest point of the bodywork, including the sides of long vehicles.
+    for(const v of [...cars,...remotes.filter(e=>e.isCar)]){
+      const spec=vehicleSpec(v.type);
+      if(vehicleHealth(v)===0||dist(v,p)>spec.halfLength+3)continue;
+      const a=v.angle||0,c=Math.cos(a),s=Math.sin(a),dx=p.x-v.x,dy=p.y-v.y;
+      const along=clamp(dx*c+dy*s,-spec.halfLength,spec.halfLength),side=clamp(dy*c-dx*s,-spec.halfWidth,spec.halfWidth);
+      targets.push({id:v.id,x:v.x+c*along-s*side,y:v.y+s*along+c*side,lift:v.lift,r:.16,h:spec.height,hitKind:'vehicle',vehicle:v});
+    }
     const walls={radius:.075,camera:true,destroyed,colliders:obstacles.filter(o=>o.isCar)};
     const occluded=(x,y,height,ignoreId)=>contactAt(x,y,{...walls,height,ignoreId});
     return meleeContact(p,bearing,move,targets,terrainHeight,occluded);
@@ -1362,6 +1385,8 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     }else if(target.hitKind==='peer'){
       emit('hit',{target:target.id,cause:'melee',kind:strike.kind,swingAt:strike.started,damage:move.damage,angle,force:move.force});
       recordAction('hitPlayer');
+    }else if(target.hitKind==='vehicle'){
+      damageChassis(target.vehicle,{cause:'melee',swingAt:strike.started,swingKind:strike.kind,part:'body'});
     }else if(target.hitKind==='prop'){
       damageProp(target,move.damage,{cause:'melee',swingAt:strike.started,swingKind:strike.kind},angle,vandalism);
     }
@@ -1546,7 +1571,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         if(suspension?.lift>0)updateSuspension(spec,dt);
         speed=vx=vy=0;p.moving=false;braking=false;return;
       }
-      const grip=isEnfer?cityClimate(epoch).grip:1;
+      const grip=(isEnfer?cityClimate(epoch).grip:1)*chassisGrip(vehicleHealth(car));
       const grade=terrainGradient(p.x,p.y);
       const incline=grade.x*Math.cos(p.angle)+grade.y*Math.sin(p.angle);
       const driveline=stepRoadDrive(spec,{speed,pedal:sy,grip,tyres,power,grounded:onRoad,incline,dt});
@@ -1758,7 +1783,10 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       const exposed=target=>dist(vehicle,target)<1||clearSight(vehicle,target);
       if(distance<115){view.effect('carExplosion',vehicle.x,vehicle.y,0,0,[],.35);audio.grit(.75,.36*(1-distance/120),680);tone(82,.68,'triangle',.14,24);}
       if(distance<blastRadius){
-        if(car?.id===wear.id)dropCar(true);
+        if(car?.id===wear.id){
+          const parked={...car,x:p.x,y:p.y,angle:p.angle,occupied:false,owner:'',moving:false,speed:0,expiresAt:epoch+abandonedFor};
+          carsShared.set(car.id,parked);emit('vehicle',parked);dropCar(true);
+        }
         const amount=exposed(p)?blastDamage(distance,59):0;
         if(amount>0&&p.lift<3.8)damage(amount,Math.atan2(p.y-vehicle.y,p.x-vehicle.x),.64,'traffic');
       }
@@ -1992,7 +2020,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         if(v)displacedCars.push(v,d,e.player);
       }
     }
-    if(e.type==='vehicle'&&!parkingExpired(d,epoch)){
+    if(e.type==='vehicle'&&!retired(d.id)&&!parkingExpired(d,epoch)){
       displacedCars.delete(d.id);
       if(!d.shifted&&epoch-e.at<920)openedDoors.set(d.id,{at:e.at,side:d.eject?Math.sign((d.eject.y-d.y)*Math.cos(d.angle||0)-(d.eject.x-d.x)*Math.sin(d.angle||0))||-1:-1});
       carsShared.set(d.id,{...d,lastSeen:d.lastSeen||e.at||epoch});

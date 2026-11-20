@@ -2,7 +2,7 @@ import {districtEventsSchema,districtState,workDistrictEvent} from './district-e
 import {woolSchema,woolProgress,woolAction} from './lost-wool.js';
 import {careerContracts,careerPlaces,careerRadius,careerGarage} from '../public/career-catalog.js';
 import {outfitShop} from '../public/outfit-shop.js';
-import {abandonedFor,wreckFor} from '../public/vehicle-lifecycle.js';
+import {abandonedFor,replacementAt} from '../public/vehicle-lifecycle.js';
 import {isAircraft} from '../public/airfield.js';
 import {isVehicleType,vehicleSpec} from '../public/vehicle-types.js';
 
@@ -228,6 +228,8 @@ export async function runCareer(db,b,room,now){
         cash-=careerGarage.price;car='garage-'+crypto.randomUUID();
       }else if(!car)return fail('Tu ne possèdes pas encore de citadine.');
       if(b.action==='collect'){
+        const retired=await q("SELECT at FROM mc_items WHERE room=? AND kind='vehicleRetired' AND item=? AND at>?",room,car,now).first();
+        if(retired)return fail('Ta citadine de remplacement est en préparation.');
         const existing=await q(`SELECT v.data,v.owner,v.at,v.seq,m.seen,m.state,w.data AS wear
           FROM mc_items v LEFT JOIN mc_members m ON m.room=v.room AND m.id=v.owner
           LEFT JOIN mc_items w ON w.room=v.room AND w.item=v.item AND w.kind='vehicleDamage'
@@ -235,12 +237,12 @@ export async function runCareer(db,b,room,now){
         if(existing){
           const parked=parse(existing.data),wear=parse(existing.wear),driver=parse(existing.state);
           if(existing.owner&&existing.seen>now-maxPoseAge&&driver?.vehicle?.id===car)return fail('La citadine est en circulation.');
-          if(wear?.explodeAt&&wear.explodeAt+wreckFor>now)return fail('La dépanneuse récupère encore l’épave.');
-          if(!wear?.explodeAt&&(parked.expiresAt||existing.at+abandonedFor)>now)
+          if(replacementAt(wear)>now)return fail('La dépanneuse récupère encore l’épave.');
+          if(!replacementAt(wear)&&(parked.expiresAt||existing.at+abandonedFor)>now)
             return {ok:true,state:publicState(row,b.id),vehicle:parked,notice:'Ta citadine est déjà en ville.'};
           guard+=" AND EXISTS (SELECT 1 FROM mc_items WHERE room=? AND kind='vehicle' AND item=? AND at=? AND seq=?)";
           guardArgs.push(room,car,existing.at,existing.seq);
-          if(wear?.explodeAt)car='garage-'+crypto.randomUUID();
+          if(replacementAt(wear))car='garage-'+crypto.randomUUID();
         }
       }
       vehicle={id:car,type:careerGarage.type,x:garage.x+6*Math.cos(garage.angle),y:garage.y+6*Math.sin(garage.angle),

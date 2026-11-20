@@ -12,7 +12,7 @@ import {motionSeed,sampleLocomotion} from './locomotion-pose.js';
 import * as THREE from './three.js';
 import { createStreetVehicle, isStreetVehicle } from './street-vehicles.js';
 import { vehicleSpec } from './vehicle-types.js';
-import {chassisStage,wheelPart} from './vehicle-damage.js';
+import {chassisStage,chassisHealth,wheelPart} from './vehicle-damage.js';
 import {bodyFabric as carPaint,serviceFabric as fleetPaint,fleetFabric as carYarn} from './vehicle-fabric.js';
 import { createRagdollRig } from './ragdoll-render.js';
 
@@ -920,8 +920,8 @@ function createCarBody(type='car',color,seed=0){
     roll+=(steer*velocity*.22-roll)*blend;
     compression+=(Math.min(.14,Math.abs(Number(pose.impact)||0)*.12)-compression)*Math.min(1,dt*15);
     body.position.y=(Math.sin(t*(4+velocity*5)+variant)*.009+Math.sin(t*13+variant)*.004)*velocity-compression*.26;
-    const wear=chassisStage(pose.chassisHp);
-    body.scale.set(1+compression*.12-wear*.019,1-compression*.6-wear*.024,1+compression*.34);
+    const wear=1-chassisHealth(pose.chassisHp)/100;
+    body.scale.set(1+compression*.12-wear*.071,1-compression*.6-wear*.096,1+compression*.34+wear*.018);
     body.rotation.z=pitch;body.rotation.x=roll;
     spin-=speed*dt/wheelRadius;
     for(const wheel of wheels){
@@ -1188,10 +1188,11 @@ export function createCar(type='car',color,seed=0){
     if(!stage){if(wear)wear.group.visible=false;return;}
     if(!wear){
       const group=new THREE.Group(),marks=[],puffs=[],flames=[],fibers=[];
-      for(let i=0;i<6;i++){
+      for(let i=0;i<12;i++){
         const patch=new THREE.Mesh(geo.box,frayedChassis);
         const width=spec.halfWidth*(i%2===0?1:-1);
-        patch.position.set(spec.halfLength*(.15-.15*(i>>1)),spec.height*(.43-.05*(i>>1)),width);
+        const along=[.64,-.54,.16,-.32,.47,-.70][i>>1];
+        patch.position.set(spec.halfLength*along,spec.height*(.34+.045*(i%3)),width*.99);
         patch.rotation.z=(i%3-1)*.32;
         patch.scale.set(spec.halfLength*.20,.041,.027);group.add(patch);marks.push(patch);
       }
@@ -1205,9 +1206,11 @@ export function createCar(type='car',color,seed=0){
     wear.group.visible=true;
     wear.marks.forEach((patch,i)=>{
       const char=pose.burnProgress||0;
-      patch.visible=pose.wrecked?false:i<stage*2+Math.round(char*4);
-      patch.scale.y=.041+.095*char;
-      patch.scale.z=.027+.025*char;
+      const loss=1-chassisHealth(pose.chassisHp)/100;
+      patch.visible=!pose.wrecked&&i<2*Math.ceil(loss*6);
+      patch.scale.x=spec.halfLength*(.12+.20*loss);
+      patch.scale.y=.028+.055*loss+.095*char;
+      patch.scale.z=.034+.042*loss;
     });
     wear.flames.forEach((flame,i)=>{
       const age=(time*3.9+i*.18)%1;

@@ -44,9 +44,9 @@ test('speed over a rising crest gives suspension lift, gravity and a landing',()
 });
 
 test('engine fire reduces integrity before an explosion and the wreck expires later',()=>{
-  const start=3000,fire=nextChassis(null,{id:'car',part:'engine'},77,start);
-  assert.equal(fire.hp,23);assert.equal(chassisHealthAt(fire,start),23);
-  assert.ok(chassisHealthAt(fire,fire.explodeAt-1800)<23);
+  const start=3000,fire=nextChassis(null,{id:'car',part:'engine'},86,start);
+  assert.equal(fire.hp,14);assert.equal(chassisHealthAt(fire,start),14);
+  assert.ok(chassisHealthAt(fire,fire.explodeAt-1800)<14);
   assert.ok(burnProgress(fire,fire.explodeAt-1800)>.5);
   assert.equal(chassisHealthAt(fire,fire.explodeAt),0);
   assert.ok(!wreckExpired(fire,fire.explodeAt+23999)&&wreckExpired(fire,fire.explodeAt+24000));

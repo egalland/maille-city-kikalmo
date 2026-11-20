@@ -579,3 +579,21 @@ test('desktop guard and touch stance use the same walking, network pose and jump
   h.game.action('guard');h.step(10);h.game.action('jump');h.step(10);
   assert.equal(h.state.crouched,false);assert.notEqual(h.published.motion,'crouch');
 });
+
+test('the wreck, its traffic controller and stale parking pose leave the road beside an observer',t=>{
+  const h=startGame(t);
+  h.step(12);
+  const vehicle=h.scene.entities.find(e=>e.isCar&&e.routeId);
+  assert.ok(vehicle,'a visible route car from the real population');
+  const wear={id:vehicle.id,type:vehicle.type,x:vehicle.x,y:vehicle.y,angle:vehicle.angle,hp:0,parts:0,disabledAt:h.epoch};
+  h.world.vehicleDamage={[wear.id]:wear};
+  h.world.vehicles={[wear.id]:{...wear,occupied:false,expiresAt:h.epoch+95_000}};
+  h.step(28);
+  const wrecks=h.scene.entities.filter(e=>e.id===wear.id);
+  assert.equal(wrecks.length,1);assert.equal(wrecks[0].chassisHp,0);assert.equal(wrecks[0].speed,0);
+  h.epoch+=24_050;h.step(28);
+  assert.ok(!h.scene.entities.some(e=>e.id===wear.id));
+  h.receive({type:'vehicle',at:h.epoch,player:'another',data:h.world.vehicles[wear.id]});
+  h.step(28);
+  assert.ok(!h.scene.entities.some(e=>e.id===wear.id));
+});

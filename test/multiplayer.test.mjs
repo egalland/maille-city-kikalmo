@@ -184,9 +184,10 @@ test('durability from shots and collisions accumulates once and is restored on j
     await Promise.all([sync(a,[crash,crash]),sync(b,[shot,shot])]);
     const read=async()=>(await accepted(api(DB,'/api/world/join',b))).world.vehicleDamage[target.id];
     const first=await read();
-    assert.ok(first.hp>0&&first.hp<40,JSON.stringify(first));
+    assert.equal(first.hp,74);
     await sync(a,[{...crash,op:'2'}]);
-    assert.equal((await read()).hp,0);
+    assert.equal((await read()).hp,54);
+    assert.equal((await read()).fireAt,0);
     const delivered=await sync(b,[]);
     assert.equal(delivered.events.filter(e=>e.type==='vehicleDamage').length,3);
   }finally{DB.close();}
@@ -229,13 +230,16 @@ test('vehicle damage preserves cracked glass, flat tyres and the delayed explosi
     const first=await read();
     assert.equal(first.parts,3);
     assert.ok(first.hp>80);
-    for(const i of [3,4,5,6,7,8])await send(strike('engine',i));
+    for(let i=3;i<=8;i++)await send(strike('engine',i));
+    assert.equal((await read()).hp,49);assert.equal((await read()).fireAt,0);
+    for(let i=9;i<=15;i++){if(i===13)clock+=1000;await send(strike('engine',i));}
     const last=await read();
     assert.equal(last.parts,3);
     assert.equal(last.hp,0);
     assert.ok(last.fireAt>0);
-    assert.ok(last.explodeAt-last.fireAt>=2700);
-    await send(strike('engine',8));
+    assert.equal(last.explodeAt-last.fireAt,12_000);
+    assert.ok(last.fireHp>0&&last.fireHp<=16);
+    await send(strike('engine',15));
     assert.equal((await read()).explodeAt,last.explodeAt);
   }finally{DB.close();}
 });
@@ -299,4 +303,55 @@ test('a scheduled wreck spreads damage to a nearby car once, and reconnecting fo
     now+=24001;
     assert.equal((await send(other,'join')).world.vehicleDamage[source.id],undefined);
   }finally{DB.close();}
+});
+
+test('a towed vehicle loses its shared pose, seats and damage; stale claims cannot undo the tow',async t=>{
+  const db=localDatabase(),driver=session('Pilote'),observer=session('Témoin'),late=session('Visiteur');
+  t.after(()=>db.close());
+  let now=1800000000000;t.mock.method(Date,'now',()=>now);
+  const car={id:'station-car',type:'compact',x:56,y:11,angle:0};
+  const post=(person,route,events=[])=>accepted(api(db,'/api/world/'+route,{
+    ...person,map:'enfer',state:{x:56,y:11,health:100,vehicle:person===driver?car:null},events
+  }));
+  await post(driver,'join');await post(observer,'join');
+  const claim={op:'drive-on',type:'vehicle',data:{...car,occupied:true}};
+  await post(driver,'sync',[claim]);
+  await post(observer,'sync',[{op:'ride',type:'seat',data:{driver:driver.id,car:car.id}}]);
+  const disabled={...car,hp:0,disabledAt:now,parts:3};
+  await db.prepare("INSERT INTO mc_items(room,kind,item,seq,owner,data,at) VALUES('enfer:public','vehicleDamage',?,19,'',?,?)")
+    .bind(car.id,JSON.stringify(disabled),now).run();
+  now+=23_999;
+  assert.equal((await post(observer,'join')).world.vehicleDamage[car.id].hp,0);
+  now++;
+  await post(observer,'sync');
+  const parked=await post(late,'join');
+  assert.equal(parked.world.retiredVehicles[car.id],now+75_000);
+  assert.equal(parked.world.vehicles[car.id],undefined);
+  assert.equal(parked.world.vehicleDamage[car.id],undefined);
+  await post(driver,'join');
+  const rejected=await post(driver,'sync',[claim,{...claim,op:'claim-after-tow'}]);
+  assert.equal(rejected.denied[0].id,car.id);
+  assert.equal(rejected.players.find(p=>p.id===driver.id)?.vehicle,null);
+  assert.equal(await db.prepare('SELECT rider FROM mc_seats WHERE car=?').bind(car.id).first(),null);
+  assert.deepEqual((await db.prepare("SELECT kind FROM mc_items WHERE item=?").bind(car.id).first()).kind,'vehicleRetired');
+  now+=75_001;
+  await post(driver,'join');
+  const restored=await post(driver,'sync',[{...claim,op:'new-chassis'}]);
+  assert.equal(restored.denied.length,0);
+  assert.equal((await post(late,'join')).world.vehicles[car.id].owner,driver.id);
+});
+
+test('an accepted close-range swing scuffs a car once and light contact stays below engine damage',async t=>{
+  const db=localDatabase();t.after(()=>db.close());
+  const now=1800000000000;t.mock.method(Date,'now',()=>now);
+  const player={...session('Passant'),map:'enfer',state:{x:1,y:1,health:100}};
+  await accepted(api(db,'/api/world/join',player));
+  const car={id:'parked-car',type:'sedan',x:3.7,y:1};
+  const kick={type:'vehicleDamage',op:'bump',data:{...car,cause:'melee',swingKind:'kick',swingAt:now}};
+  const sync=events=>accepted(api(db,'/api/world/sync',{...player,events}));
+  assert.ok(!(await sync([kick])).events.some(e=>e.type==='vehicleDamage'));
+  const swing={type:'melee',op:'step',data:{kind:'kick',started:now,angle:0,x:1,y:1}};
+  const hit=await sync([swing,kick,kick]);
+  const damage=hit.events.filter(e=>e.type==='vehicleDamage');
+  assert.equal(damage.length,1);assert.equal(damage[0].data.hp,98);assert.equal(damage[0].data.fireAt,0);
 });

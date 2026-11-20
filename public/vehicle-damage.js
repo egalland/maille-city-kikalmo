@@ -4,18 +4,32 @@ import {weaponCatalog} from './weapon-catalog.js';
 export function chassisHealth(value){return Number.isFinite(value)?Math.max(0,Math.min(100,value)):100;}
 export function chassisStage(value){
   const hp=chassisHealth(value);
-  return hp===0?3:hp<=32?2:hp<=72?1:0;
+  return hp===0?3:hp<=34?2:hp<=96?1:0;
 }
-export function enginePower(value){return [1,.82,.50,0][chassisStage(value)];}
-export function chassisDamage(type,{cause,speed,weapon,part}){
-  if(cause==='weapon')return Object.hasOwn(weaponCatalog,weapon)&&weapon!=='fist'?Math.round(weaponCatalog[weapon].damage*({engine:1.18,glass:.23,frontLeft:.28,frontRight:.28,rearLeft:.28,rearRight:.28}[part]??.90)):0;
-  if(cause!=='crash'||!Number.isFinite(speed)||speed<4.2)return 0;
-  const spec=vehicleSpec(type),weight=Math.max(.82,Math.min(1.3,2.08/spec.halfLength));
-  return Math.min(61,Math.round((Math.min(42,speed)-3)*2.15*weight));
+// Wear takes torque away gradually. The last few points leave enough power to limp to a stop.
+export function enginePower(value){
+  const integrity=chassisHealth(value)/100;
+  return integrity===0?0:.23+.77*(1-(1-integrity)**1.5);
+}
+export function chassisGrip(value){return .76+.24*chassisHealth(value)/100;}
+export const ignitionHealth=16;
+export const meleeWearFloor=42;
+export function chassisDamage(type,{cause,speed,weapon,part,swingKind}){
+  const mass=vehicleSpec(type).mass;
+  const vulnerability=Math.max(.60,Math.min(1.25,(1350/mass)**.24));
+  if(cause==='melee')return swingKind==='kick'?2:1;
+  if(cause==='weapon'){
+    if(!Object.hasOwn(weaponCatalog,weapon)||weapon==='fist')return 0;
+    const factor=part==='engine'?.50:part==='glass'?.09:partMask[part]>1?.10:.31;
+    return Math.max(1,Math.round(weaponCatalog[weapon].damage*factor*vulnerability));
+  }
+  if(cause!=='crash'||!Number.isFinite(speed)||speed<5.5)return 0;
+  const closing=Math.min(85,speed)-4.5;
+  return Math.min(76,Math.max(1,Math.round((.12*closing+.037*closing**2)*vulnerability)));
 }
 
 export const partMask={body:0,engine:0,glass:1,frontLeft:2,frontRight:4,rearLeft:8,rearRight:16};
-export const vehicleBurnDelay=8200;
+export const vehicleBurnDelay=12_000;
 export const blastRadius=8.5;
 export function blastDamage(distance,max=52){
   return Math.max(0,Math.round(max*(1-distance/blastRadius)));
@@ -25,7 +39,7 @@ export function chassisHealthAt(wear,now){
   if(!wear?.fireAt)return hp;
   const ends=wear.explodeAt||wear.fireAt+vehicleBurnDelay;
   if(now>=ends)return 0;
-  return Math.max(1,Math.min(hp||6,Math.ceil(32*(ends-now)/Math.max(1,ends-wear.fireAt))));
+  return Math.max(1,Math.min(hp||1,Math.ceil((wear.fireHp||Math.min(hp||1,32))*(ends-now)/Math.max(1,ends-wear.fireAt))));
 }
 export function burnProgress(wear,now){
   if(!wear?.fireAt)return 0;
@@ -52,9 +66,11 @@ export function incendiaryImpact(hit) {
 }
 
 export function nextChassis(previous,hit,amount,now){
-  const hp=Math.max(0,chassisHealth(previous?.hp)-amount);
-  const fireAt=previous?.fireAt||(hp<=32&&incendiaryImpact(hit)?now:0);
+  const start=chassisHealth(previous?.hp);
+  const floor=hit.cause==='melee'?Math.min(start,meleeWearFloor):0;
+  const hp=Math.max(floor,start-amount);
+  const fireAt=previous?.fireAt||(hp<=ignitionHealth&&incendiaryImpact(hit)?now:0);
   const disabledAt=hp===0&&!fireAt?now:0;
   return {...hit,hp,...(previous?.repairedAt?{repairedAt:previous.repairedAt}:{}),parts:(previous?.parts||0)|(partMask[hit.part]||0),
-    disabledAt,fireAt,explodeAt:fireAt?(previous?.explodeAt||fireAt+vehicleBurnDelay):0};
+    disabledAt,fireAt,fireHp:fireAt?(previous?.fireHp||hp||1):0,explodeAt:fireAt?(previous?.explodeAt||fireAt+vehicleBurnDelay):0};
 }

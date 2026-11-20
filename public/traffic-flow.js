@@ -427,6 +427,11 @@ export function createTrafficFlow(sample,chooseDetour){
     const actualDt=clamp(dt,0,.5);
     const fixed=blockers.filter(b=>b&&Number.isFinite(b.x)&&Number.isFinite(b.y)).map(b=>makeBody(b));
     const candidates=new Map(seeds.filter(s=>s.routeId!=null&&!excluded.has(s.id)).map(s=>[s.id,s]));
+    // Preserve each car's route progress while the authoritative wear changes its cruise speed.
+    for(const [id,seed] of candidates){
+      const car=cars.get(id);
+      if(car&&seed.cruiseSpeed>0&&car.seed.cruiseSpeed!==seed.cruiseSpeed)car.seed={...car.seed,cruiseSpeed:seed.cruiseSpeed};
+    }
     const remote=new Map();
     for(const s of checkpoints){
       if(!s||excluded.has(s.id)||s.routeId==null||!Number.isFinite(s.routeDistance))continue;
@@ -434,7 +439,9 @@ export function createTrafficFlow(sample,chooseDetour){
     }
     for(const [id,s] of remote)if(!candidates.has(id))candidates.set(id,s);
     for(const [id,car] of cars){
-      if(excluded.has(id)||(observer?distanceSquared(observer,car.pose)>153**2:!candidates.has(id)))cars.delete(id);
+      if(excluded.has(id)||(observer?distanceSquared(observer,car.pose)>153**2:!candidates.has(id))){
+        cars.delete(id);releasePermits(id);
+      }
     }
     for(const [id,expires] of refused)if(expires<tick||!candidates.has(id))refused.delete(id);
     const bodies=[...fixed,...Array.from(cars.values(),c=>c.body)];

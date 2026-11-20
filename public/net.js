@@ -1,5 +1,5 @@
 import {browserProfile} from './ammunition.js';
-import {parkingExpired,wreckExpired,disconnectedFor,abandonedFor} from './vehicle-lifecycle.js';
+import {parkingExpired,wreckExpired,replacementAt,pruneVehicleWorld,disconnectedFor,abandonedFor} from './vehicle-lifecycle.js';
 import {matchesPickup} from './drop-id.js';
 import {createRosterWire} from './roster-wire.js';
 import {createStateEncoder} from './state-wire.js';
@@ -12,7 +12,7 @@ const combatActions=new Set(['fire','shot','hit','melee']);
 const onlineOnly=new Set([...combatActions,'vehicleShunt','chat','alert','horn','emote','seat']);
 const COMBAT_WINDOW=1400;
 const MAX_BATCH=20, MAX_QUEUE=120;
-const blankWorld=()=>({destroyed:[],vehicles:{},npcs:{},pickups:{},propHealth:{},vehicleDamage:{}});
+const blankWorld=()=>({destroyed:[],vehicles:{},npcs:{},pickups:{},propHealth:{},vehicleDamage:{},retiredVehicles:{}});
 const cleanName=s=>[...String(s||'Kikalmo').replace(/[\u0000-\u001f\u007f]/g,' ').trim()].slice(0,24).join('')||'Kikalmo';
 const uuid=/^[a-f\d]{8}-[a-f\d]{4}-4[a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i;
 export function createNet(options={}) {
@@ -96,13 +96,19 @@ export function createNet(options={}) {
     }
     if(e.type==='vehicle'){
       const vehicle={...d,lastSeen:e.at,...(!d.occupied?{expiresAt:d.expiresAt||e.at+abandonedFor}:{})};
+      if(context.retiredVehicles[d.id]>serverTime())return;
       if(!parkingExpired(vehicle,serverTime()))context.vehicles[d.id]=vehicle;
     }
     if(e.type==='vehicleDamage'){
       const prior=context.vehicleDamage[d.id];
       const repaired=d.repairedAt||0,priorRepair=prior?.repairedAt||0;
       if(prior&&!wreckExpired(prior,serverTime())&&(repaired<priorRepair||(repaired===priorRepair&&prior.hp<=d.hp)))return;
-      if(wreckExpired(d,serverTime()))return;
+      if(wreckExpired(d,serverTime())){
+        const until=replacementAt(d);
+        if(until>serverTime()){context.retiredVehicles[d.id]=until;delete context.vehicles[d.id];}
+        return;
+      }
+      if(context.retiredVehicles[d.id]>serverTime())return;
       context.vehicleDamage[d.id]=d;
     }
     if (e.type==='npc') context.npcs[d.id]=d;
@@ -243,7 +249,7 @@ export function createNet(options={}) {
       if(data.now-lastPickupPrune>5000){
         for(const [item,until] of Object.entries(context.pickups))if(until<=data.now)delete context.pickups[item];
         for(const [id,vehicle] of Object.entries(context.vehicles))if(parkingExpired(vehicle,data.now))delete context.vehicles[id];
-        for(const [id,wear] of Object.entries(context.vehicleDamage))if(wreckExpired(wear,data.now))delete context.vehicleDamage[id];
+        pruneVehicleWorld(context,data.now);
         lastPickupPrune=data.now;
       }
       failures=0;lastReply=received;
