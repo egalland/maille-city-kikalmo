@@ -13,7 +13,10 @@ test('the Paris fleet fits its drivable colliders, places accessible doors and u
     const {cars}=routeAgents(stop.x,stop.y,300,1780000121000+i*24000);
     cars.forEach(v=>observed.add(v.type));
   }
-  assert.deepEqual([...observed].sort(),vehicleTypes.filter(type=>!isAircraft(type)).sort());
+  // Freight movements are scheduled on the active Enfer road corridors. The
+  // archived city retains its original traffic mix.
+  const parisRoster=vehicleTypes.filter(type=>!isAircraft(type)&&!['boxtruck','tipper'].includes(type));
+  assert.deepEqual([...observed].sort(),parisRoster.sort());
   for(const v of parkedCars){
     const spec=vehicleSpec(v.type);
     assert.equal(contactAt(v.x,v.y,{angle:v.angle,halfLength:spec.halfLength,halfWidth:spec.halfWidth}),null,v.id);
