@@ -16,6 +16,7 @@ const paths={
  chevronDown:'<path d="m6 9 6 6 6-6"/>',
  send:'<path d="m3 3 19 9-19 9 4-9zm4 9h15"/>',
  car:'<path d="m4 11 3-6h10l3 6m-17 0h18v8H3zm2 8v2m14-2v2m-13-6h2m8 0h2"/>',
+ swim:'<circle cx="17" cy="6" r="2"/><path d="m3 14 6-5 4 3 3-3-4-4-3 1m-7 11q2 2 4 0t4 0t4 0t4 0t4 0m-20 4q2 2 4 0t4 0t4 0t4 0t4 0"/>',
  jump:'<path d="M5 20h4m4 0h6M12 15V3m-5 5 5-5 5 5"/>',
  vault:'<path d="M3 16c2-9 9-13 17-8m-1-4 2 5-5 2M9 20v-5h6v5"/>',
  climb:'<path d="M3 20h6v-5h6v-5h6M6 13V4m-3 3 3-3 3 3"/>',

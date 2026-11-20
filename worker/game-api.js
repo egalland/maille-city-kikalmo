@@ -110,7 +110,7 @@ function vitalityFields(source,now,longRecovery=false) {
   }
   return result;
 }
-const locomotionModes=new Set(['idle','walk','run','jump','fall','land','vault','climb']);
+const locomotionModes=new Set(['idle','walk','run','jump','fall','land','vault','climb','swim']);
 function movementFields(s,now){
   if(!Number.isFinite(s.lift))return {};
   const lift=num(s.lift,0,0,64);
@@ -306,7 +306,7 @@ async function join(db,b,now,room) {
   return json({now,...(b.protocol===2?{stateRefs:stateReferences(playerState(b.state,now,room))}:{}),...rosterPacket(results[5].results,id,{protocol:b.protocol}),history:events(results[6].results.reverse()),
     cursor:results[7].results[0].last,world});
 }
-const airbornePickup=new Set(['jump','fall','climb','vault']);
+const airbornePickup=new Set(['jump','fall','climb','vault','swim']);
 function recordPickup(stmts,q,{room,id,token,name,op,item,weapon,state,now}){
   const p=decodeDropId(item),officer=decodeOfficerDrop(item);
   if(!matchesPickup(item,weapon,room===worldKeys.enfer))return false;

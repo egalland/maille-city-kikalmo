@@ -1,4 +1,4 @@
-import {contactAt,moveBody,supportAt,surfaceTop,vaultableProp} from './paris-world.js';
+import {contactAt,moveBody,supportAt,surfaceTop,vaultableProp,swimmingSurface} from './paris-world.js';
 import {PLAYER_RADIUS} from './crowd-motion.js';
 
 const cap=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -17,10 +17,10 @@ function samplePlan(plan,t){
 
 export function createParkour(p,ground,gradient,{onImpact=()=>{}}={}){
   let airborne=false,grace=0,queued=0,held=false,landing=0,vertical=0,airTime=0,plan=null;
-  let speedX=0,speedY=0;
+  let speedX=0,speedY=0,stroke=0;
   function reset(vx=0,vy=0){
     Object.assign(p,motionDefaults);
-    airborne=held=false;grace=queued=landing=vertical=airTime=0;plan=null;speedX=vx;speedY=vy;
+    stroke=0;airborne=held=false;grace=queued=landing=vertical=airTime=0;plan=null;speedX=vx;speedY=vy;
   }
   reset();
   function setPressed(pressed){
@@ -34,7 +34,7 @@ export function createParkour(p,ground,gradient,{onImpact=()=>{}}={}){
   }
   const options=world=>({radius:PLAYER_RADIUS,bodyHeight,...world});
   function buildPlan(angle,world){
-    if(airborne||plan)return null;
+    if(airborne||plan||p.motion==='swim')return null;
     const dx=Math.cos(angle),dy=Math.sin(angle),geometry=options(world),startZ=ground(p.x,p.y)+p.lift;
     let obstacle,reach;
     for(reach=.10;reach<=1.55;reach+=.14){
@@ -77,10 +77,20 @@ export function createParkour(p,ground,gradient,{onImpact=()=>{}}={}){
   }
   function step(dt,input,world){
     const oldX=p.x,oldY=p.y,oldGround=ground(p.x,p.y),oldZ=oldGround+p.lift;
-    const raw=Math.hypot(input.x,input.y),magnitude=Math.min(raw,1);
-    const dx=raw?input.x/raw:0,dy=raw?input.y/raw:0;
+
+    const wasSwimming=p.motion==='swim';
+    const water=swimmingSurface(p.x,p.y,wasSwimming);
+    const swimming=water!=null && !plan && ((!airborne && p.lift<.15) || (airborne && vertical<=0 && (oldZ<=water+.6 || p.lift<.12)));
+    const geometry={...options(world),swimmer:true,waterHeight:swimming?water:null};
+    if(swimming){
+      if(queued>0)stroke=.48;
+      airborne=false;queued=landing=vertical=0;
+    }else stroke=0;
+    const paddling=stroke>0,raw=Math.hypot(input.x,input.y);
+    const magnitude=raw?Math.min(1,raw):paddling?1:0;
+    const dx=raw?input.x/raw:Math.cos(input.angle),dy=raw?input.y/raw:Math.sin(input.angle);
     const facing=magnitude>.12?Math.atan2(dy,dx):input.angle;
-    const geometry=options(world);
+    stroke=Math.max(0,stroke-dt);
     if(!airborne&&!plan)grace=.09;
     if(queued>0 && !plan && (!airborne||grace>0)){
       plan=buildPlan(facing,world);queued=0;grace=0;landing=0;
@@ -110,20 +120,27 @@ export function createParkour(p,ground,gradient,{onImpact=()=>{}}={}){
     const slope=gradient(p.x,p.y);
     const grade=cap(dx*slope.x+dy*slope.y,-.45,.45);
     p.slope+=((magnitude>.1?grade:0)-p.slope)*(1-Math.exp(-9*dt));
-    const maxSpeed=(input.sprint?6.4:3.45)*cap(1-grade*.75,.72,1.12);
+    const maxSpeed=swimming?(paddling?2.65:input.sprint?2.05:1.40):(input.sprint?6.4:3.45)*cap(1-grade*.75,.72,1.12);
     const braking=magnitude<.065, reversing=speedX*dx+speedY*dy<0;
-    const response=airborne?(braking ? .65 : 3.0):braking?12.2:reversing?12:8.9;
+    const response=swimming?3.8:airborne?(braking ? .65 : 3.0):braking?12.2:reversing?12:8.9;
     const k=1-Math.exp(-response*dt);
     speedX+=(dx*magnitude*maxSpeed-speedX)*k;speedY+=(dy*magnitude*maxSpeed-speedY)*k;
     if(Math.hypot(speedX,speedY)<.035){speedX=0;speedY=0;}
-    const result=moveBody(p.x,p.y,speedX*dt,speedY*dt,{...geometry,footZ:p.lift,footWorldZ:p.lift>.01?oldZ:null});
+    const result=moveBody(p.x,p.y,speedX*dt,speedY*dt,{...geometry,footZ:p.lift,footWorldZ:swimming?water-.62:p.lift>.01?oldZ:null});
     if(result.hit){
       const inward=speedX*result.normalX+speedY*result.normalY;
       if(inward<0){speedX-=inward*result.normalX;speedY-=inward*result.normalY;}
     }
     p.x=result.x;p.y=result.y;
     const groundZ=ground(p.x,p.y);
-    if(!airborne&&p.lift<.04&&oldZ-groundZ>.27){
+    const nextWater=swimmingSurface(p.x,p.y,swimming);
+    if(nextWater!=null && !plan && ((!airborne && p.lift<.15) || (airborne && vertical<=0 && (oldZ+vertical*dt<=nextWater+.65 || oldZ+vertical*dt<=groundZ+.15)))){
+      const actual=Math.hypot(p.x-oldX,p.y-oldY)/dt;
+      Object.assign(p,{lift:0,supportHeight:0,verticalSpeed:0,slope:0,motion:'swim',motionPhase:0,stride:cap(actual/2.05,0,1)});
+      airborne=false;queued=grace=landing=vertical=0;
+      return {vx:speedX,vy:speedY,actual,heading:facing};
+    }
+    if(!airborne&&!swimming&&p.lift<.04&&oldZ-groundZ>.27){
       p.lift=oldZ-groundZ;airborne=true;vertical=0;airTime=0;
     }
     const support=p.lift>.015?supportAt(p.x,p.y,Math.max(0,oldZ-groundZ)+.07,geometry,PLAYER_RADIUS+.003).top:0;
@@ -150,6 +167,6 @@ export function createParkour(p,ground,gradient,{onImpact=()=>{}}={}){
     else{p.motion=actual>.1?(input.sprint&&actual>4?'run':'walk'):'idle';p.motionPhase=0;}
     return {vx:speedX,vy:speedY,actual,heading:Math.atan2(speedY,speedX),boundary:result.touched?.id==='boundary'};
   }
-  return {step,reset,setPressed,clearInput,interrupt,get grounded(){return !airborne&&!plan;},
+  return {step,reset,setPressed,clearInput,interrupt,get grounded(){return !airborne&&!plan&&p.motion!=='swim';},
     hint:(angle,world)=>buildPlan(angle,world)?.kind||'jump'};
 }

@@ -25,7 +25,13 @@ export function sampleLocomotion(e={},time=0,seed=0){
   const p=clamp(e.motionPhase||0),lead=(seed&1)?1:-1;
   let effort=0,drop=0,stretch=0,pitch=0,splay=0,thigh=0,stagger=0,shin=0,arm=0,reach=0,elbow=0;
 
-  if(motion==='jump'||motion==='fall'){
+  if(motion==='swim'){
+    const stroke=time*(2+2.3*stride)+offset,drive=Math.sin(stroke);
+    effort=1;pitch=.12+.78*stride;drop=.029*Math.cos(2*stroke);
+    thigh=-.29-.43*stride;stagger=.20*drive;shin=-.36;stretch=-.03;
+    arm=.28+1.04*stride;reach=(.32+1.05*stride)*drive;
+    elbow=.62+.19*Math.cos(stroke);splay=.5+.22*Math.cos(2*stroke);
+  }else if(motion==='jump'||motion==='fall'){
     // One continuous flight clock crosses the apex; arms open for contact.
     const dropping=Number.isFinite(e.verticalSpeed)?smooth(-e.verticalSpeed/5):0;
     effort=Math.max(.82*smooth(p/.15)+.18*smooth(p/.33),dropping);

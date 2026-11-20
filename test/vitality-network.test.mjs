@@ -146,6 +146,8 @@ test('a second online player receives the climb, landing, and vehicle transition
   a.net.publish({...pose,lift:0,motion:'land',verticalSpeed:0});
   assert.equal((await a.net.claimPickup(id,weapon)).ok,true);
   await until(()=>peer()?.motion==='land'&&peer().lift===0,'landing clears previous height');
+  a.net.publish({...pose,lift:0,motion:'swim',stride:.7});
+  await until(()=>peer()?.motion==='swim'&&peer().stride===.7,'swim pose and pace reach the other player');
   a.net.publish({...pose,lift:100,motion:'unexpected',verticalSpeed:-100,motionPhase:9,stride:-4,slope:8});
   await until(()=>peer()?.lift===64,'movement fields have finite bounds');
   assert.deepEqual([peer().verticalSpeed,peer().motion,peer().motionPhase,peer().stride,peer().slope],[-50,'idle',1,0,1]);

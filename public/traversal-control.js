@@ -1,6 +1,6 @@
 import {icon} from './icons.js';
 
-const labels={jump:'Sauter',vault:'Franchir',climb:'Grimper'};
+const labels={jump:'Sauter',vault:'Franchir',climb:'Grimper',swim:'Brasser'};
 
 export function installTraversalControl(button,shortcut,jump){
   const touchLabel=button.querySelector('span');

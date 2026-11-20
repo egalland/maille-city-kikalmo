@@ -6,7 +6,7 @@ import {officerDrop} from './drop-id.js';
 import {createStreetAudio} from './street-audio.js';
 import {reactionTo,reactionGoal} from './pedestrian-reaction.js';
 import {chassisDamage,chassisHealth,chassisHealthAt,burnProgress,blastRadius,blastDamage,vehicleBurnDelay,enginePower,damagedTires,vehiclePart,nextChassis} from './vehicle-damage.js';
-import { SPAWN, destinations, districtAt, streetAt, nearbyProps, blocked, contactAt, moveBody, supportAt, cameraDistance, routeAgents, sampleTrafficRoute, trafficVehicleAt, trafficAlternatives, getTravelPoint, paintMap } from './paris-world.js';
+import { SPAWN, destinations, districtAt, streetAt, nearbyProps, blocked, swimmingSurface, contactAt, moveBody, supportAt, cameraDistance, routeAgents, sampleTrafficRoute, trafficVehicleAt, trafficAlternatives, getTravelPoint, paintMap } from './paris-world.js';
 import { nearbyDrivableStreets } from './paris-world.js';
 import {isEnfer} from './paris-data.js';
 import { planDispatch, planDistantDispatch, stepDispatch, dispatchDoor, footApproach, dispatchWorkSpot, stepDispatchFoot } from './dispatch-roads.js';
@@ -144,8 +144,8 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   function sendHud(force=false){
     if(force||time-streetTime>.64){streetName=streetAt(p.x,p.y);streetTime=time;}
     const wanted=pursuit.state();
-    const traversalReady=!paused&&!boarding&&!car&&!passengerSeat&&!incapacitated()&&traversal.grounded;
-    const traversalAction=traversalReady?traversal.hint(p.angle,{destroyed,colliders:obstacles}):'jump';
+    const traversalReady=!paused&&!boarding&&!car&&!passengerSeat&&!incapacitated()&&(traversal.grounded||p.motion==='swim');
+    const traversalAction=p.motion==='swim'?'swim':traversalReady?traversal.hint(p.angle,{destroyed,colliders:obstacles}):'jump';
     const state={traversalReady,traversalAction,...life.state(epoch),health:Math.ceil(life.health),passenger:!!passengerSeat,nearPassengerSeat:!!nearCar?.peer,vehicleName:passengerSeat?'Passager · '+vehicleSpec(passengerSeat.type).label:car?vehicleSpec(car.type).label:'',vehicleHealth:passengerSeat?vehicleHealth({id:passengerSeat.car}):car?vehicleHealth(car):100,nearVehicleName:nearCar?vehicleSpec(nearCar.type).label:'',wanted:p.wanted,wantedPoints:wanted.points,wantedProgress:wanted.progress,wantedEvent,ownedWeapons:ownedWeapons(),nearPickup,trackedDrop:tracker(),district:district(),street:streetName,weapon,ammo:Number.isFinite(ammo[weapon])?ammo[weapon]:'∞',
       maxAmmo:Number.isFinite(weapons[weapon].mag)?weapons[weapon].mag:'∞',nearVehicle:!!nearCar,jackTarget:!!nearCar&&hasDriver(nearCar),boarding:!!boarding,inVehicle:!!(car||passengerSeat),speed:Math.round(Math.abs(speed)*3.6),score,
       reloading:reloading>0,ready,graphics:view.mode||(view.available?'webgl':'unavailable')};
@@ -924,7 +924,8 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       ? collisionBody({...p,...car,isCar:true,vx,vy,speed})
       : pedestrianBody({...p,id:net?.id||'self',self:true,vx,vy,stunned:incapacitated(),
         ragdoll:ragdollPose(life.ragdoll,p.angle,epoch)});
-    const fixedBodies=[{...selfBody,lift:p.lift},...remotes.map(collisionBody),...cars.map(collisionBody)];
+    const onDeckLevel=e=>e.motion!=='swim'||terrainHeight(e.x,e.y)-(swimmingSurface(e.x,e.y,true)??terrainHeight(e.x,e.y))<1.1;
+    const fixedBodies=[...(onDeckLevel(p)?[{...selfBody,lift:p.lift}]:[]),...remotes.filter(onDeckLevel).map(collisionBody),...cars.map(collisionBody)];
     // Begin with the pedestrians' last resolved positions, then let them react to this frame's actual vehicles.
     const walkerBodies=actors.map(e=>collisionBody((!e.stunned&&lastWalkers.get(e.id))||e));
     drives=traffic.step(ambient,{dt,epoch,observer:p,excluded,checkpoints:trafficPeers.checkpoints,
@@ -993,7 +994,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         stunned:r.downUntil>epoch||r.health===0,ragdoll:ragdollPose(r.ragdoll,r.angle||0,epoch)});
     }
     if(vehicle)entities.delete(vehicle.id);
-    const geometry={radius:PLAYER_RADIUS,angle,destroyed,colliders:Array.from(entities.values(),collisionBody)};
+    const geometry={radius:PLAYER_RADIUS,angle,destroyed,swimmer:!vehicle&&swimmingSurface(x,y,true)!=null,colliders:Array.from(entities.values(),collisionBody)};
     if(vehicle)Object.assign(geometry,dimensions(vehicle));
     if(!contactAt(x,y,geometry))return {x,y};
     for(const radius of [.8,1.8,3.5,6,8,10,16,25,40,55]){
@@ -1045,6 +1046,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     speed=ride?finite(s.vehicle.speed,0,-vehicleSpec(ride.type).reverse,vehicleSpec(ride.type).forward):0;
     vx=ride?Math.cos(angle)*speed:finite(s.vx,0,-6.4,6.4);vy=ride?Math.sin(angle)*speed:finite(s.vy,0,-6.4,6.4);
     traversal.reset(vx,vy);p.moving=Math.hypot(vx,vy)>.1;p.sprinting=!ride&&Math.hypot(vx,vy)>4;
+    if(!ride&&s.swimming===true&&swimmingSurface(q.x,q.y,true)!=null)p.motion='swim';
     nearCar=null;steer=turn=impact=shootPose=cooldown=0;braking=false;
     freeLookUntil=0;mapTick=hudTick=networkTick=trafficTick=popTick=0;
     settleTravelClaim(net?.peers?.()||[],net?.world?.()||{});
@@ -1099,7 +1101,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     return meleeCameraAim?yaw:p.angle;
   }
   function startSwing(source='button'){
-    if(paused||incapacitated()||car||passengerSeat||!view.available||['climb','vault'].includes(p.motion))return;
+    if(paused||incapacitated()||car||passengerSeat||!view.available||['climb','vault','swim'].includes(p.motion))return;
     if(swing){
       if(time-swing.begin>=.07)swingQueued=true;
       return;
@@ -1144,7 +1146,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   }
   function stepSwing(){
     if(!swing)return;
-    if(paused||incapacitated()||car||['climb','vault'].includes(p.motion)){swing=null;swingQueued=false;return;}
+    if(paused||incapacitated()||car||['climb','vault','swim'].includes(p.motion)){swing=null;swingQueued=false;return;}
     const move=meleeMoves[swing.kind],age=time-swing.begin;
     if(!swing.resolved){
       // Keep the original arc for an unsteered swing. An explicit mouse or thumb
@@ -1176,7 +1178,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     }
   }
   function fire(source='manual'){
-    if(paused||incapacitated()||passengerSeat||!view.available||cooldown>0)return;
+    if(paused||incapacitated()||passengerSeat||p.motion==='swim'||!view.available||cooldown>0)return;
     if(weapon==='fist'){
       if(!swing)startSwing(source);
       return;
@@ -1369,7 +1371,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         p.angle=turnTo(p.angle,foot.heading,traversal.grounded?12:8,dt);
       }
       // If moving traffic reaches a stationary pedestrian, separate them to the near side of the body.
-      if(contactLock<=0){
+      if(contactLock<=0&&p.motion!=='swim'){
         const traffic=cars.find(e=>e.moving&&p.lift<vehicleSpec(e.type).height-.08&&Math.abs(e.speed)>1.5&&trafficContact(e,p,.18));
         if(traffic){const dx=p.x-traffic.x,dy=p.y-traffic.y,c=Math.cos(traffic.angle),s=Math.sin(traffic.angle);
           const localX=dx*c+dy*s,localY=-dx*s+dy*c;
@@ -1701,7 +1703,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     setAimAssist(enabled){aimAssist=!!enabled;if(!aimAssist)clearAimLock();},
     setSound(v){audio.toggle(!!v);if(v)unlock();},
     getWeaponAmmo(id){return owned.has(id)?ammo[id]:undefined;},
-    getPosition(){return {x:p.x,y:p.y,angle:p.angle,district:district()};},
+    getPosition(){return {x:p.x,y:p.y,angle:p.angle,district:district(),...(p.motion==='swim'?{swimming:true}:{})};},
     getRoadMotion(){return paused||incapacitated()?null:roadMotion;},
     getAvailableDrops,
     trackDrop(drop){trackedDrop=drop;sendHud(true);},

@@ -226,8 +226,8 @@ game=createGame({canvas:city,minimap:$('#minimap'),net,onState,onNotice:notify,o
 const sectorPosition=new URL(location.href).searchParams;
 const positionKey='position.v1.'+(isEnfer?'enfer':(sectorPosition.get('lon')||'paris')+':'+(sectorPosition.get('lat')||''));
 function savePosition(){
-  const {x,y,angle}=game.getPosition();
-  if(Number.isFinite(x+y+angle)&&game.getVitalitySnapshot().health>0)write(positionKey,JSON.stringify({x,y,angle}));
+  const {x,y,angle,swimming}=game.getPosition();
+  if(Number.isFinite(x+y+angle)&&game.getVitalitySnapshot().health>0)write(positionKey,JSON.stringify({x,y,angle,...(swimming?{swimming:true}:{})}));
 }
 if(!sectorTransfer){
   try{

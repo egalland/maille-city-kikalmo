@@ -16,11 +16,12 @@ import { createCity3D } from './city3d.js';
 import { createPuppet, createCar } from './puppets3d.js';
 import { createCanvasView } from './canvas-view.js';
 import { createPickupDisplay } from './pickup-models.js';
-import { cameraDistance, nearbyProps } from './paris-world.js';
+import { cameraDistance, nearbyProps, swimmingSurface } from './paris-world.js';
 
 const clamp = (v,a,b) => Math.min(b,Math.max(a,v));
 const blend = (k,dt) => 1-Math.exp(-k*dt);
 const distance = (a,b) => Math.hypot(a.x-b.x,a.y-b.y);
+const swimGround=(x,y)=>swimmingSurface(x,y,true)??terrainHeight(x,y);
 
 function makeSky() {
   const texture=new THREE.CanvasTexture(textileSky());texture.colorSpace=THREE.SRGBColorSpace;
@@ -101,7 +102,10 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     if(!item){const seed=hash(String(e.id))%65535;const object=(vehicle?createCar:createPuppet)(e.type,e.color,seed);item={kind:id,object};models.set(key,item);scene.add(object.group);}
     item.used=inFrame;const g=item.object.group;
     const angle=e.angle||0;
-    g.position.set(e.x,terrainHeight(e.x,e.y)+(e.lift||0),e.y);
+    const ground=terrainHeight(e.x,e.y),swim=e.motion==='swim' && !vehicle;
+    const offset=swim?swimGround(e.x,e.y)-ground-.67:0;
+    item.waterOffset=item.waterOffset==null?offset:item.waterOffset+(offset-item.waterOffset)*blend(9,dt);
+    g.position.set(e.x,ground+(e.lift||0)+item.waterOffset,e.y);
     g.rotation.set(0,-angle,0,'YXZ');
     if(vehicle){
       const slope=terrainGradient(e.x,e.y),c=Math.cos(angle),s=Math.sin(angle);
@@ -121,7 +125,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   function badge(e,label,bubble){
     let el=names.get(e.id);
     if(!el){el=document.createElement('span');el.className='world-label';labels.append(el);names.set(e.id,el);}
-    el._used=inFrame;projection.set(e.x,terrainHeight(e.x,e.y)+(e.lift||0)+(e.isCar?vehicleSpec(e.type).height+.43:2.14),e.y);projection.project(camera);
+    el._used=inFrame;projection.set(e.x,(e.motion==='swim'?swimGround(e.x,e.y)-.67:terrainHeight(e.x,e.y))+(e.lift||0)+(e.isCar?vehicleSpec(e.type).height+.43:2.14),e.y);projection.project(camera);
     const visible=projection.z>0&&projection.z<1&&Math.abs(projection.x)<1.1&&Math.abs(projection.y)<1;
     el.hidden=!visible;if(!visible)return;
     el.style.left=(50+50*projection.x)+'%';el.style.top=(50-50*projection.y)+'%';
@@ -180,19 +184,21 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     // Tighten the boom immediately at walls, extend it gently after clearing a corner.
     const model=car?vehicleSpec(car.type):null;
     const follow=car?8.15+Math.max(0,model.halfLength-2)*1.24:5.25;
-    const feet=p.lift||0;
+    const swimming=p.motion==='swim'&&!car;
+    const followGround=swimming?swimGround:terrainHeight;
+    const feet=(p.lift||0)-(swimming?.55:0);
     const focusY=feet+(car?Math.max(1.35,model.height*.77):1.17),lift=feet+(car?Math.max(2.92,model.height+1.05):2.18);
     const snap=state.snap || Math.hypot(camX-p.x,camY-p.y)>25 || inFrame===1;
     const f=snap?1:blend(car?11:19,dt);
     camX+=(p.x-camX)*f;camY+=(p.y-camY)*f;
     const goal=follow+(car?Math.min(2.25,Math.abs(state.speed)*.065):0),wantedY=lift+pitch*2.8,back=yaw+Math.PI;
-    const ground=terrainHeight(camX,camY),groundBehind=terrainHeight(camX+Math.cos(back)*goal,camY+Math.sin(back)*goal);
-    const available=clamp(cameraDistance(camX,camY,focusY,back,goal,wantedY,destroyed,.31),.24,goal);
+    const ground=followGround(camX,camY),groundBehind=followGround(camX+Math.cos(back)*goal,camY+Math.sin(back)*goal);
+    const available=clamp(cameraDistance(camX,camY,focusY,back,goal,wantedY,destroyed,.31,followGround),.24,goal);
     cameraArm=snap?available:Math.min(available,cameraArm+(available-cameraArm)*blend(6,dt));
     const armHeight=ground+focusY+(groundBehind-ground+wantedY-focusY)*cameraArm/goal;
     camera.position.set(camX+Math.cos(back)*cameraArm,armHeight+.12,camY+Math.sin(back)*cameraArm);
     const aimForward=car?6.3:4.15;
-    cameraAim.set(camX+Math.cos(yaw)*aimForward,terrainHeight(camX+Math.cos(yaw)*aimForward,camY+Math.sin(yaw)*aimForward)+focusY+pitch*.95,camY+Math.sin(yaw)*aimForward);
+    cameraAim.set(camX+Math.cos(yaw)*aimForward,followGround(camX+Math.cos(yaw)*aimForward,camY+Math.sin(yaw)*aimForward)+focusY+pitch*.95,camY+Math.sin(yaw)*aimForward);
     camera.lookAt(cameraAim);camera.updateMatrixWorld();
     sky.position.copy(camera.position);
     lighting?.update(p,ground,time,snap,scale);
@@ -211,7 +217,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
       if(e.isCar)cars++;else npcs++;
       entity(e,dt,time);
       if(d<42)bloodMesh.draw(blood.actor(e));
-      if(index<65){
+      if(index<65&&e.motion!=='swim'){
         const floor=e.supportHeight||0,angle=e.angle||0,c=Math.cos(angle),s=Math.sin(angle);
         const slope=floor>.12?{x:0,y:0}:terrainGradient(e.x,e.y);
         const scale=1/(1+.08*Math.max(0,(e.lift||0)-floor));

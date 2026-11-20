@@ -5,7 +5,7 @@ import {yarnPalette} from './wool-art.js';
 import { buildings, streets, water, green, metadata } from './paris-data.js';
 
 import {enferStops,enferDistrict,enferStreet} from './enfer-places.js';
-import { terrainHeight, buildingGround } from './terrain-height.js';
+import { terrainHeight, buildingGround, waterLevel } from './terrain-height.js';
 import { terraceProfiles } from './street-terraces.js';
 import { authoredWeaponDrops } from './drop-id.js';
 import { vehicleSpec, vehicleDoorways } from './vehicle-types.js';
@@ -156,7 +156,20 @@ if(!isEnfer&&eiffel.x+86>landBounds.minX && eiffel.x-86<landBounds.maxX && eiffe
   const platform=monumentRect(eiffel,-35.3,35.3,-35.3,35.3,55);platform.h=62;
   terrain.insert(platform,bounds(platform.poly));
 }
-for(const w of water){if(w.poly?.length){const item={...w,type:'water'};terrain.insert(item,bounds(w.poly));}}
+const waterBodies=new Grid(96);
+for(const w of water)if(w.poly?.length){
+  const item={...w,type:'water',waterHeight:waterLevel(w)},box=bounds(w.poly);
+  terrain.insert(item,box);waterBodies.insert(item,box);
+}
+// A pedestrian approaching on a road stays on its bridge deck. A swimmer already
+// in the river follows the surveyed water plane underneath the same crossing.
+export function swimmingSurface(x,y,underBridge=false){
+  if(!isEnfer)return null;
+  for(const water of waterBodies.area(x,y,0)){
+    if(inShape(x,y,water)&&(underBridge||!isBridge(x,y,0)))return water.waterHeight;
+  }
+  return null;
+}
 const streetList=streets.filter(s=>s.path?.length>=2 && s.level>=0);
 for(const road of streetList){
   for(let i=1;i<road.path.length;i++){
@@ -269,7 +282,7 @@ function testPose(x,y,opt={},propsEnabled=true) {
   const footZ=opt.footWorldZ==null?opt.footZ:opt.footWorldZ-terrainHeight(x,y);
   if(!withinBoundary(x,y,reach))return boundaryItem;
   for(const b of terrain.area(x,y,reach)){
-    if(b.type==='water' && (opt.camera || isBridge(x,y,reach)))continue;
+    if(b.type==='water' && (opt.camera || (isEnfer && opt.swimmer) || isBridge(x,y,reach)))continue;
     if(b.type==='building'){
       const clear=footZ==null ? z>=(b.h||11)||z<(b.minHeight||0)
         : footZ>=surfaceTop(b,x,y)-.002 || (b.minHeight>0 && footZ+(opt.bodyHeight||1.55)<=surfaceTop(b,x,y)-b.h+b.minHeight);
@@ -285,6 +298,7 @@ function testPose(x,y,opt={},propsEnabled=true) {
   }
   const touchDynamic = d => {
     if(d.id && d.id===opt.ignoreId)return false;
+    if(opt.waterHeight!=null && d.halfLength && terrainHeight(d.x,d.y)+(d.lift||0)>opt.waterHeight+1.05)return false;
     if(opt.camera && d.h && z>d.h)return false;
     let overlaps;
     if(d.halfLength&&d.halfWidth){
@@ -453,13 +467,14 @@ export function moveBody(x,y,dx,dy,opt={}) {
   }
   return {x,y,hit:!!touched,touched,normalX:nx,normalY:ny};
 }
-export function cameraDistance(x,y,height,angle,distance,endHeight=height,destroyed=EMPTY,radius=.16) {
+export function cameraDistance(x,y,height,angle,distance,endHeight=height,destroyed=EMPTY,radius=.16,ground=terrainHeight) {
   const c=Math.cos(angle),s=Math.sin(angle), step=.35;
-  const start=terrainHeight(x,y)+height,end=terrainHeight(x+c*distance,y+s*distance)+endHeight;
+  const start=ground(x,y)+height,end=ground(x+c*distance,y+s*distance)+endHeight;
   for(let l=step;l<distance+step;l+=step){
     const dist=Math.min(l,distance),px=x+c*dist,py=y+s*dist;
-    const z=start+(end-start)*dist/(distance||1)-terrainHeight(px,py);
-    if(z<.13||testPose(px,py,{radius,height:z,camera:true,destroyed}))
+    const level=start+(end-start)*dist/(distance||1),z=level-terrainHeight(px,py);
+    const hitsDeck=ground!==terrainHeight && Math.abs(z)<.38 && isBridge(px,py);
+    if((ground===terrainHeight?z<.13:level<ground(px,py)+.13)||hitsDeck||testPose(px,py,{radius,height:z,camera:true,destroyed}))
       return Math.max(.15,dist-step-.12);
   }
   return distance;

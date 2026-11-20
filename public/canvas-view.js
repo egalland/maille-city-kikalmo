@@ -16,11 +16,12 @@ import { vehicleSpec } from './vehicle-types.js';
 // It projects the same metre-space data, props, actors and camera boom as the GPU view.
 import {enferStyle,enferStyles,enferWall,enferRoof,roofPitch} from './enfer-architecture.js';
 import {buildings,streets,water,green,isEnfer} from './paris-data.js';
-import {monuments,cameraDistance,nearbyProps} from './paris-world.js';
+import {monuments,cameraDistance,nearbyProps,swimmingSurface} from './paris-world.js';
 import {drawCanvasPuppet,drawCanvasCar} from './canvas-puppets.js';
 import {pickupPatch,pickupStyle,pickupLift,pickupPhase,pickupRange,pickupMarkerWidth} from './pickup-art.js';
 import {grandParisModels,skipLandmark} from './canvas-landmarks.js';
 
+const swimGround=(x,y)=>swimmingSurface(x,y,true)??terrainHeight(x,y);
 const tau=Math.PI*2,clamp=(x,a,b)=>Math.max(a,Math.min(b,x)),near=.32;
 const mix=(a,b,t)=>a+(b-a)*t;
 function tint(hex,f){
@@ -810,12 +811,13 @@ export function createCanvasView(canvas,spawn,onNotice){
     followX+=(p.x-followX)*blend;followY+=(p.y-followY)*blend;
     const model=car?vehicleSpec(car.type):null;
     fx=Math.cos(yaw);fy=Math.sin(yaw);const goal=car?8.15+Math.max(0,model.halfLength-2)*1.24+Math.min(2.25,Math.abs(state.speed||0)*.065):5.25;
-    const lift=car?0:p.lift||0,focus=lift+(car?Math.max(1.35,model.height*.77):1.17),wantedH=lift+(car?Math.max(2.92,model.height+1.05):2.18)+pitch*2.8;
-    const ground=terrainHeight(followX,followY),backGround=terrainHeight(followX-fx*goal,followY-fy*goal),look=car?6.3:4.15;
-    const dist=clamp(cameraDistance(followX,followY,focus,yaw+Math.PI,goal,wantedH,destroyed),.3,goal);
+    const swimming=!car&&p.motion==='swim',followGround=swimming?swimGround:terrainHeight;
+    const lift=car?0:(p.lift||0)-(swimming?.55:0),focus=lift+(car?Math.max(1.35,model.height*.77):1.17),wantedH=lift+(car?Math.max(2.92,model.height+1.05):2.18)+pitch*2.8;
+    const ground=followGround(followX,followY),backGround=followGround(followX-fx*goal,followY-fy*goal),look=car?6.3:4.15;
+    const dist=clamp(cameraDistance(followX,followY,focus,yaw+Math.PI,goal,wantedH,destroyed,.16,followGround),.3,goal);
     arm=snap?dist:Math.min(dist,arm+(dist-arm)*(1-Math.exp(-6*frameDt)));
     camX=followX-fx*arm;camY=followY-fy*arm;camH=ground+focus+(backGround-ground+wantedH-focus)*arm/goal+.12;
-    const tilt=Math.atan2(terrainHeight(followX+fx*look,followY+fy*look)+focus+pitch*.95-camH,arm+look);
+    const tilt=Math.atan2(followGround(followX+fx*look,followY+fy*look)+focus+pitch*.95-camH,arm+look);
     sin=Math.sin(tilt);cos=Math.cos(tilt);horizon=h*.5+f*Math.tan(tilt);sideLimit=w/(2*f)+.1;
     if(Math.hypot(cacheX-p.x,cacheY-p.y)>35){
       cacheX=p.x;cacheY=p.y;
@@ -922,7 +924,8 @@ export function createCanvasView(canvas,spawn,onNotice){
     blood.begin(time,state.epoch??Date.now());
     const playerBody=uprightBody(state.entities.find(e=>e.self));
     for(const e of state.entities){
-      const lift=e.lift||0,base=at(e.x,e.y,lift),high=e.isCar?vehicleSpec(e.type).height:1.78,top=at(e.x,e.y,lift+high);
+      const swimmer=e.motion==='swim'&&!e.isCar;
+      const lift=swimmer?swimGround(e.x,e.y)-terrainHeight(e.x,e.y)-.67:e.lift||0,base=at(e.x,e.y,lift),high=e.isCar?vehicleSpec(e.type).height:1.78,top=at(e.x,e.y,lift+high);
       if(!base||!top||base.d>(e.isCar?160:96)||base.d<.61)continue;
       const ph=base.y-top.y;if(ph<2||base.x<-ph*2||base.x>w+ph*2)continue;
       // Collinear urban façades can hide traffic even though the shared simulation still runs behind them.
@@ -931,7 +934,7 @@ export function createCanvasView(canvas,spawn,onNotice){
       queue.push({z:depth(e.x,e.y)-.09,draw:()=>{
         const wid=ph*(e.isCar?.77:.27);
         const floor=e.supportHeight||0,shadow=at(e.x,e.y,floor),shadowScale=1/(1+Math.max(0,lift-floor)*.08);
-        if(shadow){g.fillStyle='rgba(62,49,64,.25)';g.beginPath();g.ellipse(shadow.x,shadow.y-1,Math.max(1,wid*shadowScale),Math.max(1,wid*.2*shadowScale),0,0,tau);g.fill();}
+        if(shadow&&!swimmer){g.fillStyle='rgba(62,49,64,.25)';g.beginPath();g.ellipse(shadow.x,shadow.y-1,Math.max(1,wid*shadowScale),Math.max(1,wid*.2*shadowScale),0,0,tau);g.fill();}
         const theta=Math.atan2(e.y-camY,e.x-camX)-(e.angle||0);
         if(e.isCar){
           const slope=terrainGradient(e.x,e.y);
@@ -939,7 +942,10 @@ export function createCanvasView(canvas,spawn,onNotice){
         }
         else{
           const pose=walkingPose(e);
+          const waterline=swimmer&&at(e.x,e.y,lift+.67);
+          if(waterline){g.save();g.beginPath();g.rect(0,0,w,waterline.y);g.clip();}
           uprightSprite(pose,base,top,ph,time,-theta,pedestrianOpacity(e,playerBody));
+          if(waterline)g.restore();
         }
         drawBlood(fray,pedestrianOpacity(e,playerBody));
         coverBehindTerrace(e,base,top,ph);

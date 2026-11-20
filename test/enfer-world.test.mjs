@@ -96,6 +96,36 @@ test('the bundled Noyonnais map opens on usable streets and includes water, terr
   assert.ok(meshes.some(mesh=>mesh.castShadow&&mesh.receiveShadow&&mesh.geometry.attributes.position.count>50));
   assert.ok(meshes.some(mesh=>mesh.material.isMeshStandardMaterial&&mesh.material.bumpMap));
 
+  await t.test('shoreline, swim strokes, surfacing under a bridge and returning to dry land',async()=>{
+    const {swimmingSurface}=await import('../public/paris-world.js');
+    const {createParkour}=await import('../public/parkour.js');
+    const {terrainGradient}=await import('../public/terrain-height.js');
+    const {sampleLocomotion}=await import('../public/locomotion-pose.js');
+    const bank={x:2932.45,y:-4733.9},direction={x:.15616305,y:.98773129};
+    const p={x:bank.x-2*direction.x,y:bank.y-2*direction.y,angle:Math.atan2(direction.y,direction.x)};
+    const control=createParkour(p,terrainHeight,terrainGradient);
+    const step=(x,y)=>control.step(1/60,{x,y,angle:p.angle},{});
+    const simulate=(x,y,seconds)=>{let output;for(let i=0;i<seconds*60;i++)output=step(x,y);return output;};
+    assert.equal(swimmingSurface(p.x,p.y),null);
+    const waterMove=simulate(direction.x,direction.y,3.2);
+    assert.equal(p.motion,'swim');assert.equal(control.grounded,false);
+    assert.ok(waterMove.actual>1.35&&waterMove.actual<1.45);
+    assert.ok(contactAt(p.x,p.y,{angle:0,halfLength:1.8,halfWidth:.9}));
+    assert.equal(contactAt(p.x,p.y,{swimmer:true,radius:.5}),null);
+    const a=sampleLocomotion(p,1,43),b=sampleLocomotion(p,1.57,43);
+    assert.ok(Math.abs(a.left.arm-b.left.arm)>.2);
+    assert.notEqual(a.left.arm,a.right.arm);
+    const before={x:p.x,y:p.y};
+    control.setPressed(true);control.setPressed(false);
+    simulate(0,0,.36);assert.ok(Math.hypot(before.x-p.x,before.y-p.y)>.42);
+    simulate(-direction.x,-direction.y,6);
+    assert.equal(p.motion,'walk');assert.equal(control.grounded,true);
+    const bridge=[-1096.1,953.8];
+    assert.equal(swimmingSurface(...bridge),null);assert.ok(Number.isFinite(swimmingSurface(...bridge,true)));
+    p.x=bridge[0];p.y=bridge[1];control.reset();step(0,0);assert.equal(p.motion,'idle');
+    p.motion='swim';step(0,0);assert.equal(p.motion,'swim');
+  });
+
   await t.test('walking up to an Enfer depot grants the item and equips it in the HUD',async t=>{
     const [{createGame},{createNet},{handleApi},{localDatabase},{enferWeaponDrops}]=await Promise.all([
       import('../public/game.js'),import('../public/net.js'),import('../worker/game-api.js'),
