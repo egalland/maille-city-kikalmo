@@ -220,6 +220,7 @@ function onState(next){
   if(!altitude.hidden)altitude.textContent=Math.round(state.flightHeight)+' m / sol';
   $('#carSpeed').textContent=(state.speed||0)+' km/h'+(state.gear==null||state.piloting?'':' · '+(state.gear<0?'R':'D'+state.gear));
   $('#vehicleName').textContent=state.vehicleName||'Au volant';
+  $('#parkingHint').hidden=!state.canPark;
   const condition=$('#chassisStatus'),integrity=Math.round(state.vehicleHealth??100);
   condition.textContent=integrity===0?'En panne':'Carrosserie · '+integrity+' %';
   const wear=chassisStage(integrity);
@@ -227,7 +228,7 @@ function onState(next){
   const ride=$('#ride');
   ride.classList.toggle('near',Boolean(state.inVehicle||state.nearVehicle));
   const vehicle=state.inVehicle?state.vehicleName:state.nearVehicleName;
-  const exitVerb=state.canBail?'Sauter en vol':state.canBailRoad?'Sauter en marche':'Sortir';
+  const exitVerb=state.canPark?'Se garer et sortir':state.canBail?'Sauter en vol':state.canBailRoad?'Sauter en marche':'Sortir';
   const rideVerb=state.inVehicle?exitVerb:state.nearPassengerSeat?'Monter en passager':state.boarding?'Conducteur en sortie…':state.jackTarget?'Prendre le volant':state.nearVehicle?'Monter':'Véhicule';
   const rideLabel=vehicle?rideVerb+' · '+vehicle:'Monter ou descendre du véhicule';
   ride.setAttribute('aria-label',rideLabel);
@@ -235,8 +236,8 @@ function onState(next){
   passengerExit.hidden=!state.passenger;
   if(state.passenger)passengerExit.textContent=state.canBail||state.canBailRoad?'Sauter':'Sortir';
   const exit=$('#driveExit');
-  exit.querySelector('span').textContent=state.canBail||state.canBailRoad?'Sauter':'Sortir';
-  exit.setAttribute('aria-label',state.canBail?'Sauter en vol':state.canBailRoad?'Sauter du véhicule en marche':'Sortir du véhicule');
+  exit.querySelector('span').textContent=state.canPark?'Se garer':state.canBail||state.canBailRoad?'Sauter':'Sortir';
+  exit.setAttribute('aria-label',state.canPark?'Se garer et sortir':state.canBail?'Sauter en vol':state.canBailRoad?'Sauter du véhicule en marche':'Sortir du véhicule');
   ride.title=$('#rideShortcut').title=rideLabel;
   $('#rideShortcut span').textContent=rideVerb;
   traversal.update(state);

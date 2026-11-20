@@ -17,6 +17,7 @@ import { buildings, streets, water, green, metadata, enclosureRows } from './par
 import {enferStops,enferDistrict,enferStreet} from './enfer-places.js';
 import { baseTerrainHeight, terrainHeight, buildingGround, waterLevel } from './terrain-height.js';
 import {workshopId,workshopColliders} from './workshop.js';
+import {storeByBuilding,shopColliders} from './enfer-retail.js';
 import {airfields} from './airfield.js';
 import { terraceProfiles } from './street-terraces.js';
 import { authoredWeaponDrops } from './drop-id.js';
@@ -130,8 +131,15 @@ function importedMonument(b) {
 const eiffel={id:'eiffel',x:3257.7,y:2420.6,yaw:.802,h:330};
 const eiffelFeet=new Set(['162158','162159','162160','162699']);
 const pyramidIds=new Set(['245184969','253248239','253248246','253248248']);
+const retailBuildings=[];
 for(const b of buildings){
   if(!b.poly?.length || !isEnfer&&(eiffelFeet.has(String(b.id)) || importedMonument(b)))continue;
+  const store=isEnfer&&storeByBuilding.get(String(b.id));
+  if(store){
+    retailBuildings.push(b);
+    for(const solid of shopColliders(b,store))terrain.insert(solid,bounds(solid.poly));
+    continue;
+  }
   if(isEnfer&&String(b.id)===workshopId){
     for(const wall of workshopColliders(b))terrain.insert(wall,bounds(wall.poly));
     continue;
@@ -143,6 +151,9 @@ for(const b of buildings){
     item.taperCenter=b.poly.reduce((pt,v)=>[pt[0]+v[0]/b.poly.length,pt[1]+v[1]/b.poly.length],[0,0]);
   }else if(!isEnfer&&String(b.id)==='245198908')item.h=27.1;
   terrain.insert(item,bounds(item.poly));
+}
+export function insideRetail(p){
+  return (p.lift||0)<2.4&&retailBuildings.some(b=>inRing(p.x,p.y,b.poly)&&!b.holes.some(h=>inRing(p.x,p.y,h)));
 }
 for(const m of isEnfer?[]:Object.values(monuments)){
   if(m.x+m.side<landBounds.minX || m.x-m.side>landBounds.maxX || m.y+m.depth<landBounds.minY || m.y-m.depth>landBounds.maxY)continue;
@@ -1183,7 +1194,7 @@ function drawLocalMap(context,canvas,view,w,h,dpr){
   const left=tile.x-(w/2+pad)/scale,top=tile.y-(h/2+pad)/scale;
   context.drawImage(tile.source,left,top,tile.source.width/(dpr*scale),tile.source.height/(dpr*scale));
 }
-export function paintMap(canvas,player,{full=false,districtZoom=false,peers=[],vehicles=[],pickups=[],tracked=null,
+export function paintMap(canvas,player,{full=false,districtZoom=false,peers=[],vehicles=[],parked=[],pickups=[],tracked=null,
   search=null,police=[],dpr=Math.min(2,globalThis.devicePixelRatio||1)}={}){
   if(!canvas||!player)return;
   const rect=canvas.getBoundingClientRect?.(),w=Math.round(rect?.width||canvas.width),h=Math.round(rect?.height||canvas.height);
@@ -1244,6 +1255,13 @@ export function paintMap(canvas,player,{full=false,districtZoom=false,peers=[],v
     }
   }
   if(isEnfer)paintCareerNavigation(c,player,streets,{px,py,w,h,full});
+  for(const car of parked){
+    const x=px(car.x),y=py(car.y);
+    if(x<6||x>w-6||y<6||y>h-6)continue;
+    c.fillStyle='#223b45';c.fillRect(x-6,y-6,12,12);
+    c.strokeStyle='#a6ece1';c.lineWidth=1;c.strokeRect(x-6,y-6,12,12);
+    c.save();c.translate(x,y);c.rotate(car.angle||0);c.fillStyle='#a6ece1';c.fillRect(-3,-1.8,6,3.6);c.restore();
+  }
   for(const unit of police){
     const x=px(unit.x),y=py(unit.y);
     if(x<2||x>w-2||y<2||y>h-2)continue;

@@ -3,14 +3,16 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {vehicleSpec,vehicleDoorways} from '../public/vehicle-types.js';
 import {careerPlaces} from '../public/career-catalog.js';
-import {parkingLots,lotPoint,lotSpaces} from '../public/enfer-parking-lots.js';
+import {parkingLots,lotPoint,lotSpaces,parkingBay} from '../public/enfer-parking-lots.js';
 import {neighborhoodShops,namedFronts} from '../public/enfer-frontage.js';
+import {atShopCounter,retailStores} from '../public/enfer-retail.js';
 
 test('street parking is sparse, clear of traffic, accessible and stationary between visits',async t=>{
   globalThis.location=new URL('https://maille.test/');
   t.after(()=>delete globalThis.location);
   t.mock.method(globalThis,'fetch',async()=>new Response(await readFile(new URL('../public/map-enfer.gz',import.meta.url))));
-  const {parkedCars,contactAt,routeAgents,clearsTrafficAtRest,nearbyParkedCars}=await import('../public/paris-world.js');
+  const {parkedCars,contactAt,routeAgents,clearsTrafficAtRest,nearbyParkedCars,insideRetail}=await import('../public/paris-world.js');
+  const {createWorldCamera}=await import('../public/world-camera.js');
   const slots=parkedCars.filter(c=>c.bay);
   assert.ok(slots.length>=100);
   assert.equal(new Set(slots.map(c=>c.id)).size,slots.length);
@@ -37,9 +39,28 @@ test('street parking is sparse, clear of traffic, accessible and stationary betw
       assert.equal(contactAt(x,y,{angle:lot.angle+Math.PI/2,halfLength:2.05,halfWidth:.9}),null,lot.id);
     }
     assert.equal(lotSpaces(lot).filter(space=>!slots.some(car=>car.id===space.id)).length,2);
+    const [,space]=lotSpaces(lot);
+    assert.equal(parkingBay(space,'compact').id,space.id);
+    assert.equal(parkingBay({...space,angle:space.angle+Math.PI},'compact').id,space.id);
+    assert.equal(parkingBay({...space,angle:space.angle+Math.PI/2},'compact'),null);
   }
   for(const shop of neighborhoodShops){
     assert.equal(namedFronts.get(shop.building),shop);
     assert.equal(contactAt(shop.x,shop.y,{radius:.48}),null,shop.name);
+  }
+  for(const store of retailStores){
+    const counterDistance=store.booth.at-.9;
+    for(let step=-6;step<=10;step++){
+      const [x,y]=store.point(0,step*counterDistance/10);
+      assert.equal(contactAt(x,y,{radius:.42,footZ:0,bodyHeight:1.55}),null,store.id+' '+step);
+    }
+    const customer={x:store.buyerX,y:store.buyerY};
+    assert.equal(atShopCounter(customer),store);
+    assert.ok(insideRetail(customer),store.id);
+    const camera=createWorldCamera(customer)({p:customer,yaw:store.angle,pitch:.3},.016,0);
+    assert.ok(camera.arm>=.8&&camera.arm<=1.75&&insideRetail(camera),store.id+' interior camera');
+    const [x,y]=store.point(0,store.booth.at);
+    assert.ok(contactAt(x,y,{radius:.24,footZ:0,bodyHeight:1.55}),store.id+' counter');
+    assert.equal(contactAt(store.clerkX,store.clerkY,{radius:.30}),null,store.id+' clerk');
   }
 });

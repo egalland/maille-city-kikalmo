@@ -4,6 +4,7 @@ import {reportSchema,reportPlayer} from './social.js';
 import {withJacket} from '../public/outfit-shop.js';
 import {seatSchema,seatedRosterSQL,attachPassengers,requestSeat,continueReleasedSeat,inheritRoadPassenger} from './vehicle-seats.js';
 import {abandonedFor,disconnectedFor,wreckFor,wreckExpired,replacementDelay} from '../public/vehicle-lifecycle.js';
+import {parkingBay,parkingLease} from '../public/enfer-parking-lots.js';
 import {hitSeverity, woundDuration, activeBleeding} from '../public/bleeding.js';
 import {weaponCatalog} from '../public/weapon-catalog.js';
 import {propMaxHealth, vehiclePropDamage} from '../public/prop-damage.js';
@@ -232,6 +233,12 @@ function eventData(type,raw,now) {
         const coast=cleanRoadCoast(d.roadCoast,out.type,now);
         if(!coast)return null;
         out.roadCoast=coast;out.expiresAt=coast.until+abandonedFor;
+      }
+      if(!occupied&&!d.shifted&&!d.roadCoast&&typeof d.parkingOwner==='string'&&/^[a-f0-9]{64}$/.test(d.parkingOwner)){
+        const bay=parkingBay(out,out.type);
+        if(bay?.id===d.parkingSlot){
+          out.parkingSlot=bay.id;out.parkingOwner=d.parkingOwner;out.expiresAt=now+parkingLease;
+        }
       }
       if(occupied&&d.eject&&Number.isFinite(d.eject.x+d.eject.y+d.eject.angle)&&Math.hypot(d.eject.x-result.x,d.eject.y-result.y)<=5)
         out.eject={x:d.eject.x,y:d.eject.y,angle:num(d.eject.angle,0,-7,7),at:now};
@@ -643,7 +650,9 @@ async function sync(db,b,now,room) {
       if(!source||source.id===data.id||!Number.isFinite(actor.x+actor.y)||Math.hypot(actor.x-data.x,actor.y-data.y)>16)continue;
       data.source=source.id;
       guard={clause:`WHERE NOT EXISTS (SELECT 1 FROM mc_events WHERE room=? AND player=? AND type='vehicleShunt'
-        AND at>? AND json_extract(data,'$.id')=?)`,args:[room,id,now-320,data.id]};
+        AND at>? AND json_extract(data,'$.id')=?) AND NOT EXISTS (SELECT 1 FROM mc_items
+        WHERE room=? AND kind='vehicle' AND item=? AND json_extract(data,'$.parkingSlot') IS NOT NULL
+        AND json_extract(data,'$.expiresAt')>?)`,args:[room,id,now-320,data.id,room,data.id,now]};
     }
     if(type==='horn'){
       if(!actor.vehicle||!Number.isFinite(actor.x+actor.y))continue;
@@ -653,6 +662,8 @@ async function sync(db,b,now,room) {
     if(requiresCar&&data.eject&&(!Number.isFinite(actor.x+actor.y)||actor.health===0||actor.vehicle||
       Math.hypot(actor.x-data.x,actor.y-data.y)>6.8))continue;
     if (requiresCar) {
+      if(data.parkingSlot&&(room!=='enfer:public'||!Number.isFinite(actor.x+actor.y)||
+        Math.hypot(actor.x-data.x,actor.y-data.y)>7||Math.abs(actor.speed||0)>1.8))continue;
       data.owner=data.occupied ? id : '';
       if (data.occupied) claims.add(data.id);
     }
@@ -663,15 +674,25 @@ async function sync(db,b,now,room) {
       const flightGuard=` AND NOT EXISTS (SELECT 1 FROM mc_items WHERE room=? AND item=? AND kind='vehicle' AND ${releaseEnds}>?)`+
         ((data.flightPath||data.roadCoast)?" AND EXISTS (SELECT 1 FROM mc_items WHERE room=? AND item=? AND kind='vehicle' AND owner=?)":"");
       const flightArgs=[room,data.id,now,...((data.flightPath||data.roadCoast)?[room,data.id,id]:[])];
+      const profile='(SELECT profile FROM mc_career_sessions WHERE room=? AND id=?)';
+      const reservationGuard=` AND NOT EXISTS (SELECT 1 FROM mc_items WHERE room=? AND item=? AND kind='vehicle'
+        AND json_extract(data,'$.expiresAt')>? AND json_extract(data,'$.parkingOwner') IS NOT NULL
+        AND (?=0 OR json_extract(data,'$.parkingOwner') IS NOT ${profile}))`;
+      const parkGuard=data.parkingSlot?` AND ?=${profile}
+        AND EXISTS (SELECT 1 FROM mc_items WHERE room=? AND kind='vehicle' AND item=? AND owner=?)
+        AND NOT EXISTS (SELECT 1 FROM mc_items WHERE room=? AND kind='vehicle' AND item<>?
+          AND json_extract(data,'$.parkingSlot')=? AND json_extract(data,'$.expiresAt')>?)`:'';
+      const parkArgs=data.parkingSlot?[data.parkingOwner,room,id,room,data.id,id,room,data.id,data.parkingSlot,now]:[];
       stmts.push(q(accept+` WHERE NOT EXISTS (
         SELECT 1 FROM mc_items i JOIN mc_members m ON m.room=i.room AND m.id=i.owner
         WHERE i.room=? AND i.kind='vehicle' AND i.item=? AND i.owner<>? AND m.seen>?
-          AND (json_extract(m.state,'$.vehicle.id')=i.item OR i.at>?)) ${flightGuard}
+          AND (json_extract(m.state,'$.vehicle.id')=i.item OR i.at>?)) ${flightGuard} ${reservationGuard} ${parkGuard}
         AND NOT EXISTS (SELECT 1 FROM mc_items WHERE room=? AND item=? AND
           ((kind='vehicleRetired' AND at>?) OR (kind='vehicleDamage' AND
             ((? AND (json_extract(data,'$.hp')<=0 OR json_extract(data,'$.fireAt')>0)) OR
             coalesce(nullif(json_extract(data,'$.explodeAt'),0),json_extract(data,'$.disabledAt'),0) BETWEEN 1 AND ?))))`,
-        ...values,room,data.id,id,now-GONE,now-6500,...flightArgs,room,data.id,now,Number(data.occupied),now-wreckFor));
+        ...values,room,data.id,id,now-GONE,now-6500,...flightArgs,room,data.id,now,Number(data.occupied),room,id,
+        ...parkArgs,room,data.id,now,Number(data.occupied),now-wreckFor));
     } else if(type==='chat'){
       stmts.push(q(accept+" WHERE (SELECT count(*) FROM mc_events WHERE room=? AND player=? AND type='chat' AND at>?)<6",...values,room,id,now-5000));
     } else if(type==='vehicleDamage'){

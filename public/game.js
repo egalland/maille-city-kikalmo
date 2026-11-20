@@ -16,6 +16,8 @@ import {stepVehicleBody} from './vehicle-motion.js';
 import {createArmorLayer,withJacket} from './outfit-shop.js';
 import {foxSkin} from './puppet-dyes.js';
 import {abandonedFor,disconnectedFor,exitDriverFor,parkingExpired,wreckExpired,replacementAt} from './vehicle-lifecycle.js';
+import {parkingBay,parkingLease} from './enfer-parking-lots.js';
+import {retailClerks} from './enfer-retail.js';
 import {officerDrop} from './drop-id.js';
 import {createStreetAudio} from './street-audio.js';
 import {reactionTo,reactionGoal} from './pedestrian-reaction.js';
@@ -156,6 +158,14 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     return net?.emit?.(type,data);
   }
   const vehicleId=v=>v.vehicle?.id||v.vehicleId||v.id;
+  let parkingOwner=null;
+  const myParkingOwner=()=>parkingOwner||(net?.status==='online'?null:'local');
+  const myParkedCars=()=>[...carsShared.values()].filter(v=>v.parkingOwner&&v.parkingOwner===myParkingOwner()&&!parkingExpired(v,epoch));
+  const reservedBay=()=>{
+    if(!isEnfer||!car||Math.abs(speed)>.55||p.lift>.35||!myParkingOwner())return null;
+    const bay=parkingBay(p,car.type);
+    return bay&&![...carsShared.values()].some(v=>v.id!==car.id&&v.parkingSlot===bay.id&&!parkingExpired(v,epoch))?bay:null;
+  };
   const retired=id=>(retiredVehicles.get(id)||0)>epoch;
   function retireVehicle(id,until){
     if(until>epoch)retiredVehicles.set(id,until);
@@ -222,7 +232,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     const piloting=isAircraft(car?.type),inAircraft=piloting||isAircraft(passengerSeat?.type);
     const canBail=inAircraft&&heightAboveLanding(p)>.16;
     const canBailRoad=!!(car||passengerSeat)&&!inAircraft&&p.lift<=.35&&Math.abs(speed)>=tumbleSpeed;
-    const state={piloting,inAircraft,canBail,canBailRoad,flightHeight:inAircraft?Math.round(heightAboveLanding(p)):0,traversalReady,traversalAction,armor:armorLayer.armor,...life.state(epoch),health:Math.ceil(life.health),passenger:!!passengerSeat,nearPassengerSeat:!!nearCar?.peer,vehicleName:passengerSeat?'Passager · '+vehicleSpec(passengerSeat.type).label:car?vehicleSpec(car.type).label:'',vehicleHealth:passengerSeat?vehicleHealth({id:passengerSeat.car}):car?vehicleHealth(car):100,nearVehicleName:nearCar?vehicleSpec(nearCar.type).label:'',wanted:p.wanted,wantedPoints:wanted.points,wantedProgress:wanted.progress,wantedEvent,ownedWeapons:ownedWeapons(),nearPickup,trackedDrop:tracker(),district:district(),street:streetName,weapon,reserve:reserve[weapon],ammo:Number.isFinite(ammo[weapon])?ammo[weapon]:'∞',
+    const state={piloting,inAircraft,canBail,canBailRoad,canPark:!!reservedBay(),flightHeight:inAircraft?Math.round(heightAboveLanding(p)):0,traversalReady,traversalAction,armor:armorLayer.armor,...life.state(epoch),health:Math.ceil(life.health),passenger:!!passengerSeat,nearPassengerSeat:!!nearCar?.peer,vehicleName:passengerSeat?'Passager · '+vehicleSpec(passengerSeat.type).label:car?vehicleSpec(car.type).label:'',vehicleHealth:passengerSeat?vehicleHealth({id:passengerSeat.car}):car?vehicleHealth(car):100,nearVehicleName:nearCar?vehicleSpec(nearCar.type).label:'',wanted:p.wanted,wantedPoints:wanted.points,wantedProgress:wanted.progress,wantedEvent,ownedWeapons:ownedWeapons(),nearPickup,trackedDrop:tracker(),district:district(),street:streetName,weapon,reserve:reserve[weapon],ammo:Number.isFinite(ammo[weapon])?ammo[weapon]:'∞',
       crouched:isLow(p),policeContact:p.wanted?(knownByPolice?'En poursuite':searchOutsideSince!==null
         ?'Hors zone · '+Math.max(0,Math.ceil(searchEscapeDelay(p.wanted)-time+searchOutsideSince))+' s':'Zone de recherche'):'',
       maxAmmo:Number.isFinite(weapons[weapon].mag)?weapons[weapon].mag:'∞',nearVehicle:!!nearCar,jackTarget:!!nearCar&&hasDriver(nearCar),boarding:!!boarding,inVehicle:!!(car||passengerSeat),gear:car?automaticGear(vehicleSpec(car.type),speed):null,speed:Math.round(Math.abs(speed)*3.6),score,
@@ -539,6 +549,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     if(exitSlide||!traversal.grounded||p.lift>.5)return null;
     let closest=null,best=4.4;
     for(const v of [...remotes.filter(e=>e.isCar),...cars]){
+      if(v.parkingOwner&&v.parkingOwner!==myParkingOwner())continue;
       if(retired(vehicleId(v))||vehicleWear.get(vehicleId(v))?.fireAt||(isAircraft(v.type)?heightAboveLanding(v):(v.lift||0))>.35||v.flightPath&&!v.landed||v.roadCoast&&v.moving)continue;
       if(v.peer&&(vehicleSpec(v.type).openSeat||Math.abs(v.speed)>2.5||cabinPassengers.has(v.vehicle.id)))continue;
       if(!v.peer&&v.owner&&v.occupied||vehicleHealth(v)===0||dist(p,v)>vehicleSpec(v.type).halfLength+5)continue;
@@ -639,8 +650,11 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       suspension=null;travelClaim=null;car=null;lateralSpeed=collisionSpin=0;
       leaveRoadVehicle(clear,velocityX,velocityY);return true;
     }
-    if(!denied&&(!travelClaim||travelClaim.sent)){const record={...car,x:p.x,y:p.y,angle:p.angle,...(isAircraft(car.type)?{lift:p.lift}:{}),moving:false,occupied:false,speed:0,owner:'',expiresAt:epoch+abandonedFor};
+    const bay=!denied&&rollingExit?reservedBay():null;
+    if(!denied&&(!travelClaim||travelClaim.sent)){const record={...car,x:p.x,y:p.y,angle:p.angle,...(isAircraft(car.type)?{lift:p.lift}:{}),moving:false,occupied:false,speed:0,owner:'',
+      ...(bay?{parkingSlot:bay.id,parkingOwner:myParkingOwner()}:{}),expiresAt:epoch+(bay?parkingLease:abandonedFor)};
       carsShared.set(car.id,{...record,protect:epoch+1600});emit('vehicle',record);}
+    if(bay)onNotice('Véhicule garé · '+bay.lot.name+' · Repère sur la carte');
     if(clear){p.x=clear.x;p.y=clear.y;}
     traversal.reset();suspension=null;travelClaim=null;car=null;speed=vx=vy=steer=0;p.moving=false;popTick=0;publish();return true;
   }
@@ -1776,9 +1790,9 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       }
       if(result.hit){
         const otherCar=result.touched?.isCar&&!isAircraft(result.touched.type)?result.touched:null;
-        const shunt=otherCar&&vehicleContact({type:car.type,x:p.x,y:p.y,angle:targetAngle,vx:driveX,vy:driveY,spin:collisionSpin},
+        const shunt=otherCar&&!carsShared.get(otherCar.vehicleId)?.parkingSlot&&vehicleContact({type:car.type,x:p.x,y:p.y,angle:targetAngle,vx:driveX,vy:driveY,spin:collisionSpin},
           otherCar,result.normalX,result.normalY);
-        const normalSpeed=otherCar?(shunt?.closing||0):Math.max(0,-driveX*result.normalX-driveY*result.normalY);
+        const normalSpeed=shunt?.closing??Math.max(0,-driveX*result.normalX-driveY*result.normalY);
         if(shunt){
           kickDriver(shunt.a,targetAngle);
           if(!otherCar.peer)displacedCars.push(otherCar,shunt.b,net?.id||'local');
@@ -1995,7 +2009,8 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       weapon,aiming:!paused&&!reloading&&(fireHeld||touchFireHeld||keys.has('f')),reload:reloading?1-reloading/weapons[weapon].reload:undefined,
       vehicleId:car?.id,bank:suspension?.bank,carPitch:suspension?.pitch,driverSkin:p.color,brake:braking,emote:bubbles.get(net?.id||'self')?.symbol,bubble:bubbles.get(net?.id||'self')?.symbol,speed:car?speed:Math.hypot(vx,vy),isCar:!!car};
     const renderStart=measure?performance.now():0;
-    const presented=view.render({p,lostWool:woolPoint,districtIncident,car:car||passengerSeat,speed,yaw,pitch,cameraConfig,vehicleImpact:car?impact*(isAircraft(car.type)?1:.48):0,passengerView:!!passengerSeat,steering:steer,vehiclePitch:suspension?.pitch,epoch,snap:cameraSnap,destroyed,propHealth,propDamageRevision,pickups,entities:[...(passengerSeat?[]:[self]),...remotes,...cars,...actors].map(e=>e.isCar?{...e,chassisHp:vehicleHealth(e),parts:vehicleWear.get(vehicleId(e))?.parts||0,
+    const clerks=isEnfer?retailClerks.filter(clerk=>dist(clerk,p)<43):[];
+    const presented=view.render({p,lostWool:woolPoint,districtIncident,car:car||passengerSeat,speed,yaw,pitch,cameraConfig,vehicleImpact:car?impact*(isAircraft(car.type)?1:.48):0,passengerView:!!passengerSeat,steering:steer,vehiclePitch:suspension?.pitch,epoch,snap:cameraSnap,destroyed,propHealth,propDamageRevision,pickups,entities:[...(passengerSeat?[]:[self]),...remotes,...cars,...actors,...clerks].map(e=>e.isCar?{...e,chassisHp:vehicleHealth(e),parts:vehicleWear.get(vehicleId(e))?.parts||0,
       wrecked:exploded.has(vehicleId(e))||burnProgress(vehicleWear.get(vehicleId(e)),epoch)===1,
       burning:!!vehicleWear.get(vehicleId(e))?.fireAt&&(vehicleWear.get(vehicleId(e)).explodeAt||Infinity)>epoch,
       burnProgress:burnProgress(vehicleWear.get(vehicleId(e)),epoch),
@@ -2008,7 +2023,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     drawAimLock();
     networkTick-=dt;if(networkTick<=0){publish();networkTick=.12;}
     hudTick-=dt;if(hudTick<=0){sendHud();hudTick=.12;}
-    mapTick-=dt;if(mapTick<=0){mapTick=.16;if(minimap)paintMap(minimap,p,{full:false,peers:remotes,vehicles:cars,pickups,tracked:trackedDrop,...policeMap()});}
+    mapTick-=dt;if(mapTick<=0){mapTick=.16;if(minimap)paintMap(minimap,p,{full:false,peers:remotes,vehicles:cars,parked:myParkedCars(),pickups,tracked:trackedDrop,...policeMap()});}
     if(measure)diagnostics.frame(t,populationMs,renderStart-simStart,hudStart-renderStart,performance.now()-hudStart,presented!==false,()=>({
       actors:actors.length,cars:cars.length+(car?1:0)+remotes.filter(e=>e.isCar).length,peers:remotes.length,
       requests:net?.requestCount??0,rtt:net?.lastRtt,mode:view.mode,draws:view.drawCalls
@@ -2205,7 +2220,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         }
       }else{
         const v=cars.find(v=>v.id===d.id&&dist(v,d)<9);
-        if(v)displacedCars.push(v,d,e.player);
+        if(v&&!v.parkingSlot)displacedCars.push(v,d,e.player);
       }
     }
     if(e.type==='vehicle'&&!retired(d.id)&&!parkingExpired(d,epoch)){
@@ -2246,7 +2261,8 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   if(view.available){receivePeerSnapshots();syncPeers();population(.016);publish();frame(previousFrame+.1);}
   return {available:view.available,diagnostics,get graphicsMode(){return view.mode;},getCameraOptions:()=>({...cameraConfig}),setCameraOptions,destinations,travel,exportTravelState,restoreTravelState,getPursuitSnapshot:pursuitSnapshot,getVitalitySnapshot:()=>life.snapshot(),
     setSkin(value){baseSkin=foxSkin(value).id;p.color=withJacket(baseSkin,jacketDye);publish();},
-    setCareerOutfit(state){jacketDye=state.dye||null;p.color=withJacket(baseSkin,jacketDye);armorLayer.apply(state);sendHud(true);},
+    setCareerOutfit(state){parkingOwner=state.parkingOwner||null;jacketDye=state.dye||null;p.color=withJacket(baseSkin,jacketDye);armorLayer.apply(state);sendHud(true);},
+    eatShopFood(amount){if(life.eat(amount,epoch)){p.health=life.health;sendHud(true);publish();}},
     getArmorWear:()=>armorLayer.wear(),
     setAppearance(value){appearance=value&&typeof value==='object'&&!Array.isArray(value)?{...value}:null;publish();},emote,selectWeapon,action,setPaused(v){paused=!!v;if(paused)resetInputs();},clearInputs:resetInputs,
     setMove(x,y){if(incapacitated())return;stickX=clamp(Number(x)||0,-1,1);stickY=clamp(Number(y)||0,-1,1);if(stickX||stickY)unlock();},
@@ -2271,7 +2287,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     getRoadMotion(){return paused||incapacitated()?null:roadMotion;},
     getAvailableDrops,
     trackDrop(drop){trackedDrop=drop;sendHud(true);},
-    drawFullMap(target,districtZoom=false){paintMap(target,p,{districtZoom,full:true,peers:net?.peers?.()||remotes,vehicles:cars,pickups:getAvailableDrops(),tracked:trackedDrop,...policeMap()});},
+    drawFullMap(target,districtZoom=false){paintMap(target,p,{districtZoom,full:true,peers:net?.peers?.()||remotes,vehicles:cars,parked:myParkedCars(),pickups:getAvailableDrops(),tracked:trackedDrop,...policeMap()});},
     destroy(){isRunning=false;clearAimLock();cancelAnimationFrame(frameId);detachEvent?.();view.dispose();
       window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);window.removeEventListener('blur',resetInputs);document.removeEventListener('visibilitychange',visibility);
       canvas.removeEventListener('pointerdown',pointerDown);canvas.removeEventListener('pointermove',pointerMove);canvas.removeEventListener('pointerup',pointerUp);

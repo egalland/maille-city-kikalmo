@@ -9,6 +9,7 @@ import {pavementRuns} from './curb-clearance.js';
 import {frontageSigns,frontageStyle,namedFronts} from './enfer-frontage.js';
 import {parkingLots,lotPoint,parkingWidth,parkingDepth,parkingMarkings,parkingSign,parkingDriveways} from './enfer-parking-lots.js';
 import {workshopId,workshopEdge,bayDoor,headroom} from './workshop.js';
+import {storeByBuilding,shopHeadroom,shopOpening,shopFixture} from './enfer-retail.js';
 import {drawStreetTree} from './street-trees.js';
 import {cityViewRange,streetViewRange} from './view-range.js';
 import {streetFabric} from './street-fabric.js';
@@ -445,6 +446,48 @@ function addHeritageBuilding(batch,site,building,detail,skyline){
     for(let i=1;i<p.length-1;i++)batch.tri(skyline?'plain':mat,p[0],p[i],p[i+1],color,[uv[0],uv[i],uv[i+1]]);
   }
 }
+function retailInterior(b,poly,store){
+  const drape=b.drape;
+  b.drape=true;b.flat('pave',poly,.065,store.large?'#bdb8a5':'#b58d75',2.4);b.drape=drape;
+  for(const [i,j,k] of triIndex(poly)){
+    b.tri('felt',...[i,j,k].map(n=>[poly[n][0],shopHeadroom,poly[n][1]]),'#e5d3ae');
+  }
+  for(const [across,depth] of store.large?[[0,2.8],[0,5.4],[-5,7],[5,7]]:[[0,1.6],[0,3.2]]){
+    const light=(x,y)=>store.point(across+x,depth+y);
+    b.quad('signalLight',[light(-.35,-.17),light(.35,-.17),light(.35,.17),light(-.35,.17)],shopHeadroom-.06,'#ffe4a9');
+  }
+  for(const fixture of [store.booth,...store.furnishings]){
+    const ring=shopFixture(store,fixture),counter=fixture===store.booth;
+    const baseColor=counter?store.tint:'#99745e';
+    for(let i=0;i<ring.length;i++)b.wall('felt',ring[i],ring[(i+1)%4],0,fixture.h,baseColor);
+    b.flat('felt',ring,fixture.h,'#dac19c');
+    const count=counter?3:Math.max(4,Math.round(fixture.width+fixture.depth)),long=fixture.depth>fixture.width;
+    for(let i=0;i<count;i++){
+      const fraction=(i+.5)/count-.5;
+      const [x,z]=store.point(fixture.offset+(long?0:fraction*fixture.width),fixture.at+(long?fraction*fixture.depth:0));
+      const colors=['#bd7962','#e8b36e','#77907d','#9c839e'];
+      b.box(x,fixture.h,z,.26,.19+(i%3)*.075,.21,colors[i%colors.length]);
+    }
+  }
+}
+function retailFacade(b,a,d,left,right,outward,eaves,store){
+  const len=Math.hypot(d[0]-a[0],d[1]-a[1]),dx=(d[0]-a[0])/len,dz=(d[1]-a[1])/len;
+  const item=frontageSigns[store.style],p=(u,v,h)=>[a[0]+dx*u+dz*outward*v,h,a[1]+dz*u-dx*outward*v];
+  const center=len/2,width=Math.min(store.large?10.5:5.4,len-.24),top=Math.min(eaves,3.55);
+  const panel=(l,r,low,high,depth,col,mat='felt',uv)=>
+    b.face(mat,p(l,depth,low),p(r,depth,low),p(r,depth,high),p(l,depth,high),col,uv);
+  b.wall('felt',a,left,0,eaves,item.color);b.wall('felt',right,d,0,eaves,item.color);
+  b.wall('felt',left,right,shopHeadroom,eaves,item.color);
+  for(const side of [-1,1]){
+    const inner=center+side*(store.halfWidth+.12),outer=center+side*(width/2-.08);
+    panel(Math.min(inner,outer),Math.max(inner,outer),.77,2.42,.045,'#769591');
+    panel(inner-.035,inner+.035,.15,shopHeadroom,.075,'#e7cba5');
+  }
+  panel(center-width/2,center+width/2,top-.48,top-.035,.14,white,'sign'+store.style,
+    outward<0?[[0,0],[1,0],[1,1],[0,1]]:[[1,0],[0,0],[0,1],[1,1]]);
+  b.face('felt',p(center-width/2,.10,top-.5),p(center+width/2,.10,top-.5),
+    p(center+width/2,.85,top-.69),p(center-width/2,.85,top-.69),item.awning);
+}
 function addEnferBuilding(b,building,poly,detail,skyline,h){
   const index=enferStyle(building),{wall,roof,bay}=enferStyles[index];
   const sections=[poly,...(building.holes||[])];
@@ -452,6 +495,7 @@ function addEnferBuilding(b,building,poly,detail,skyline,h){
   const mat=skyline?'plain':'enfer'+index;
   const vertex=([x,z],height)=>[x,height,z];
   const venue=namedFronts.get(String(building.id)),garage=String(building.id)===workshopId;
+  const store=!skyline&&storeByBuilding.get(String(building.id));
   const business=skyline?null:venue?.style??(detail?frontageStyle(building):null);
   let shopEdge=-1,bestFront=-Infinity;
   if(venue&&business!=null)shopEdge=venue.edge;
@@ -480,15 +524,21 @@ function addEnferBuilding(b,building,poly,detail,skyline,h){
         b.face('sign5',signPoint(left,headroom),signPoint(right,headroom),signPoint(right,headroom+.66),signPoint(left,headroom+.66),white,outward>0?[[0,0],[1,0],[1,1],[0,1]]:[[1,0],[0,0],[0,1],[1,1]]);
         continue;
       }
-      if(entry){
+      if(store&&ring===poly&&i===shopEdge){
+        const [left,right]=shopOpening(poly,store);
+        retailFacade(b,a,d,left,right,outward,eaves,store);
+        b.wall('felt',left,a,0,shopHeadroom,'#d9be98');
+        b.wall('felt',d,right,0,shopHeadroom,'#d9be98');
+      }else if(entry){
         const split=[a[0]+(d[0]-a[0])/bays,a[1]+(d[1]-a[1])/bays],bottom=eaves/floors;
         b.wall('enferEntry'+index,a,split,0,bottom,white);
         if(bays>1)b.wall(mat,split,d,0,bottom,white,bays-1,1);
         b.wall(mat,a,d,bottom,eaves,white,bays,floors-1);
       }else b.wall(mat,a,d,0,eaves,skyline?wall:white,bays,floors);
-      if(ring===poly&&i===shopEdge)storefront(b,a,d,outward,eaves,business);
-      if(detail&&ring===poly&&len>3.7&&(entry||i===shopEdge))frontageDetails(b,a,d,outward,hash(building.id+i),i===shopEdge);
-      if(detail&&ring===poly&&index!==3)facadeRelief(b,a,d,len,outward,bays,floors,eaves,index,entry,i===shopEdge);
+      if(store&&i!==shopEdge)b.wall('felt',d,a,0,shopHeadroom,store.large?'#adc0ad':'#d9be98');
+      if(ring===poly&&i===shopEdge&&!store)storefront(b,a,d,outward,eaves,business);
+      if(detail&&ring===poly&&len>3.7&&(entry||i===shopEdge)&&!(store&&i===shopEdge))frontageDetails(b,a,d,outward,hash(building.id+i),i===shopEdge);
+      if(detail&&ring===poly&&index!==3&&!(store&&i===shopEdge))facadeRelief(b,a,d,len,outward,bays,floors,eaves,index,entry,i===shopEdge);
       if(!roofShape)continue;
       if(detail&&ring===poly&&len>1.8&&Math.max(roofShape.top(a),roofShape.top(d))-eaves<.11)
         roofFront(b,a,d,len,outward,eaves,roofShape,index,seed+i,acceptsDormer?poly:null);
@@ -502,6 +552,7 @@ function addEnferBuilding(b,building,poly,detail,skyline,h){
       }
     }
   }
+  if(store)retailInterior(b,poly,store);
   if(garage&&!skyline){
     const oldDrape=b.drape;b.drape=true;b.flat('pave',poly,.045,'#a09783',3);b.drape=oldDrape;
     b.flat('plain',poly,headroom,'#b6a68f');

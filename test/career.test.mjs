@@ -3,6 +3,53 @@ import assert from 'node:assert/strict';
 import {localDatabase} from '../scripts/local-db.mjs';
 import {handleApi} from '../worker/game-api.js';
 import {careerPlaces,careerContracts,careerGarage} from '../public/career-catalog.js';
+import {retailStores} from '../public/enfer-retail.js';
+import {lotSpaces,parkingLots,parkingLease} from '../public/enfer-parking-lots.js';
+
+test('retail checks the correct counter, debits once and retains purchases across reconnects',async t=>{
+  const {active,who,pose,post,drive,actor}=await harness(t);
+  const grocery=retailStores.find(s=>s.id==='bobines'),position={x:grocery.buyerX,y:grocery.buyerY};
+  const initial=(await active(who,'state')).state;
+  const buy=(product,revision=initial.revision)=>post('career',who,{action:'buyProduct',product,revision});
+  assert.equal((await buy('pommes')).ok,false);
+  await pose(position);
+  assert.equal((await buy('pommes')).ok,false);
+  await pose(position,{vehicle:null,health:66});
+  assert.equal((await buy('bouquet')).ok,false);
+  const results=await Promise.all([buy('pommes'),buy('pommes')]);
+  const [purchase,...duplicates]=results.filter(r=>r.ok);
+  assert.ok(purchase);assert.equal(duplicates.length,0);
+  assert.equal(purchase.state.cash,40);assert.equal(purchase.state.goods.pommes,1);
+  const next={...actor(),profile:who.profile};
+  await post('join',next,{state:drive(careerPlaces.quay,{vehicle:null,health:65})});
+  const {state}=await active(next,'state');
+  assert.equal(state.goods.pommes,1);
+  const used=await post('career',next,{action:'eatProduct',product:'pommes',revision:state.revision});
+  assert.equal(used.food,10);assert.deepEqual(used.state.goods,{});
+});
+
+test('a parked vehicle keeps its pose and can only be reclaimed by its profile before expiry',async t=>{
+  const {active,who,b,post,drive,car,tick,actor}=await harness(t);
+  const [,spot]=lotSpaces(parkingLots.at(-1)),owner=(await active(who,'state')).state.parkingOwner;
+  await active(b,'state');
+  await post('sync',who,{state:drive(spot)});
+  const park={...car,x:spot.x,y:spot.y,angle:spot.angle,occupied:false,parkingSlot:spot.id,parkingOwner:owner};
+  const atFoot=drive(spot,{vehicle:null});
+  const released=await post('sync',who,{state:atFoot,events:[{type:'vehicle',op:'park',data:park}]});
+  const record=released.events.find(e=>e.data.parkingSlot)?.data;
+  assert.deepEqual([record.x,record.y,record.parkingSlot],[spot.x,spot.y,spot.id]);
+  assert.equal(record.expiresAt-released.now,parkingLease);
+  tick(4*60_000);
+  const visitor=await post('join',b,{state:atFoot});
+  assert.equal(visitor.world.vehicles[car.id].parkingOwner,owner);
+  const claim={...park,parkingSlot:null,parkingOwner:null,occupied:true};
+  const denied=await post('sync',b,{state:atFoot,events:[{type:'vehicle',op:'claim-parked',data:claim}]});
+  assert.notEqual(denied.claims?.find(v=>v.id===car.id)?.owner,b.id);
+  const returning={...actor(),profile:who.profile};
+  await post('join',returning,{state:atFoot});await active(returning,'state');
+  const accepted=await post('sync',returning,{state:atFoot,events:[{type:'vehicle',op:'claim-parked',data:claim}]});
+  assert.ok(accepted.events.some(e=>e.player===returning.id&&e.data.id===car.id&&e.data.occupied));
+});
 
 async function harness(t){
   const DB=localDatabase();t.after(()=>DB.close());

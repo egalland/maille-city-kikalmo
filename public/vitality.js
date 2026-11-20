@@ -73,6 +73,12 @@ export function createVitality(initial,now=Date.now(),recoveryDelay=koDurationMs
     if(gain)report('heal',gain,medic?'medic':'medkit');
     return true;
   }
+  function eat(amount,clock){
+    settleBleeding(clock);
+    if(!health||health>=maxHealth)return false;
+    const gain=Math.min(amount,maxHealth-health);
+    health+=gain;report('heal',gain,'food');return true;
+  }
   function tick(clock,medic=false){
     const delta=clamp((clock-lastTick)/1000,0,.25);lastTick=clock;
     settleBleeding(clock);
@@ -88,7 +94,7 @@ export function createVitality(initial,now=Date.now(),recoveryDelay=koDurationMs
     return false;
   }
   restore(initial,now);
-  return {state,snapshot,restore,hurt,aid,tick,
+  return {state,snapshot,restore,hurt,aid,eat,tick,
     get health(){return health;},get down(){return health===0;},get ragdoll(){return fall;},get downUntil(){return downUntil;},get bleeding(){return bleeding;}};
 }
 

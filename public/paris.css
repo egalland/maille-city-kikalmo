@@ -172,6 +172,8 @@
 
 .drive-controls,.drive-controls[hidden]{display:none}
 .drive-hud .chassis-status{display:block;margin-top:3px;color:#d9cbaf;font-size:10px;white-space:nowrap}
+.drive-hud #parkingHint{color:#a6ece1}
+.drive-hud #parkingHint[hidden]{display:none}
 .drive-hud .chassis-status[data-damaged=worn]{color:#edce8d}
 .drive-hud .chassis-status[data-damaged=severe]{color:#ffaeaa}
 @media(pointer:coarse),(max-width:670px){

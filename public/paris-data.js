@@ -3,6 +3,7 @@ import {selectBridgeDecks} from './enfer-bridges.js';
 import {selectSectorTerrain,selectRiverbanks,baseTerrainHeight} from './terrain-height.js';
 import {bundledSectors} from './sector-crossing.js';
 import {readMapArchive} from './map-archive.js';
+import {supermarketBuilding} from './enfer-retail.js';
 async function readPreset(key) {
   const d=await readMapArchive(key);
   return {
@@ -47,6 +48,7 @@ export const {buildings,streets,water,green,metadata}=data;
 export const isEnfer=metadata.world==='enfer';
 export const enclosureRows=isEnfer?(await import('./enfer-enclosures.js')).enclosureRows:[];
 if(isEnfer){
+  buildings.push(supermarketBuilding);
   selectRiverbanks(water);
   selectBridgeDecks(streets,water,baseTerrainHeight);
 }

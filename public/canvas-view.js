@@ -1,5 +1,6 @@
 import {createWorldCamera} from './world-camera.js';
 import {frontageSigns,namedFronts,paintFrontageSign} from './enfer-frontage.js';
+import {storeByBuilding,shopOpening,shopHeadroom,shopFixture} from './enfer-retail.js';
 import {parkingLots,lotPoint,parkingWidth,parkingDepth,parkingMarkings,parkingSign} from './enfer-parking-lots.js';
 import {heritageByFootprint,heritagePlinth} from './enfer-heritage.js';
 import {heritageModel} from './heritage-models.js';
@@ -667,6 +668,50 @@ export function createCanvasView(canvas,spawn,onNotice){
     const pitched=local&&enferRoof(poly,H,enferIndex);
     const eave=pitched?.wall??(glass?H-.7:H>7.5?H-Math.min(3.25,H*.15):H-.65);
     const frontage=isEnfer&&namedFronts.get(String(o.id));
+    const store=isEnfer&&!skyline&&storeByBuilding.get(String(o.id));
+    if(store){
+      const [left,right]=shopOpening(poly,store),sign=frontageSigns[store.style];
+      const surface=(ring,h,color)=>{
+        const points=projectPoly(ring.map(p=>[...p,h]));
+        if(points)queue.push({z:ring.reduce((sum,p)=>sum+depth(...p),0)/ring.length,base:item.ground,draw:()=>fillPath(points,color)});
+      };
+      const wall=(a,b,low,high,color)=>{
+        const points=projectPoly([[...a,low],[...b,low],[...b,high],[...a,high]]);
+        if(points)queue.push({z:depth((a[0]+b[0])/2,(a[1]+b[1])/2),base:item.ground,draw:()=>fillPath(points,color)});
+      };
+      for(let j=0;j<poly.length;j++){
+        const a=poly[j],b=poly[(j+1)%poly.length];
+        if(j!==store.edge){wall(a,b,0,H,local.wall);continue;}
+        wall(a,left,0,H,sign.color);wall(right,b,0,H,sign.color);
+        wall(left,right,shopHeadroom,H,sign.color);
+        const z=depth(...store.point(0,0)),p=projectPoly([
+          [...store.point(-store.halfWidth,-.08),shopHeadroom+.04],
+          [...store.point(store.halfWidth,-.08),shopHeadroom+.04],
+          [...store.point(store.halfWidth,-.08),shopHeadroom+.51],
+          [...store.point(-store.halfWidth,-.08),shopHeadroom+.51]
+        ]);
+        if(p&&z>0)queue.push({z:z-.06,base:item.ground,draw:()=>{
+          let texture=facadeSigns.get(frontage.style);
+          if(!texture){
+            texture=makeCanvas(256,64);paintFrontageSign(texture.getContext('2d'),256,64,sign);
+            facadeSigns.set(frontage.style,texture);
+          }
+          texturedFace(texture,[
+            [...store.point(-store.halfWidth,-.08),shopHeadroom+.04,0,texture.height],
+            [...store.point(store.halfWidth,-.08),shopHeadroom+.04,texture.width,texture.height],
+            [...store.point(store.halfWidth,-.08),shopHeadroom+.51,texture.width,0],
+            [...store.point(-store.halfWidth,-.08),shopHeadroom+.51,0,0]
+          ]);
+        }});
+      }
+      for(const fixture of [store.booth,...store.furnishings]){
+        const ring=shopFixture(store,fixture);
+        for(let i=0;i<ring.length;i++)wall(ring[i],ring[(i+1)%4],0,fixture.h,i%2?store.tint:'#99745e');
+        surface(ring,fixture.h,'#ddc29b');
+      }
+      if(camH>H+item.ground)surface(poly,H,local.roof);
+      return;
+    }
     const top=poly.map(q=>[q[0]+(bounds.x-q[0])*.032,q[1]+(bounds.y-q[1])*.032,H]);
     for(let j=0;j<poly.length;j++){
       const a=poly[j],b=poly[(j+1)%poly.length],dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy);

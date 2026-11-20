@@ -4,6 +4,7 @@ import {browserProfile} from './ammunition.js';
 import {careerPlaces,careerContracts,careerGarage,careerRadius} from './career-catalog.js';
 import {outfitShop} from './outfit-shop.js';
 import {placeSymbols,setCareerGoal} from './career-navigation.js';
+import {atShopCounter,retailGoods,foodRecovery} from './enfer-retail.js';
 const money=n=>Number(n).toLocaleString('fr-FR')+' ₣';
 const until=(timestamp,now)=>Math.max(0,Math.ceil((timestamp-now)/1000));
 const clock=seconds=>Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');
@@ -51,7 +52,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     if(state?.mission){notify('Termine ou quitte le contrat en cours pour changer de destination.');return;}
     manual=id;close();update();
   }
-  async function send(which,{contract:job,amount,dye,slot,task,operation}={}){
+  async function send(which,{contract:job,amount,dye,slot,task,operation,product}={}){
     if(pending||net.status!=='online'){if(which!=='state')notify('La connexion au monde est nécessaire.');return;}
     const before=state;
     pending=true;lastRead=Date.now();
@@ -61,7 +62,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),8000);
     try{
       const response=await fetch('/api/world/career',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',
-        body:JSON.stringify({map:'enfer',id,token,profile,action:which,revision:before?.revision,contract:job,amount,dye,slot,task,operation,wear:game.getArmorWear?.()}),signal:abort.signal});
+        body:JSON.stringify({map:'enfer',id,token,profile,action:which,revision:before?.revision,contract:job,amount,dye,slot,task,operation,product,wear:game.getArmorWear?.()}),signal:abort.signal});
       const data=await response.json();
       if(data.incident){
         const incoming=data.incident,newDraw=incident?.slot!==incoming.slot;
@@ -91,6 +92,8 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       if(which==='cancel')notify('Contrat quitté.');
       if(which==='buyArmor')notify('Protection équipée.');
       if(which==='buyDye'||which==='equipDye')notify('Tenue mise à jour.');
+      if(which==='buyProduct')notify(retailGoods.get(product).name+' ajouté au sac · −'+money(retailGoods.get(product).price));
+      if(which==='eatProduct'&&data.food){game.eatShopFood?.(data.food);notify(retailGoods.get(product).name+' consommé.');}
       if(which==='publishLap')notify('Ton chrono est publié.');
       if(which==='hideLap')notify('Ton chrono a été retiré.');
       if(which==='license')notify('La licence de ton atelier est active.');
@@ -109,6 +112,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
   }
   const act=()=>{if(nextAction&&!pending)return nextAction();};
   action.onclick=act;
+  const counter=(pos,life)=>life.lifeState==='down'||life.inVehicle||life.boarding?null:atShopCounter(pos);
   function update(){
     const now=net.serverTime(),pos=game.getPosition(),life=getState(),s=stage(),point=goal(),place=nearby();
     const ev=wool(),eventGoal=showWool(),localEvent=eventObjective();
@@ -126,6 +130,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       if(protection.textContent!==text)protection.textContent=text;
     }
     nextAction=null;
+    const vendor=counter(pos,life);
     const service=['market','garage','police'].includes(place?.id);
     overlay.hidden=!(point||service);
     if(point||service){
@@ -168,6 +173,14 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
         pin.setAttribute('aria-label',target.name);
       }
     }else pin.hidden=true;
+    if(vendor){
+      overlay.hidden=false;pin.hidden=true;
+      instruction.textContent=vendor.name;
+      detail.textContent=vendor.clerk+' · À la caisse';
+      action.hidden=false;action.disabled=pending;
+      action.textContent='Voir les articles (G)';
+      nextAction=()=>{staged='retail';open();};
+    }
     if(panelBody?.isConnected)renderPanel(panelBody);
     if(!document.hidden&&net.status==='online'&&!pending){
       const interval=game.getArmorWear?.()?900:(!state||state.mission&&(until(state.mission.deadline,now)===0||life.lifeState==='down'))?4000:30000;
@@ -179,7 +192,8 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     const pos=game.getPosition(),here=reach(pos,careerPlaces.garage)<=careerRadius,car=getState();
     const inBank=['garage','market','police'].includes(nearby()?.id);
     const market=nearby()?.id==='market';
-    const key=JSON.stringify([incident,incident?.ends>net.serverTime(),wool().phase,wool().slot,market,inBank,car.armor,state?.leaders,state?.revision,state?.cash,state?.mission,nowOnline(),here,car.inVehicle,car.vehicleHealth,pending,lastIssue,staged]);
+    const vendor=counter(pos,car);
+    const key=JSON.stringify([incident,incident?.ends>net.serverTime(),wool().phase,wool().slot,market,inBank,car.armor,state?.leaders,state?.revision,state?.cash,state?.mission,nowOnline(),here,car.inVehicle,car.vehicleHealth,pending,lastIssue,staged,vendor?.id,car.health>=100,car.lifeState==='down']);
     if(key===lastPanelKey&&body.childNodes.length)return;
     lastPanelKey=key;
     body.dataset.transferFocus=document.activeElement?.id==='career-amount'?'1':'0';
@@ -189,7 +203,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     if(state)summary.append(make('small','',state.reputation+' de réputation'));
     const tabs=make('div','career-tabs');
     tabs.setAttribute('role','group');tabs.setAttribute('aria-label','Rubrique');
-    for(const [id,title] of [[null,'Contrats'],['garage','Atelier'],['bank','Banque'],['shop','Boutique']]){
+    for(const [id,title] of [[null,'Contrats'],['garage','Atelier'],['bank','Banque'],['shop','Boutique'],['bag','Sac'],...(vendor||staged==='retail'?[['retail','Caisse']]:[])]){
       const tab=control(title,()=>{staged=id;renderPanel(body);},'career-tab');
       tab.setAttribute('aria-pressed',String(staged===id));tabs.append(tab);
     }
@@ -345,8 +359,41 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       }
       shop.append(dyes);return shop;
     }
+    function retailPage(){
+      const page=make('section','career-garage');
+      if(!vendor){page.append(make('p','','Entre dans un magasin et approche-toi de la caisse.'));return page;}
+      page.append(make('h3','',vendor.name),make('p','',vendor.clerk+' te présente les articles du magasin.'));
+      for(const [id,name,price] of vendor.goods){
+        const row=make('div','career-dye'),recovery=foodRecovery[id],count=state?.goods?.[id]||0;
+        const button=control('Acheter · '+money(price),()=>send('buyProduct',{product:id}));
+        button.disabled=!state||!nowOnline()||pending||state.cash<price||count>=99;
+        button.setAttribute('aria-label','Acheter '+name+' · '+money(price));
+        row.append(make('span','',name),make('small','',recovery?'+'+recovery+' santé':'Collection'),button);
+        page.append(row);
+      }
+      return page;
+    }
+    function bagPage(){
+      const page=make('section','career-garage');
+      page.append(make('h3','','Ton sac'));
+      const goods=Object.entries(state?.goods||{});
+      if(!goods.length)page.append(make('p','','Tes achats apparaîtront ici.'));
+      for(const [id,count] of goods){
+        const product=retailGoods.get(id),recovery=foodRecovery[id];
+        if(!product)continue;
+        const row=make('div','career-dye');
+        row.append(make('span','',product.name+' × '+count),make('small','',recovery?'+'+recovery+' santé':'Collection'));
+        if(recovery){
+          const eat=control('Consommer',()=>send('eatProduct',{product:id}));
+          eat.disabled=!nowOnline()||pending||car.health>=100||car.lifeState==='down';
+          row.append(eat);
+        }
+        page.append(row);
+      }
+      return page;
+    }
     const footer=make('p','career-message',lastIssue||(!nowOnline()?'Le registre s’ouvre à la reconnexion.':''));
-    footer.setAttribute('role','status');body.replaceChildren(summary,tabs,({bank:bankPage,garage:garagePage,shop:shopPage}[staged]||jobsPage)(),footer);
+    footer.setAttribute('role','status');body.replaceChildren(summary,tabs,({bank:bankPage,garage:garagePage,shop:shopPage,retail:retailPage,bag:bagPage}[staged]||jobsPage)(),footer);
     if(staged==='bank'&&document.activeElement===document.body&&body.dataset.transferFocus==='1'){body.querySelector('#career-amount')?.focus({preventScroll:true});}
     if(manual&&!job)body.append(control('Arrêter le guidage',()=>{manual=null;lastPanelKey='';update();}));
     if(focused)Array.from(body.querySelectorAll('button,summary')).find(el=>el.textContent===focused)?.focus({preventScroll:true});
