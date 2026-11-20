@@ -1,5 +1,13 @@
+import {sampleAutorotation,flightSampleMs} from '../public/autorotation.js';
+
 // A closed vehicle has one shared passenger seat. Only confirmed drivers can offer it.
 export const seatSchema=[
+  `CREATE TABLE IF NOT EXISTS mc_air_riders (
+    room TEXT NOT NULL,rider TEXT NOT NULL,car TEXT NOT NULL,until INTEGER NOT NULL,
+    PRIMARY KEY(room,rider),UNIQUE(room,car))`,
+  `CREATE TRIGGER IF NOT EXISTS mc_air_riders_disconnect AFTER DELETE ON mc_members BEGIN
+    DELETE FROM mc_air_riders WHERE room=OLD.room AND rider=OLD.id;
+   END`,
   `CREATE TABLE IF NOT EXISTS mc_seats (
     room TEXT NOT NULL, rider TEXT NOT NULL, driver TEXT NOT NULL, car TEXT NOT NULL,
     PRIMARY KEY (room,rider), UNIQUE(room,car), UNIQUE(room,driver))`,
@@ -17,8 +25,10 @@ export const seatSchema=[
      DELETE FROM mc_seats WHERE room=NEW.room AND car=NEW.item;
    END`
 ];
-export const seatedRosterSQL=`SELECT m.id,m.name,m.state,m.joined,m.seen,s.driver,s.car,o.dye
+export const seatedRosterSQL=`SELECT m.id,m.name,m.state,m.joined,m.seen,s.driver,s.car,o.dye,a.until AS flightUntil,v.data AS glidingCraft
   FROM mc_members m LEFT JOIN mc_seats s ON s.room=m.room AND s.rider=m.id
+  LEFT JOIN mc_air_riders a ON a.room=m.room AND a.rider=m.id
+  LEFT JOIN mc_items v ON v.room=a.room AND v.kind='vehicle' AND v.item=a.car AND v.owner=''
   LEFT JOIN mc_career_sessions cs ON cs.room=m.room AND cs.id=m.id
   LEFT JOIN mc_outfits o ON o.profile=cs.profile
   WHERE m.room=? AND m.seen>? ORDER BY m.joined,m.id`;
@@ -27,8 +37,18 @@ export function attachPassengers(players, rows){
   const drivers=new Map(players.filter(member=>member.vehicle).map(member=>[member.id,member]));
   for(let index=0;index<rows.length;index++){
     const seat=rows[index],driver=drivers.get(seat.driver);
-    if(!driver||driver.vehicle.id!==seat.car)continue;
     const rider=players[index];
+    if(!driver||driver.vehicle.id!==seat.car){
+      if(seat.flightUntil>Date.now()&&seat.glidingCraft){
+        const craft=JSON.parse(seat.glidingCraft);
+        if(craft.flightPath){
+          rider.passenger={driver:'autorotation',car:craft.id,coasting:true};
+          Object.assign(rider,sampleAutorotation(craft,Date.now()),{vehicle:null});
+          rider.updatedAt=Date.now();
+        }
+      }
+      continue;
+    }
     rider.passenger={driver:driver.id,car:seat.car};
     for(const field of ['x','y','angle','moving','speed','vx','vy','lift','verticalSpeed'])
       if(driver[field]!==undefined)rider[field]=driver[field];
@@ -40,9 +60,10 @@ export function requestSeat(stmts,q,{room,id,name,op,now,aliveSince,driver,car,l
   // Commands participate in the same ordered, retryable batch as vehicle ownership.
   const fresh="NOT EXISTS (SELECT 1 FROM mc_events WHERE room=? AND player=? AND op=?)";
   if(leave){
+    stmts.push(q(`DELETE FROM mc_air_riders WHERE room=? AND rider=? AND ${fresh}`,room,id,room,id,op));
     stmts.push(q(`DELETE FROM mc_seats WHERE room=? AND rider=? AND ${fresh} AND NOT EXISTS (
       SELECT 1 FROM mc_members d WHERE d.room=mc_seats.room AND d.id=mc_seats.driver AND d.seen>?
-      AND json_extract(d.state,'$.vehicle.type') IN ('helicopter','airship') AND
+      AND json_extract(d.state,'$.vehicle.type')='airship' AND
       (coalesce(json_extract(d.state,'$.lift'),0)>.18 OR abs(coalesce(json_extract(d.state,'$.speed'),0))>1.5))`,room,id,room,id,op,aliveSince));
   }else{
     stmts.push(q(`DELETE FROM mc_seats WHERE room=? AND car=? AND
@@ -66,4 +87,15 @@ export function requestSeat(stmts,q,{room,id,name,op,now,aliveSince,driver,car,l
         AND ${fresh}`,driver,car,room,id,aliveSince,aliveSince,now,room,id,op));
   }
   stmts.push(q(`INSERT OR IGNORE INTO mc_events(room,player,op,name,type,data,at) VALUES(?,?,?,?,'seat','{}',?)`,room,id,op,name,now));
+}
+
+// Copy the passenger into the unpiloted cabin before the pilot's on-foot pose
+// releases the ordinary driver seat. Both changes commit in the same D1 batch.
+export function continueFlightSeat(q,{room,id,op,car,count,now}){
+  return q(`INSERT OR REPLACE INTO mc_air_riders(room,rider,car,until)
+    SELECT s.room,s.rider,s.car,? FROM mc_seats s
+    JOIN mc_items i ON i.room=s.room AND i.item=s.car AND i.kind='vehicle' AND i.owner=s.driver
+    WHERE s.room=? AND s.driver=? AND s.car=? AND json_extract(i.data,'$.type')='helicopter'
+      AND NOT EXISTS (SELECT 1 FROM mc_events WHERE room=? AND player=? AND op=?)`,
+    now+(count-1)*flightSampleMs,room,id,car,room,id,op);
 }

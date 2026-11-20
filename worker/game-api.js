@@ -1,11 +1,12 @@
 import {armorySchema,openArmory,readArmory,privateAmmo} from './armory.js';
 import {reportSchema,reportPlayer} from './social.js';
 import {withJacket} from '../public/outfit-shop.js';
-import {seatSchema,seatedRosterSQL,attachPassengers,requestSeat} from './vehicle-seats.js';
+import {seatSchema,seatedRosterSQL,attachPassengers,requestSeat,continueFlightSeat} from './vehicle-seats.js';
 import {abandonedFor,disconnectedFor,wreckFor,wreckExpired} from '../public/vehicle-lifecycle.js';
 import {hitSeverity, woundDuration, activeBleeding} from '../public/bleeding.js';
 import {weaponCatalog} from '../public/weapon-catalog.js';
 import {propMaxHealth, vehiclePropDamage} from '../public/prop-damage.js';
+import {validFlightPath,sampleAutorotation,flightSampleMs} from '../public/autorotation.js';
 import {airfields,isAircraft,flightCeiling} from '../public/airfield.js';
 import {isVehicleType,vehicleSpec} from '../public/vehicle-types.js';
 import {chassisDamage,partMask,incendiaryImpact,vehicleBurnDelay,blastRadius,blastDamage} from '../public/vehicle-damage.js';
@@ -122,7 +123,7 @@ const locomotionModes=new Set(['idle','crouch','walk','run','jump','fall','land'
 function movementFields(s,now){
   if(!Number.isFinite(s.lift))return {};
   if(isAircraft(s.vehicle?.type))return {lift:num(s.lift,0,0,flightCeiling),motion:s.lift>0?'carAir':'idle',verticalSpeed:num(s.verticalSpeed,0,-8,8)};
-  const lift=num(s.lift,0,0,64);
+  const lift=num(s.lift,0,0,flightCeiling+3);
   if(s.vehicle)return s.motion==='carAir'&&lift>0
     ?{lift:Math.min(lift,12),motion:'carAir',verticalSpeed:num(s.verticalSpeed,0,-30,12)}
     :{lift:0,motion:'idle'};
@@ -205,6 +206,10 @@ function eventData(type,raw,now) {
       if(!key(d.id))return null;
       const occupied=!!d.occupied;
       const out={...result,id:d.id,occupied,...(!occupied&&d.shifted?{shifted:true}:{}),...(!occupied?{expiresAt:now+abandonedFor}:{})};
+      if(!occupied&&out.type==='helicopter'&&validFlightPath(d.flightPath)){
+        out.flightPath=d.flightPath;out.lift=d.flightPath[0][1];
+        out.flightAt=num(d.flightAt,now,now-1800,now);out.expiresAt=out.flightAt+(out.flightPath.length-1)*flightSampleMs+abandonedFor;
+      }
       if(occupied&&d.eject&&Number.isFinite(d.eject.x+d.eject.y+d.eject.angle)&&Math.hypot(d.eject.x-result.x,d.eject.y-result.y)<=5)
         out.eject={x:d.eject.x,y:d.eject.y,angle:num(d.eject.angle,0,-7,7),at:now};
       return out;
@@ -285,7 +290,7 @@ function shared(rows,now) {
         world.vehicles[r.item]={...vehicle,owner:r.owner,lastSeen:r.at};
       else{
         const expiresAt=r.owner?r.at+disconnectedFor:vehicle.expiresAt||r.at+abandonedFor;
-        const home=isAircraft(vehicle.type)&&vehicle.lift>.35?airfields.find(site=>site.type===vehicle.type):null;
+        const home=!vehicle.flightPath&&isAircraft(vehicle.type)&&vehicle.lift>.35?airfields.find(site=>site.type===vehicle.type):null;
         if(expiresAt>now)world.vehicles[r.item]={...vehicle,...(home?{x:home.x,y:home.y,angle:home.angle,lift:0,bank:0,carPitch:0}:{}),occupied:false,owner:'',expiresAt};
       }
     }
@@ -495,8 +500,9 @@ async function sync(db,b,now,room) {
   if (!member) return json({error:'rejoin'},401);
   const name=clean(b.name,24)||member.name;
   const rawState=playerState(b.protocol===2?restoreStateFields(b.state,b.keepState,priorState):b.state,now,room);
-  if(member.seatedDriver&&Number.isFinite(rawState.x)){
-    const driver=JSON.parse(member.seatedDriver);
+  const gliding=member.glidingCraft&&JSON.parse(member.glidingCraft);
+  if((member.seatedDriver||gliding?.flightPath)&&Number.isFinite(rawState.x)){
+    const driver=member.seatedDriver?JSON.parse(member.seatedDriver):sampleAutorotation(gliding,now);
     for(const field of ['x','y','angle','vx','vy','speed','moving','lift','verticalSpeed'])
       if(driver[field]!==undefined)rawState[field]=driver[field];
     rawState.vehicle=null;
@@ -504,6 +510,11 @@ async function sync(db,b,now,room) {
   const state=Number.isFinite(rawState.x) ? JSON.stringify(rawState) : member.state;
   const actor=Number.isFinite(rawState.x)?rawState:priorState;
   const stmts=[];
+  for(const input of inputs){
+    const data=input?.data;
+    if(input?.type==='vehicle'&&key(input.op)&&key(data?.id)&&data.type==='helicopter'&&data.occupied===false&&validFlightPath(data.flightPath))
+      stmts.push(continueFlightSeat(q,{room,id,op:input.op,car:data.id,count:data.flightPath.length,now:num(data.flightAt,now,now-1800,now)}));
+  }
   if (now-member.seen>3500 || state!==member.state || name!==member.name) {
     if(Number.isFinite(rawState.x))rememberFirePose(stmts,q,room,id,priorState,member.seen,rawState);
     stmts.push(q('UPDATE mc_members SET seen=?,state=?,name=? WHERE room=? AND id=? AND secret=?',now,state,name,room,id,token));
@@ -514,11 +525,12 @@ async function sync(db,b,now,room) {
         AND item=? AND owner=? AND at<?`,JSON.stringify(car),now,room,carId,id,now-1000));
     }
   }
+  const glideEnds="json_extract(data,'$.flightAt')+(json_array_length(data,'$.flightPath')-1)*"+flightSampleMs;
   const claims=new Set(),pickupOps=new Map(), propOps=new Map();
   for (const input of inputs) {
     const {type}=dict(input);
     let {op}=dict(input);
-    if(member.seatedDriver&&['vehicle','vehicleShunt','pickup','fire','melee','hit','shot','propDamage','destroy'].includes(type))continue;
+    if((member.seatedDriver||gliding?.flightPath)&&['vehicle','vehicleShunt','pickup','fire','melee','hit','shot','propDamage','destroy'].includes(type))continue;
     if(type==='seat'&&key(op)){
       const seat=dict(input.data),leave=seat.leave===true;
       if(leave||(UUID.test(seat.driver)&&key(seat.car)))requestSeat(stmts,q,{room,id,name,op,now,aliveSince:now-GONE,driver:seat.driver,car:seat.car,leave});
@@ -593,11 +605,14 @@ async function sync(db,b,now,room) {
     const accept=`INSERT OR IGNORE INTO mc_events (room,player,op,name,type,data,at) SELECT ?,?,?,?,?,?,?`;
     const values=[room,id,op,name,type,payload,now];
     if (requiresCar) {
+      const flightGuard=` AND NOT EXISTS (SELECT 1 FROM mc_items WHERE room=? AND item=? AND kind='vehicle' AND ${glideEnds}>?)`+
+        (data.flightPath?" AND EXISTS (SELECT 1 FROM mc_items WHERE room=? AND item=? AND kind='vehicle' AND owner=?)":"");
+      const flightArgs=[room,data.id,now,...(data.flightPath?[room,data.id,id]:[])];
       stmts.push(q(accept+` WHERE NOT EXISTS (
         SELECT 1 FROM mc_items i JOIN mc_members m ON m.room=i.room AND m.id=i.owner
         WHERE i.room=? AND i.kind='vehicle' AND i.item=? AND i.owner<>? AND m.seen>?
-          AND (json_extract(m.state,'$.vehicle.id')=i.item OR i.at>?))`,
-        ...values,room,data.id,id,now-GONE,now-6500));
+          AND (json_extract(m.state,'$.vehicle.id')=i.item OR i.at>?)) ${flightGuard}`,
+        ...values,room,data.id,id,now-GONE,now-6500,...flightArgs));
     } else if(type==='chat'){
       stmts.push(q(accept+" WHERE (SELECT count(*) FROM mc_events WHERE room=? AND player=? AND type='chat' AND at>?)<6",...values,room,id,now-5000));
     } else if(type==='vehicleDamage'){
@@ -630,7 +645,7 @@ async function sync(db,b,now,room) {
   const cursor=num(b.cursor,0,0,Number.MAX_SAFE_INTEGER);
   stmts.push(q('SELECT seq,player,name,type,data,at FROM mc_events WHERE room=? AND seq>? ORDER BY seq LIMIT 160',room,cursor));
   if (claims.size) {
-    stmts.push(q(`SELECT item AS id,owner FROM mc_items WHERE room=? AND kind='vehicle' AND item IN (${[...claims].map(()=>'?').join(',')})`,room,...claims));
+    stmts.push(q(`SELECT item AS id,CASE WHEN ${glideEnds}>? THEN 'autorotation' ELSE owner END AS owner FROM mc_items WHERE room=? AND kind='vehicle' AND item IN (${[...claims].map(()=>'?').join(',')})`,now,room,...claims));
   }
   const pickupIndex=stmts.length;
   if(pickupOps.size)stmts.push(q(`SELECT op,item,ok,available FROM mc_pickup_claims WHERE room=? AND player=?

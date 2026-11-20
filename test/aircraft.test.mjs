@@ -61,7 +61,7 @@ test('rotors are independent of the fuselage, and the two actual occupants leave
   }
 });
 
-test('the flight inputs, door, takeoff, blocked exit, landing and safe dismount work in the Enfer game',async t=>{
+test('keyboard helicopter bailout, inherited momentum and fall injury work alongside the airship landing controls in Enfer',async t=>{
   globalThis.location=new URL('https://maille.test/?monde=enfer');
   t.mock.method(globalThis,'fetch',async path=>new Response(await readFile(new URL('../public'+String(path).split('?')[0],import.meta.url))));
   const {createGame}=await import('../public/game.js');
@@ -90,6 +90,22 @@ test('the flight inputs, door, takeoff, blocked exit, landing and safe dismount 
     ticks(10);
     assert.ok(hud.flightHeight>=8);assert.equal(published.vehicle.type,field.type);
     assert.ok(draw.entities.find(e=>e.self).lift>8);
+    if(byKeyboard){
+      assert.equal(hud.canBail,true);
+      game.setDrive(0,1);ticks(22);
+      const before={x:draw.p.x,y:draw.p.y,lift:draw.p.lift,speed:published.speed};
+      assert.ok(before.speed>5);
+      keyboard('e',true);keyboard('e',false);ticks(1);
+      assert.ok(!hud.inVehicle&&game.getPosition().airborne);
+      assert.ok(Math.abs(published.lift-before.lift)<1.3);
+      assert.ok(Math.hypot(published.vx,published.vy)>before.speed*.75);
+      ticks(8);assert.ok(Math.hypot(draw.p.x-before.x,draw.p.y-before.y)>2);
+      const coasting=draw.entities.find(e=>e.type==='helicopter'&&!e.self);
+      assert.ok(coasting?.moving&&coasting.lift>0&&!coasting.driver);
+      ticks(65);assert.ok(hud.health<100);assert.ok(!game.getPosition().airborne);
+      continue;
+    }
+    assert.equal(hud.canBail,false);
     game.action('vehicle');ticks(5);assert.ok(hud.piloting);
     game.setDrive(.4,.5);ticks(15);game.setDrive(0,0);ticks(55);
     if(byKeyboard)keyboard('Control',true);else game.setFlightVertical(-1);
@@ -124,6 +140,29 @@ test('a second client receives flight-height, heading and attitude and can only 
     await post(pilot,'sync',fly(28));body=await post(rider,'sync');
     assert.equal(body.players.find(p=>p.id===rider.id).lift,28);
     body=await post(rider,'sync',{events:[{type:'seat',op:'exit-in-air',data:{leave:true}}]});
+    if(field.type==='helicopter'){
+      assert.ok(!body.players.find(p=>p.id===rider.id).passenger);
+      await post(pilot,'sync',fly(0));await ask('ground-again');
+      const sky={...pose,lift:70,verticalSpeed:1,vx:300/3.6,vehicle:{...craft,speed:300/3.6},speed:300/3.6};
+      await post(pilot,'sync',{state:sky});body=await post(rider,'sync');
+      assert.equal(body.players.find(p=>p.id===pilot.id).vehicle.speed,300/3.6);
+      const path=[[0,70],[35,68],[61,63],[82,59],[95,54],[105,49],[112,42],[118,35],[122,28],[126,21],[129,14],[132,7],[135,0]];
+      const release={...craft,speed:sky.speed,lift:70,occupied:false,flightAt:stamp,flightPath:path};
+      await post(pilot,'sync',{state:{...sky,vehicle:null,motion:'fall'},events:[{type:'vehicle',op:'jump',data:release}]});
+      stamp+=1000;body=await post(rider,'sync');
+      const stillAboard=body.players.find(p=>p.id===rider.id);
+      assert.equal(stillAboard.passenger.coasting,true);assert.equal(stillAboard.lift,63);
+      assert.ok(Math.abs(stillAboard.x-(craft.x+61*Math.cos(craft.angle)))<.001);
+      const observer=user();
+      const watching=await post(observer,'join',{state:pose});
+      assert.deepEqual(watching.world.vehicles[craft.id].flightPath,path);
+      assert.equal(watching.players.find(p=>p.id===pilot.id).lift,70);
+      const midairTake=await post(observer,'sync',{state:pose,events:[{type:'vehicle',op:'take-midair',data:{...craft,occupied:true}}]});
+      assert.equal(midairTake.denied[0]?.owner,'autorotation');
+      body=await post(rider,'sync',{events:[{type:'seat',op:'jump-too',data:{leave:true}}]});
+      assert.ok(!body.players.find(p=>p.id===rider.id).passenger);
+      await post(observer,'leave');await post(rider,'leave');await post(pilot,'leave');continue;
+    }
     assert.ok(body.players.find(p=>p.id===rider.id).passenger);
     stamp+=1700;await post(pilot,'sync',fly(26));await post(pilot,'leave');
     body=await post(rider,'sync');assert.ok(!body.players.find(p=>p.id===rider.id).passenger);
@@ -131,4 +170,40 @@ test('a second client receives flight-height, heading and attitude and can only 
     assert.equal(replay.world.vehicles[craft.id].x,field.x);assert.equal(replay.world.vehicles[craft.id].lift,0);
     await post(rider,'leave');
   }
+});
+
+test('a healthy Libellule covers 300 km/h over measured distance and banks through a wider circle at cruise',()=>{
+  const world={ground:()=>0,water:()=>null,contact:()=>false};
+  let craft={x:0,y:0,lift:40,speed:0,angle:0};
+  const fly=(seconds,input)=>{
+    for(let i=0;i<seconds*60;i++)craft=stepAircraft('helicopter',craft,input,1/60,world);
+  };
+  fly(1,{throttle:1});assert.ok(craft.speed>6&&craft.speed<8);
+  fly(20,{throttle:1});
+  const start=craft.x;fly(3,{throttle:1});
+  assert.ok(Math.abs((craft.x-start)/3*3.6-300)<.01);
+  fly(1,{throttle:1,steer:1});assert.ok(craft.angle>.10&&craft.angle<.20);
+  const cruise=craft.speed;fly(1,{throttle:-1});assert.ok(cruise-craft.speed>9);
+});
+
+test('the mobile passenger action leaves a moving helicopter at cabin height and preserves its momentum',async t=>{
+  globalThis.location=new URL('https://maille.test/?monde=enfer');
+  t.mock.method(globalThis,'fetch',async path=>new Response(await readFile(new URL('../public'+String(path).split('?')[0],import.meta.url))));
+  const {createGame}=await import('../public/game.js');
+  globalThis.window=new EventTarget();globalThis.document=new EventTarget();
+  let hud,frame,stamp=performance.now(),now=1782250000000,published,leaves=0;
+  globalThis.requestAnimationFrame=cb=>(frame=cb,1);globalThis.cancelAnimationFrame=()=>{};
+  const field=airfields[0],vehicle={id:'rotor',type:'helicopter',x:field.x,y:field.y,speed:18,angle:0};
+  const pilot={...vehicle,id:'pilot',vehicle,health:100,lift:31,verticalSpeed:1,vx:18,vy:0,moving:true,motion:'carAir',updatedAt:now};
+  const rider={id:'rider',name:'Passager',passenger:{driver:pilot.id,car:vehicle.id}};
+  const net={id:rider.id,status:'online',world:()=>({}),peers:()=>[pilot],players:()=>[pilot,rider],serverTime:()=>now,
+    publish:s=>published=s,emit:(type,data)=>{if(type==='seat'&&data.leave){leaves++;delete rider.passenger;}return true;}};
+  const game=createGame({canvas:new EventTarget(),net,onState:s=>hud=s,buildView:()=>({available:true,effect(){},render(){},dispose(){}})});
+  t.after(()=>{game.destroy();for(const k of ['location','window','document','requestAnimationFrame','cancelAnimationFrame'])delete globalThis[k];});
+  const ticks=n=>{for(let i=0;i<n;i++){stamp+=40;now+=40;frame(stamp);}};
+  ticks(7);assert.ok(hud.passenger&&hud.canBail);
+  game.action('vehicle');ticks(2);
+  assert.equal(leaves,1);assert.ok(!hud.inVehicle&&game.getPosition().airborne);
+  assert.ok(Math.abs(published.lift-31)<1.5);assert.ok(published.vx>15);
+  ticks(8);assert.ok(published.lift<32&&published.x>field.x+4);
 });

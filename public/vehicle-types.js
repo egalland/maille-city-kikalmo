@@ -27,7 +27,7 @@ define('camper','Combi des Saules',4.67,2.03,2.27,124/3.6,4.4,2.65,10.7,.96,.82)
 define('flatbed','Porte-bobines',5.50,2.14,2.20,119/3.6,4.3,2.45,11.7,.83,.78);
 define('pickup','Camionnette de marché',4.84,1.98,1.86,163/3.6,5.8,3.8,12.7,1.06,.87);
 define('airship','Dirigeable · Navette Nuage',11.4,4.2,5.1,16,4,2.1,4.1,.46,.50);
-define('helicopter','Hélicoptère Libellule',6.9,1.80,2.68,25,7,6.2,8,1.02,.75);
+define('helicopter','Hélicoptère Libellule',6.9,1.80,2.68,300/3.6,12,7.2,10,1.14,.75);
 export const vehicleTypes=Object.freeze(Object.keys(specs));
 export const isVehicleType=type=>Object.hasOwn(specs,type);
 export const vehicleSpec=type=>isVehicleType(type)?specs[type]:specs.car;

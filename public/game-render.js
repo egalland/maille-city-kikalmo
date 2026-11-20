@@ -208,9 +208,10 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     const feet=(p.lift||0)-(swimming?.55:0);
     const focusY=feet+(car?Math.max(1.35,model.height*.77):1.17),lift=feet+(car?Math.max(2.92,model.height+1.05):2.18);
     const snap=state.snap || Math.hypot(camX-p.x,camY-p.y)>25 || inFrame===1;
-    const f=snap?1:blend(car?11:19,dt);
+    const heli=car?.type==='helicopter';
+    const f=snap?1:blend(heli?20:car?11:19,dt);
     camX+=(p.x-camX)*f;camY+=(p.y-camY)*f;
-    const goal=follow+(car?Math.min(2.25,Math.abs(state.speed)*.065):0),wantedY=lift+pitch*2.8,back=yaw+Math.PI;
+    const goal=follow+(car?Math.min(heli?5.5:2.25,Math.abs(state.speed)*.065):0),wantedY=lift+pitch*2.8,back=yaw+Math.PI;
     const ground=followGround(camX,camY),groundBehind=followGround(camX+Math.cos(back)*goal,camY+Math.sin(back)*goal);
     const available=clamp(cameraDistance(camX,camY,focusY,back,goal,wantedY,destroyed,.31,followGround),.24,goal);
     cameraArm=snap?available:Math.min(available,cameraArm+(available-cameraArm)*blend(6,dt));

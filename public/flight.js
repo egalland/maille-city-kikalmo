@@ -5,7 +5,7 @@ export {helipad,mooring} from './airfield.js';
 const constrain=(n,a,b)=>Math.max(a,Math.min(n,b));
 const approach=(a,b,step)=>a+constrain(b-a,-step,step);
 const profile={
-  helicopter:{climb:6.8,sink:4.6,verticalAccel:7.8,horizontalAccel:6.2,yaw:1.02},
+  helicopter:{climb:6.8,sink:4.6,verticalAccel:7.8,horizontalAccel:7.2,yaw:1.14},
   airship:{climb:2.8,sink:2.2,verticalAccel:2.7,horizontalAccel:2.1,yaw:.41}
 };
 
@@ -36,11 +36,15 @@ export function stepAircraft(type,pose,input,dt,world){
   else if(nextZ!==altitude)vertical=0;
   if(vertical<0&&altitude<=floor+.0001||vertical>0&&altitude>=oldGround+flightCeiling-.0001)vertical=0;
   const hovering=altitude>oldGround+.34;
-  let speed=approach(pose.speed||0,hovering?(input.throttle||0)*(input.throttle<0?spec.reverse:spec.forward)*power:0,
-    tuning.horizontalAccel*dt*(input.throttle?1:1.45));
+  const throttle=constrain(input.throttle||0,-1,1);
+  const oldSpeed=pose.speed||0,cruise=Math.min(1,Math.abs(oldSpeed)/spec.forward);
+  const decelerating=throttle&&throttle*oldSpeed<0;
+  const rate=type==='helicopter'?(decelerating?spec.brake:throttle?spec.accel*(1-.48*cruise):4.6):tuning.horizontalAccel*(throttle?1:1.45);
+  let speed=approach(oldSpeed,hovering?throttle*(throttle<0?spec.reverse:spec.forward)*power:0,rate*dt);
   let x=pose.x,y=pose.y,angle=pose.angle,impact=0;
   if(hovering){
-    const wantedAngle=angle+(input.steer||0)*tuning.yaw*dt;
+    const yawRate=type==='helicopter'?tuning.yaw/(1+Math.abs(speed)*.078):tuning.yaw;
+    const wantedAngle=angle+(input.steer||0)*yawRate*dt;
     if(wantedAngle!==angle&&!blocked(x,y,wantedAngle,altitude))angle=wantedAngle;
     const distance=speed*dt,steps=Math.max(1,Math.ceil(Math.abs(distance)/.55));
     if(Math.abs(distance)>.0001)for(let i=0;i<steps;i++){

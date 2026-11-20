@@ -818,12 +818,13 @@ export function createCanvasView(canvas,spawn,onNotice){
     }
     w=surface.width;h=surface.height;f=.5*h/Math.tan((w<h?68:58)*Math.PI/360);
     const {p,yaw,pitch=0,car,destroyed}=state,snap=state.snap||!Number.isFinite(followX)||Math.hypot(followX-p.x,followY-p.y)>25;
-    const blend=snap?1:1-Math.exp(-(car?11:19)*frameDt);
+    const heli=car?.type==='helicopter';
+    const blend=snap?1:1-Math.exp(-(heli?20:car?11:19)*frameDt);
     followX+=(p.x-followX)*blend;followY+=(p.y-followY)*blend;
     const model=car?vehicleSpec(car.type):null;
-    fx=Math.cos(yaw);fy=Math.sin(yaw);const goal=car?8.15+Math.max(0,model.halfLength-2)*1.24+Math.min(2.25,Math.abs(state.speed||0)*.065):5.25;
+    fx=Math.cos(yaw);fy=Math.sin(yaw);const goal=car?8.15+Math.max(0,model.halfLength-2)*1.24+Math.min(heli?5.5:2.25,Math.abs(state.speed||0)*.065):5.25;
     const swimming=!car&&p.motion==='swim',followGround=swimming?swimGround:terrainHeight;
-    const lift=car?0:(p.lift||0)-(swimming?.55:0),focus=lift+(car?Math.max(1.35,model.height*.77):1.17),wantedH=lift+(car?Math.max(2.92,model.height+1.05):2.18)+pitch*2.8;
+    const lift=(p.lift||0)-(swimming?.55:0),focus=lift+(car?Math.max(1.35,model.height*.77):1.17),wantedH=lift+(car?Math.max(2.92,model.height+1.05):2.18)+pitch*2.8;
     const ground=followGround(followX,followY),backGround=followGround(followX-fx*goal,followY-fy*goal),look=car?6.3:4.15;
     const dist=clamp(cameraDistance(followX,followY,focus,yaw+Math.PI,goal,wantedH,destroyed,.16,followGround),.3,goal);
     arm=snap?dist:Math.min(dist,arm+(dist-arm)*(1-Math.exp(-6*frameDt)));
