@@ -52,8 +52,8 @@ function routeDelta(state,d){
 
 export function createTrafficFlow(sample,chooseDetour){
   const cars=new Map(),permits=new Set(),refused=new Map();
-  let planIn=0,tick=0;
-  function reset(){cars.clear();permits.clear();refused.clear();planIn=0;tick=0;}
+  let planIn=0,tick=0,lastObserver=null;
+  function reset(){cars.clear();permits.clear();refused.clear();planIn=0;tick=0;lastObserver=null;}
 
   function sameCrossing(a,b){
     // A boulevard with a median can have a distinct graph node on each carriageway.
@@ -425,6 +425,8 @@ export function createTrafficFlow(sample,chooseDetour){
 
   function step(seeds,{dt=0,epoch=Date.now(),blockers=[],observer=null,excluded=new Set(),checkpoints=[],blockedPose,onVehicleContact,recycleAfter=0}={}){
     const actualDt=clamp(dt,0,.5);
+    const established=observer&&lastObserver&&distanceSquared(observer,lastObserver)<110**2;
+    lastObserver=observer?{x:observer.x,y:observer.y}:null;
     const fixed=blockers.filter(b=>b&&Number.isFinite(b.x)&&Number.isFinite(b.y)).map(b=>makeBody(b));
     const candidates=new Map(seeds.filter(s=>s.routeId!=null&&!excluded.has(s.id)).map(s=>[s.id,s]));
     // Preserve each car's route progress while the authoritative wear changes its cruise speed.
@@ -452,6 +454,11 @@ export function createTrafficFlow(sample,chooseDetour){
     for(const seed of [...candidates.values()].sort(byId)){
       if(cars.has(seed.id)||refused.has(seed.id))continue;
       const incoming=remote.get(seed.id)||seed;
+      // A new trip may enter through a map edge that the player can see. Let it
+      // pass outside view instead of materialising beside a stationary observer.
+      if(established&&seed.regional&&!remote.has(seed.id)&&distanceSquared(observer,incoming)<48**2){
+        refused.set(seed.id,Infinity);continue;
+      }
       const car=spawn(incoming,bodies,epoch,blockedPose);
       if(!car){refused.set(seed.id,tick+.6);continue;}
       if(observer && distanceSquared(observer,car.pose)>149**2)continue;

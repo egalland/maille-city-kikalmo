@@ -1,6 +1,7 @@
 import {heritageByFootprint,heritagePlinthHeight} from './enfer-heritage.js';
 import {heritageHeight} from './heritage-models.js';
 import {streetParking} from './street-parking.js';
+import {corridorPlans} from './enfer-corridors.js';
 import {boundarySpans} from './residential-boundaries.js';
 import {containsPoint as inRing,edgeContact} from './collision-ring.js';
 import {teammate} from './partners.js';
@@ -19,7 +20,7 @@ import {airfields} from './airfield.js';
 import { terraceProfiles } from './street-terraces.js';
 import { authoredWeaponDrops } from './drop-id.js';
 import { vehicleSpec, vehicleDoorways } from './vehicle-types.js';
-import { buildTrafficRoutes, indexTrafficDetours, sampleRoadRoute } from './traffic-roads.js';
+import { buildTrafficRoutes, indexTrafficDetours, sampleRoadRoute, regionalRoutes } from './traffic-roads.js';
 
 const EMPTY = new Set();
 const TAU = Math.PI * 2;
@@ -335,6 +336,11 @@ export function blocked(x,y,radius=.42,destroyed=EMPTY,height=1.4) {
   return !!testPose(x,y,{radius,destroyed,height});
 }
 export function contactAt(x,y,opt={}){return testPose(x,y,opt);}
+// Permanent obstacles on a surveyed lane; street furniture is placed around traffic.
+export function trafficSurveyBlocked(x,y,shape){
+  const hit=testPose(x,y,shape,false);
+  return !!hit&&hit!==boundaryItem;
+}
 // Outward normal and signed clearance between a point and an oriented rectangle.
 function pointBoxContact(px,py,x,y,angle,l,w) {
   const c=Math.cos(angle),s=Math.sin(angle);
@@ -736,9 +742,13 @@ for(const p of routeRecords){
   }
   const houses=isEnfer?[...terrain.area(mid.x,mid.y,47)].filter(b=>b.type==='building'&&
     ['residential','mixed','commercial'].includes(b.kind)&&b.poly.some(([x,y])=>sq(x-mid.x)+sq(y-mid.y)<47*47)).length:5;
-  if(!road.bridge&&p.length>15&&(houses>=2||(houses===1&&p.key%3===0)))considerSeed(walkerSeeds,cellKey(mid.x,mid.y,isEnfer&&houses<5?100:60),p,rank+(road.kind==='path'?60:0)+houses*1.5);
+  const country=isEnfer&&enferDistrict(mid.x,mid.y)==='Vallée des Aulnes';
+  // On open roads foot traffic belongs around homes and footpaths. Assign the
+  // rule to an entire walk so a person never vanishes as the observer moves.
+  const footStreet=!country||(houses>=3&&['path','residential'].includes(road.kind)&&p.key%5===0);
+  if(footStreet&&!road.bridge&&p.length>15&&(houses>=2||(houses===1&&p.key%3===0)))considerSeed(walkerSeeds,cellKey(mid.x,mid.y,isEnfer&&houses<5?100:60),p,rank+(road.kind==='path'?60:0)+houses*1.5);
 }
-const circulation=new Grid(96),footPatrol=new Grid(64);
+const circulation=new Grid(96),corridorGrid=new Grid(110),footPatrol=new Grid(64);
 const seedGroups=[...trafficSeeds.values()].map(group=>group.sort((a,b)=>b.rank-a.rank||a.p.id.localeCompare(b.p.id)).slice(0,4).map(s=>s.p));
 const trafficRoutes=buildTrafficRoutes(routeRecords,seedGroups,{
   atEdge:([x,y])=>!withinBoundary(x,y,4),
@@ -750,12 +760,12 @@ const trafficRoutes=buildTrafficRoutes(routeRecords,seedGroups,{
 });
 // An offset inside a bend can place furniture from a neighbouring carriageway in a
 // driver's swept path. Clear that generated furniture where the actual lane passes.
-function clearTrafficFurniture(){
+function clearTrafficFurniture(routes){
   const excluded=new Set();
   const envelopes=[vehicleSpec('compact'),{halfLength:2.32,halfWidth:.96},vehicleSpec('firetruck'),vehicleSpec('bus')];
-  for(const route of trafficRoutes.values()){
+  for(const route of routes){
     let capacity=route.availableWidth>=6?3:route.availableWidth>=4.25?2:1;
-    const body=envelopes[capacity];
+    const body=route.clearance||envelopes[capacity];
     for(let i=1;i<route.points.length;i++){
       const a=route.points[i-1],b=route.points[i],dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy);
       if(!len)continue;
@@ -763,7 +773,7 @@ function clearTrafficFurniture(){
       const longitudinal=len*.5+body.halfLength+.45,lateral=body.halfWidth+.38;
       const w=Math.abs(c)*longitudinal+Math.abs(s)*lateral,h=Math.abs(s)*longitudinal+Math.abs(c)*lateral;
       const box={minX:x-w,minY:y-h,maxX:x+w,maxY:y+h};
-      for(const b of terrain.areaBox(box)){
+      if(!route.regional)for(const b of terrain.areaBox(box)){
         if(b.type!=='building'||b.minHeight>1.3||b.h<=1.3)continue;
         while(capacity>=0){
           const limit=envelopes[capacity];
@@ -774,18 +784,18 @@ function clearTrafficFurniture(){
       }
       if(capacity<0)break;
       for(const prop of decor.areaBox(box)){
-        if(rectCircle(x,y,c,s,longitudinal,lateral,prop.x,prop.y,prop.r))excluded.add(prop);
+        if(prop.r&&prop.type!=='signal'&&rectCircle(x,y,c,s,longitudinal,lateral,prop.x,prop.y,prop.r))excluded.add(prop);
       }
     }
     if(capacity<0)trafficRoutes.delete(route.id);
-    else route.clearance=envelopes[capacity];
+    else if(!route.regional)route.clearance=envelopes[capacity];
   }
   if(!excluded.size)return;
   for(const [key,items] of decor.cells)decor.cells.set(key,items.filter(p=>!excluded.has(p)));
   let retained=0;for(const p of props)if(!excluded.has(p))props[retained++]=p;
   props.length=retained;
 }
-clearTrafficFurniture();
+clearTrafficFurniture(trafficRoutes.values());
 const signals = isEnfer ? junctionSignals(trafficRoutes, streetList, {
   builtUp:(x,y)=>enferDistrict(x,y)!=='Vallée des Aulnes',
   clear:(x,y,radius)=>!testPose(x,y,{radius}), hash
@@ -802,8 +812,6 @@ for(const signal of signals.sites){
 export function nearbySignals(x,y,radius){
   return [...signalGrid.area(x,y,radius)];
 }
-const detours=indexTrafficDetours(trafficRoutes);
-export const trafficAlternatives=detours.alternatives;
 for(const route of trafficRoutes.values())circulation.insert(route,bounds(route.points,4));
 export function sampleTrafficRoute(routeId,distance){
   const pose=sampleRoadRoute(trafficRoutes.get(routeId),distance);
@@ -814,10 +822,12 @@ export function sampleTrafficRoute(routeId,distance){
 // A stationary car needs to clear the rear of a turning bus as well as its centre line.
 function lanesNearStop(stop,radius){
   const lanes=[];
-  for(const route of circulation.area(stop.x,stop.y,radius)){
+  const groups=[...circulation.area(stop.x,stop.y,radius)].map(route=>({route,start:1,end:route.points.length}));
+  groups.push(...corridorGrid.area(stop.x,stop.y,radius+10));
+  for(const {route,start,end} of groups){
     const largest=route.clearance;
     const range=radius+largest.halfLength;
-    for(let i=1;i<route.points.length;i++){
+    for(let i=start;i<end;i++){
       const a=route.points[i-1],b=route.points[i],point=nearestPoint(stop.x,stop.y,a,b);
       if(sq(point[0]-stop.x)+sq(point[1]-stop.y)>range*range)continue;
       const nearest=route.lengths[i-1]+Math.hypot(point[0]-a[0],point[1]-a[1]);
@@ -842,10 +852,22 @@ function parkedVehicleAtStop(stop,i){
   const lanes=lanesNearStop(stop,34);
   const street=closestRoad(stop.x,stop.y,35,s=>s.kind!=='motorway'&&s.kind!=='path');
   const roadAngle=street?.angle??stop.angle;
+  const villageBridge=isEnfer&&['couarcy','trois-ponts','behericourt'].includes(stop.key);
   function usable(p,type){
     const {halfLength,halfWidth}=vehicleSpec(type);
     const shape={x:p.x,y:p.y,angle:p.angle,halfLength,halfWidth};
     if(testPose(p.x,p.y,shape)||!clearsTrafficAtRest(p,type,lanes))return false;
+    if(villageBridge){
+      // These stops predate through traffic. Leave both lanes free at the
+      // bridge entrance, including clearance for the rear of a turning lorry.
+      for(const {road,a,b} of roadGrid.area(p.x,p.y,13)){
+        if(road.kind==='path')continue;
+        const dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy);
+        const bed={x:(a[0]+b[0])*.5,y:(a[1]+b[1])*.5,angle:Math.atan2(dy,dx),
+          halfLength:length*.5+.35,halfWidth:road.w*.5+.7};
+        if(rectAgainstRect(p.x,p.y,p.angle,halfLength+.7,halfWidth+.42,bed))return false;
+      }
+    }
     if(rectCircle(p.x,p.y,Math.cos(p.angle),Math.sin(p.angle),halfLength,halfWidth,stop.x,stop.y,.65))return false;
     return vehicleDoorways({...p,type},.75).some(d=>!testPose(d.x,d.y,{radius:.43}));
   }
@@ -902,7 +924,8 @@ function addPatrol(patrol,id,name){
   if(patrol.length<4)return;
   const path=pathGeometry(patrol);
   if(path.length<8)return;
-  const rec={...path,key:hash(id),id,name,count:Math.max(1,Math.round(path.length/(isEnfer?21:24)))};
+  const [x,y]=patrol[patrol.length>>1],rural=isEnfer&&enferDistrict(x,y)==='Vallée des Aulnes';
+  const rec={...path,key:hash(id),id,name,count:Math.max(1,Math.round(path.length/(rural?95:isEnfer?21:24)))};
   footPatrol.insert(rec,bounds(path.path,2));
 }
 for(const {p} of walkerSeeds.values()){
@@ -925,8 +948,25 @@ for(const {p} of walkerSeeds.values()){
     if(run.length)addPatrol(run,p.id+':'+side+':'+number,p.road.name);
   }
 }
+// A cross-country trip may span ten kilometres. Index stretches of lane, not
+// its bounding box, and recover only the departures currently in those stretches.
+const throughTraffic=isEnfer?regionalRoutes(routeRecords,corridorPlans,(x,y)=>withinBoundary(x,y,5)): [];
+for(const route of throughTraffic){
+  route.clearance=route.freight?{halfLength:3.74,halfWidth:1.22}:{halfLength:2.37,halfWidth:1.02};
+  trafficRoutes.set(route.id,route);
+  let start=1;
+  for(let i=1;i<route.points.length;i++)if(route.lengths[i]-route.lengths[start-1]>=96||i===route.points.length-1){
+    corridorGrid.insert({route,start,end:i+1},bounds(route.points.slice(start-1,i+1),4));
+    start=i+1;
+  }
+}
+clearTrafficFurniture(throughTraffic);
+const detours=indexTrafficDetours(trafficRoutes);
+export const trafficAlternatives=detours.alternatives;
 const flocks=['pedestrian','pedestrian','pedestrian','pedestrian','police','pedestrian','pedestrian','firefighter','pedestrian','medic','pedestrian','swat','pedestrian','pedestrian'];
 const fleet=['compact','sedan','taxi','police','van','scooter','sport','ambulance','cargo','bus','firetruck','pickup','taxi','swat','compact','sedan','car','bus'];
+const countryCars=['compact','sedan','estate','pickup','van','camper','car','motorbike','sport','flatbed','taxi','compact','sedan','estate'];
+const freightCars=['boxtruck','tipper','boxtruck','flatbed','van'];
 const regionalFleet=['motorbike','estate','camper','flatbed'];
 const replaceableFleet=new Set(['car','compact','sedan','van','pickup','scooter']);
 // Stable global identities let a delayed car keep the same wardrobe and footprint on every client.
@@ -947,13 +987,17 @@ export function trafficVehicleAt(originRouteId,index,routeId=originRouteId){
     if(style===0)type='supercar';
     if(style===1||style===2)type='gt';
   }
+  if(route.regional){
+    const draw=hash(originRouteId+'/passage/'+index);
+    type=route.freight&&draw%10<4?freightCars[(draw>>>8)%freightCars.length]:countryCars[(draw>>>12)%countryCars.length];
+  }
   const body=vehicleSpec(type);
   if((type==='bus'&&!canBus)||body.halfWidth*4+.12>route.availableWidth||body.halfWidth>route.clearance.halfWidth||body.halfLength>route.clearance.halfLength)type='compact';
-  const cruiseSpeed=(4.7+(route.key%51)*.08)*vehicleSpec(type).cruise;
+  const cruiseSpeed=route.tourSpeed||(4.7+(route.key%51)*.08)*vehicleSpec(type).cruise;
   const active=routeId===originRouteId?route:trafficRoutes.get(routeId);
   if(!active||(routeId!==originRouteId&&!detours.canReach(originRouteId,routeId,vehicleSpec(type))))return null;
   return {id:'v'+originRouteId+'-'+index,originRouteId,routeId,routeIndex:index,routeLength:active.length,routeLoop:active.closed,
-    type,kind:type,color:tintedCars[(route.key+slot)%tintedCars.length],speed:cruiseSpeed,cruiseSpeed,moving:true};
+    type,kind:type,regional:!!route.regional,color:tintedCars[(route.key+slot)%tintedCars.length],speed:cruiseSpeed,cruiseSpeed,moving:true};
 }
 export function routeAgents(x,y,radius=140,epochMs=Date.now()){
   const actors=[],cars=[],r2=radius*radius,sec=epochMs*.001;
@@ -972,6 +1016,22 @@ export function routeAgents(x,y,radius=140,epochMs=Date.now()){
       const spec=vehicleSpec(car.type);
       if(testPose(p.x,p.y,{angle:p.angle,halfLength:spec.halfLength,halfWidth:spec.halfWidth},false))continue;
       consider(cars,{...p,...car,routeDistance});
+    }
+  }
+  const incoming=new Set();
+  for(const {route,start,end} of corridorGrid.area(x,y,radius)){
+    const length=route.length,spacing=length/route.count,elapsed=sec*route.tourSpeed+route.key%length;
+    const phase=wrap(elapsed,length),from=route.lengths[start-1],to=route.lengths[end-1];
+    const first=Math.ceil((from-phase)/spacing),last=Math.floor((to-phase)/spacing);
+    for(let k=first;k<=last;k++){
+      const d=phase+k*spacing,slot=wrap(k,route.count);
+      const index=route.closed?slot:Math.floor((elapsed+slot*spacing)/length)*route.count+slot;
+      const id=route.id+'/'+index;if(incoming.has(id))continue;
+      incoming.add(id);
+      const pose=sampleRoadRoute(route,d);
+      if(!pose||sq(x-pose.x)+sq(y-pose.y)>r2)continue;
+      const car=trafficVehicleAt(route.id,index);
+      if(car)consider(cars,{...pose,...car,routeDistance:d});
     }
   }
   const hour=isEnfer?cityClimate(epochMs).hour:12;

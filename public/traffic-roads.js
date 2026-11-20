@@ -141,8 +141,8 @@ function trimEdgePortals(route,portalClear){
   }));
   route.count=Math.max(1,Math.round(route.length/195));return true;
 }
-export function buildTrafficRoutes(records,seedGroups,{atEdge=()=>false,laneClear=()=>true,portalClear=()=>true}={}){
-  const nodes=new Map(),directions=new Map(),routes=new Map();
+export function makeRoadGraph(records,regional=false){
+  const nodes=new Map(),directions=new Map();
   function node(point,level){
     const id=keyFor(point,level);
     if(!nodes.has(id))nodes.set(id,{id,point,out:[],in:[],roads:new Set()});
@@ -150,8 +150,11 @@ export function buildTrafficRoutes(records,seedGroups,{atEdge=()=>false,laneClea
   }
   for(const record of records){
     const {road,path}=record;
-    if(road.kind==='path'||road.kind==='motorway'||road.level<0||road.w<(road.oneway?3:4)||record.length<2)continue;
-    const ends=[node(path[0],road.level),node(path.at(-1),road.level)],options=[];
+    if(road.kind==='path'||(!regional&&road.kind==='motorway')||road.level<0||road.w<(road.oneway?3:4)||record.length<2)continue;
+    // The IGN splits a bridge at the two road endpoints. Geometric crossings
+    // inside a segment never enter the graph. Only those real endpoints join levels.
+    const level=regional&&road.bridge?0:road.level;
+    const ends=[node(path[0],level),node(path.at(-1),level)],options=[];
     for(const reversed of [false,true]){
       if((road.oneway===1&&reversed)||(road.oneway===-1&&!reversed))continue;
       const from=ends[+reversed],to=ends[+!reversed],second=path[reversed?path.length-2:1],before=path[reversed?1:path.length-2];
@@ -163,6 +166,10 @@ export function buildTrafficRoutes(records,seedGroups,{atEdge=()=>false,laneClea
   for(const n of nodes.values()){
     n.degree=n.roads.size;n.out.sort((a,b)=>a.tag.localeCompare(b.tag));n.in.sort((a,b)=>a.tag.localeCompare(b.tag));
   }
+  return {nodes,directions};
+}
+export function buildTrafficRoutes(records,seedGroups,{atEdge=()=>false,laneClear=()=>true,portalClear=()=>true}={}){
+  const {directions}=makeRoadGraph(records),routes=new Map();
   function usable(edge){
     if(edge.usable!==undefined)return edge.usable;
     const lane=makeLane(edge),steps=Math.max(1,Math.ceil(lane.length/8));
@@ -197,6 +204,35 @@ export function buildTrafficRoutes(records,seedGroups,{atEdge=()=>false,laneClea
     }
   }
   return routes;
+}
+// The survey tests the same lane geometry that is later replayed in the city.
+export function corridorSection(edge){return laneSection(edge,false,false);}
+export function corridorTurn(a,b){
+  if(!possibleTurn(a,b))return [];
+  const end=a.section.end,start=b.section.start,points=[[end.x,end.y]];
+  roundJoin(end,start,p=>{points.push(p);return 0;});
+  return points;
+}
+export function regionalRoutes(records,plans,portalClear){
+  const {directions}=makeRoadGraph(records,true),edges=new Map();
+  for(const options of directions.values())for(const e of options)edges.set(e.tag,e);
+  const result=[];
+  for(const [capacity,tags,spacing] of plans){
+    const itinerary=tags.map(tag=>edges.get(tag));if(itinerary.some(e=>!e))continue;
+    const closed=itinerary[0].from===itinerary.at(-1).to;
+    const id='h'+hash(tags.join('/')).toString(36);
+    const route=makeRoute(itinerary,closed,id);
+    // Cut off the boundary strip so the bumpers can exit normally.
+    if(!closed&&!trimEdgePortals(route,portalClear))continue;
+    route.regional=true;route.freight=capacity===2;
+    // The survey already tested the whole envelope. A 3 m one-way lane has
+    // all 3 m available to one lorry; a two-way lane gets half its road width.
+    route.availableWidth=Math.min(...itinerary.map(({record:{road}})=>road.oneway?road.w*2:road.w));
+    route.count=Math.max(1,Math.round(route.length/spacing));
+    route.tourSpeed=10.6+route.key%42/10;
+    result.push(route);
+  }
+  return result;
 }
 // Two checked itineraries can exchange a vehicle on the same directed IGN section,
 // before their turning curves diverge. The car keeps its pose, speed and original ID.
