@@ -212,25 +212,30 @@ test('Paris and Enfer keep independent presence, including when switching with t
   }finally{DB.close();}
 });
 
-test('vehicle damage preserves cracked glass, flat tyres and the delayed explosion across a reconnect',async()=>{
+test('vehicle damage preserves cracked glass, flat tyres and the delayed explosion across a reconnect',async t=>{
+  let clock=1800000000000;t.mock.method(Date,'now',()=>clock);
   const DB=localDatabase(),p={...session('Tissu'),map:'enfer',state:{x:11,y:0}};
   try{
     await accepted(api(DB,'/api/world/join',p));
     const car={id:'car-test',type:'sedan',x:18,y:0,cause:'weapon',weapon:'pistol'};
-    const strike=(part,op)=>({op:String(op),type:'vehicleDamage',data:{...car,part}});
+    const strike=(part,op)=>{
+      clock+=310;const shotId='vehicle-test-'+op;
+      return [{op:'trigger-'+op,type:'fire',data:{kind:'pistol',shotId,firedAt:clock,x:11.35,y:0,angle:0,length:6.65}},
+        {op:String(op),type:'vehicleDamage',data:{...car,part,shotId}}];
+    };
     const send=events=>accepted(api(DB,'/api/world/sync',{...p,events}));
-    await send([strike('glass',1),strike('frontLeft',2),strike('frontLeft',2)]);
+    await send(strike('glass',1));await send(strike('frontLeft',2));await send(strike('frontLeft',2));
     const read=async()=>(await accepted(api(DB,'/api/world/join',p))).world.vehicleDamage[car.id];
     const first=await read();
     assert.equal(first.parts,3);
     assert.ok(first.hp>80);
-    await send([3,4,5,6,7,8].map(i=>strike('engine',i)));
+    for(const i of [3,4,5,6,7,8])await send(strike('engine',i));
     const last=await read();
     assert.equal(last.parts,3);
     assert.equal(last.hp,0);
     assert.ok(last.fireAt>0);
     assert.ok(last.explodeAt-last.fireAt>=2700);
-    await send([strike('engine',8)]);
+    await send(strike('engine',8));
     assert.equal((await read()).explodeAt,last.explodeAt);
   }finally{DB.close();}
 });

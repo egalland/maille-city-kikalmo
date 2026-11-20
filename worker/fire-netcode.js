@@ -1,3 +1,4 @@
+import {canFireSql,canFireArgs} from './armory.js';
 import {weaponCatalog} from '../public/weapon-catalog.js';
 import {weaponShotShape} from '../public/weapon-patterns.js';
 
@@ -198,12 +199,12 @@ export function recordFire(stmts,q,room,id,name,packet,tracks,actor,now){
   // The materialized gate freezes the receipt decision before inserting any row.
   // A retry with a modified list cannot append a hit; the whole trigger is atomic.
   stmts.push(q(`WITH fresh AS MATERIALIZED (
-    SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM mc_events WHERE room=? AND player=? AND op=?)
+    SELECT 1 WHERE ${canFireSql} AND NOT EXISTS (SELECT 1 FROM mc_events WHERE room=? AND player=? AND op=?)
     AND NOT EXISTS (SELECT 1 FROM mc_events WHERE room=? AND player=? AND type='shot' AND at>=?
       AND abs(json_extract(data,'$.firedAt')-?)<CASE WHEN json_extract(data,'$.kind')=? THEN ? ELSE 95 END))
     INSERT INTO mc_events (room,player,op,name,type,data,at)
     SELECT ?,?,json_extract(value,'$.op'),?,json_extract(value,'$.type'),json_extract(value,'$.data'),?
     FROM fresh CROSS JOIN json_each(?) ORDER BY CAST(key AS INTEGER)`,
-    room,id,shotOp,room,id,now-FIRE_AGE-1300,shot.firedAt,shot.kind,Math.floor(weapon.interval*900),
+    ...canFireArgs(room,id,weapon,shot.firedAt),room,id,shotOp,room,id,now-FIRE_AGE-1300,shot.firedAt,shot.kind,Math.floor(weapon.interval*900),
     room,id,name,now,JSON.stringify(rows)));
 }

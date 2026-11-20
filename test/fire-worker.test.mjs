@@ -1,3 +1,4 @@
+import {equipTestFirearm} from './fixtures/equip-firearm.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {handleApi} from '../worker/game-api.js';
@@ -83,6 +84,7 @@ test('bad origins, expired shots and impossible fan rays are discarded; off-axis
 
 test('fan, arc, radius and chained contacts survive the canonical protocol with weapon-specific caps',async t=>{
   const w=world(t),a=await w.player(0,0);
+  for(const weapon of ['shotgun','boomerang','pompom','chime'])await equipTestFirearm(w.DB,a.id,weapon);
   const direct=await w.player(10,0),side=await w.player(10,3),behind=await w.player(10,7);
   const polar=(angle,d)=>({x:Math.cos(angle)*d,y:Math.sin(angle)*d});
   const fan=(angle,length)=>({...polar(angle,.35),angle,length});

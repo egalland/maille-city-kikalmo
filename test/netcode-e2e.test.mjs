@@ -1,3 +1,4 @@
+import {equipTestFirearm} from './fixtures/equip-firearm.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {setImmediate as settle} from 'node:timers/promises';
@@ -29,6 +30,7 @@ function simulatedWorld(t) {
         if(!url.endsWith('/leave'))await delay(options.sendDelay?.(actions)??35);
         if(options.beforeCommit)await options.beforeCommit(actions,DB);
         const response=await handleApi(new Request('https://world.test'+url,init),{DB});
+        if(url.endsWith('/join'))await equipTestFirearm(DB,packet.id,'smg');
         if(!url.endsWith('/leave'))await delay(35);
         if(options.dropReply?.(actions))throw new Error('Simulated lost response after commit');
         return response;
