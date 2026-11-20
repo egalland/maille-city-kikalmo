@@ -283,13 +283,18 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
     const detail=node('div','gp-local'),regional=node('div','gp-regional');
     const map=node('div','mc-map-box');
     const canvas=node('canvas','mc-map-canvas');canvas.width=840;canvas.height=448;
-    canvas.setAttribute('aria-label','Plan local avec les joueurs, les véhicules et les armes à trouver');
+    canvas.setAttribute('aria-label','Plan local avec les joueurs, les véhicules, les armes et la zone de recherche de la police');
     map.append(canvas);detail.append(map);
     const legends=node('div','mc-map-legends');
     const position=game.getPosition?.();
     const you=position&&Number.isFinite(position.x+position.y)?'Vous · sol à ≈ '+Math.round(terrainHeight(position.x,position.y))+' m':'Vous';
     [['mc-me',you],['mc-other','Autres joueurs'],['mc-car','Véhicules'],['mc-drop','Arme à trouver']].forEach(([c,value])=>{
       const line=node('span','mc-map-legend');line.append(node('i',c),node('span','',value));legends.append(line);
+    });
+    const pursuitLegends=['Zone de recherche','Patrouille'].map((label,i)=>{
+      const line=node('span','mc-map-legend');
+      line.append(node('i',i?'mc-police-marker':'mc-police-area'),node('span','',label));legends.append(line);
+      line.hidden=!state().wanted;return line;
     });
     const buddy=teammate();
     if(buddy){
@@ -389,7 +394,10 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
       if(!region)game.drawFullMap?.(canvas,zoom);
     }
     switchMap('local');
-    renderCurrent=()=>{if(!region)game.drawFullMap?.(canvas,zoom);};
+    renderCurrent=()=>{
+      for(const legend of pursuitLegends)legend.hidden=!state().wanted;
+      if(!region)game.drawFullMap?.(canvas,zoom);
+    };
     interval=setInterval(()=>renderCurrent?.(),300);
   }
   function keyRows() {
@@ -427,9 +435,9 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
     for(const {label,points} of Object.values(wantedRules)){
       pointsList.append(node('dt','',label),node('dd','',points?'+'+points:'0'));
     }
-    const {repeatWindow, repeatStep, maxRepeatBonus, calmDelay, decayRate}=wantedTuning;
-    rules.append(pointsList,node('p','mc-guide-aside','La même infraction répétée en moins de '+repeatWindow+' s rapporte '+Math.round(repeatStep*100)+' % de plus par répétition, jusqu’à +'+Math.round(maxRepeatBonus*100)+' %.'));
-    alert.append(levels,node('p','mc-guide-aside','Après '+calmDelay+' s sans infraction, l’alerte baisse. À Maille City, échappe à la vue des policiers pour la faire baisser dès 10 s.'),rules);
+    const {repeatWindow, repeatStep, maxRepeatBonus}=wantedTuning;
+    rules.append(pointsList,node('p','mc-guide-aside','Avant deux étoiles, répéter la même infraction en moins de '+repeatWindow+' s rapporte '+Math.round(repeatStep*100)+' % de plus par répétition, jusqu’à +'+Math.round(maxRepeatBonus*100)+' %. Dès deux étoiles, les vols, dégâts matériels et tirs sans victime valent un quart de leurs points.'));
+    alert.append(levels,node('p','mc-guide-aside','La police poursuit tant qu’elle te voit. Quand elle te perd, la zone en pointillés marque ta dernière position connue. Sors du cercle et reste hors de vue jusqu’à la fin du compte à rebours.'),rules);
 
     const controls=node('details','mc-guide-details');
     controls.append(node('summary','','Commandes clavier et souris'),keyRows());

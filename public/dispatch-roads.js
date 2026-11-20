@@ -254,7 +254,7 @@ export function stepDispatchFoot(state,goal,age,stride,walkable,face=goal){
 
 // Find a connected approach from beyond the immediate block. Edge directions
 // are reversed for the search so the resulting path can be driven forwards.
-export function planDistantDispatch(scene,type,roads,clear,walkable,from=null,block=null){
+export function planDistantDispatch(scene,type,roads,clear,walkable,from=null,block=null,spawnDistance=122){
   const spec=vehicleSpec(type),nodes=new Map();
   function node(point){
     const [x,y]=point,key=Math.round(x*2)+','+Math.round(y*2);
@@ -286,7 +286,7 @@ export function planDistantDispatch(scene,type,roads,clear,walkable,from=null,bl
       const n=frontier.pop(),travel=dist.get(n);
       if(closed.has(n))continue;
       closed.add(n);
-      const spawn=from?distance(n,from)<13:distance(n,scene)>=122;
+      const spawn=from?distance(n,from)<13:distance(n,scene)>=spawnDistance;
       if(spawn&&travel>=10){
         const points=from?[[from.x,from.y]]:[];
         for(let p=n;p;p=next.get(p))points.push([p.x,p.y]);

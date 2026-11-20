@@ -36,7 +36,7 @@ function loadPursuit(){
     const entry=JSON.parse(sessionStorage.getItem(pursuitKey)||'null');
     if(!entry || !Number.isFinite(entry.savedAt))return null;
     const elapsed=Math.max(0,(Date.now()-entry.savedAt)/1000);
-    return createWanted(entry.snapshot,-elapsed).snapshot(0);
+    return {...createWanted(entry.snapshot,-elapsed).snapshot(0),report:entry.snapshot?.report};
   }catch{return null;}
 }
 const vitalityKey='maillecity.vitality.v1';

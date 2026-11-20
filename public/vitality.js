@@ -8,6 +8,11 @@ export function impactEvent(at,angle,force,duration,seed){
   return {at,until:at+clamp(duration,250,8000),angle:Math.atan2(Math.sin(angle),Math.cos(angle)),force:clamp(force,0,1),seed:seed&65535};
 }
 export function pedestrianDamage(speed){return clamp(Math.round((Math.abs(speed)-1)*2.9),3,66);}
+export function npcVehicleDamage(speed){return clamp(Math.round((Math.abs(speed)-2.2)*7.6),6,100);}
+export const isLawOfficer=type=>type==='police'||type==='swat';
+export const npcMaxHealth=type=>type==='police'?70:type==='swat'?85:100;
+export const officerBodyLifetime=24000;
+export const npcIsDead=state=>!!state&&(state.dead===true||state.health===0&&isLawOfficer(state.type));
 export function crashDamage(speed){return clamp(Math.round((Math.abs(speed)-8)*1.65),0,43);}
 export function createVitality(initial,now=Date.now(),recoveryDelay=koDurationMs){
   let health,medkits,downUntil,protectedUntil,hitAt,medicAt,lastTick,fall,lifeEvent=null,serial=0;
@@ -87,11 +92,13 @@ export function createVitality(initial,now=Date.now(),recoveryDelay=koDurationMs
     get health(){return health;},get down(){return health===0;},get ragdoll(){return fall;},get downUntil(){return downUntil;},get bleeding(){return bleeding;}};
 }
 
-export function npcHealthAt(state,now){
-  if(!state||!Number.isFinite(state.health))return 100;
+export function npcHealthAt(state,now,type=state?.type){
+  if(npcIsDead(state))return 0;
+  const maximum=npcMaxHealth(type);
+  if(!state||!Number.isFinite(state.health))return maximum;
   if(state.downUntil>now)return 0;
   const recovering=state.health===0,from=recovering?state.downUntil:state.healthAt;
   const loss=bleedDamageBetween(state.bleeding,from,now);
   const base=recovering?65:Math.max(Math.min(state.health,1),state.health-loss);
-  return clamp(base+Math.max(0,now-finite(from,now)-10000)*.004,0,100);
+  return clamp(base+Math.max(0,now-finite(from,now)-10000)*.004,0,maximum);
 }

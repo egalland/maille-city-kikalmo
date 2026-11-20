@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {canIdentify,crimeHeardOrSeen,responseUnits,observePursuit,canUseForce,custodyTime} from '../public/police-perception.js';
+import {canIdentify,crimeHeardOrSeen,responseUnits,observePursuit,canUseForce,custodyTime,policeSearchArea,searchEscapeDelay} from '../public/police-perception.js';
 import {createWanted} from '../public/wanted.js';
 
 const eye={x:0,y:0,angle:0}, clear=()=>true;
@@ -15,6 +15,13 @@ test('a unit needs a clear view or receives a report; an unknown suspect does no
   assert.notDeepEqual(next,suspect);assert.ok(Math.hypot(next.x-21,next.y)<=17);
   report.at++;report.x=-51;report.y=3;
   assert.deepEqual(look(8,false),{x:-51,y:3});
+});
+test('search circles are tied to the sighting, and higher levels take longer to escape',()=>{
+  assert.equal(policeSearchArea(eye,0,true),null);
+  const near=policeSearchArea(eye,1,true),wide=policeSearchArea(eye,5,false);
+  assert.deepEqual([near.x,near.y,near.visible,wide.visible],[0,0,true,false]);
+  assert.ok(wide.radius>near.radius*2&&searchEscapeDelay(5)>searchEscapeDelay(1));
+  assert.equal(canIdentify(eye,{x:10,y:0,lift:71},clear),false);
 });
 test('unobserved actions, hearing, line of sight and incapacitated witnesses',()=>{
   const suspect={x:20,y:0};

@@ -19,14 +19,23 @@ test('A lone gunshot stays below a star. Repeating it builds visible progress to
 
 test('Repetition is per infraction, capped at 60%, and expires after six seconds', () => {
   const wanted = createWanted();
-  assert.equal(wanted.add('hitPlayer', 0).points, wantedRules.hitPlayer.points);
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 6; i++) {
     const state = wanted.add('gunshot', i * .1);
     assert.equal(state.lastGain, Math.min(8, 5 + i));
   }
   assert.equal(wanted.add('gunshot', 7).lastGain, 5);
   assert.equal(wanted.add('stealVehicle', 8).lastGain, 24);
-  assert.equal(wanted.add('stealService', 8.5).lastGain, 38);
+  assert.equal(createWanted().add('stealService', 8.5).lastGain, 38);
+});
+
+test('minor repeat offences slow down after two stars, and later levels are spaced farther apart',()=>{
+  const wanted=createWanted();
+  wanted.add('hitOfficer',0);assert.equal(wanted.add('hitOfficer',.5).level,2);
+  for(let i=0;i<25;i++)assert.equal(wanted.add('gunshot',1+i*.3).lastGain,1.3);
+  assert.equal(wanted.state().level,2);
+  assert.equal(wanted.add('hitOfficer',9).lastGain,wantedRules.hitOfficer.points);
+  assert.equal(wanted.state().level,2);
+  wanted.add('hitOfficer',9.5);assert.equal(wanted.add('hitOfficer',10).level,3);
 });
 
 test('Cooldown decays only after sustained calm, even across late frames or peaceful input', () => {
@@ -57,7 +66,7 @@ test('All five stars use explicit thresholds, including when cooling and hitting
   assert.equal(wanted.state().points, wantedTuning.maxPoints);
   assert.equal(wanted.state().level, 5);
   assert.equal(wanted.state().lastGain, 0);
-  assert.equal(wanted.tick(42).level, 4);
+  assert.equal(wanted.tick(49).level, 4);
 });
 
 test('Sector travel transfers the exact points, remaining grace and repeat window to a fresh timeline', () => {
@@ -79,12 +88,14 @@ test('Sector travel transfers the exact points, remaining grace and repeat windo
 test('Legacy saves retain their displayed level and malformed or unknown inputs remain bounded', () => {
   const wanted = createWanted();
   assert.equal(wanted.restore({heat: .16, sinceCrime: 12}, 20).level, 1);
-  assert.equal(wanted.restore({wanted: 3, heat: 2.2}, 0).points, 110);
-  assert.equal(wanted.add('__proto__', 0).points, 110);
-  assert.equal(wanted.add('toString', 0).points, 110);
+  assert.equal(wanted.restore({wanted: 3, heat: 2.2}, 0).points, wantedThresholds[2]);
+  assert.equal(wanted.add('__proto__', 0).points, wantedThresholds[2]);
+  assert.equal(wanted.add('toString', 0).points, wantedThresholds[2]);
+  for(const [index,points] of [18,55,110,185,280].entries())
+    assert.equal(wanted.restore({version:1,points}).level,index+1);
   wanted.restore({points: 20, lastAction: 'gunshot', ages: {gunshot: [6, -2, '1']}}, 0);
   assert.equal(wanted.add('gunshot', 0).lastGain, 5);
-  assert.equal(wanted.restore({points: 1e12}, 1).points, 320);
+  assert.equal(wanted.restore({points: 1e12}, 1).points, wantedTuning.maxPoints);
   assert.equal(wanted.restore(null, NaN).level, 0);
 });
 

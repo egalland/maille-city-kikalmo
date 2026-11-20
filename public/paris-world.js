@@ -1145,7 +1145,8 @@ function drawLocalMap(context,canvas,view,w,h,dpr){
   const left=tile.x-(w/2+pad)/scale,top=tile.y-(h/2+pad)/scale;
   context.drawImage(tile.source,left,top,tile.source.width/(dpr*scale),tile.source.height/(dpr*scale));
 }
-export function paintMap(canvas,player,{full=false,districtZoom=false,peers=[],vehicles=[],pickups=[],tracked=null,dpr=Math.min(2,globalThis.devicePixelRatio||1)}={}){
+export function paintMap(canvas,player,{full=false,districtZoom=false,peers=[],vehicles=[],pickups=[],tracked=null,
+  search=null,police=[],dpr=Math.min(2,globalThis.devicePixelRatio||1)}={}){
   if(!canvas||!player)return;
   const rect=canvas.getBoundingClientRect?.(),w=Math.round(rect?.width||canvas.width),h=Math.round(rect?.height||canvas.height);
   if(!w||!h)return;
@@ -1164,6 +1165,14 @@ export function paintMap(canvas,player,{full=false,districtZoom=false,peers=[],v
     c.beginPath();c.arc(x,y,r,0,TAU);c.fillStyle=color;c.fill();
     if(stroke){c.strokeStyle=stroke;c.lineWidth=1.7;c.stroke();}
   };
+  if(search){
+    const x=px(search.x),y=py(search.y),r=Math.max(full?10:0,search.radius*v.scale);
+    c.save();c.beginPath();c.arc(x,y,r,0,TAU);
+    c.fillStyle=search.visible?'#f4636942':'#ffb96936';c.fill();
+    c.strokeStyle=search.visible?'#ff8582':'#ffc98a';c.lineWidth=2;
+    if(!search.visible)c.setLineDash([5,4]);
+    c.stroke();c.restore();
+  }
   if(tracked){
     const x=clamp(px(tracked.x),8,w-8),y=clamp(py(tracked.y),8,h-8);
     c.beginPath();c.moveTo(px(player.x),py(player.y));c.lineTo(x,y);
@@ -1197,6 +1206,13 @@ export function paintMap(canvas,player,{full=false,districtZoom=false,peers=[],v
     }
   }
   if(isEnfer)paintCareerNavigation(c,player,streets,{px,py,w,h,full});
+  for(const unit of police){
+    const x=px(unit.x),y=py(unit.y);
+    if(x<2||x>w-2||y<2||y>h-2)continue;
+    c.save();c.translate(x,y);c.rotate(unit.angle||0);
+    c.beginPath();c.moveTo(5,0);c.lineTo(-3.6,3.6);c.lineTo(-3.6,-3.6);c.closePath();
+    c.fillStyle='#a9d3ff';c.fill();c.strokeStyle='#223955';c.lineWidth=1.35;c.stroke();c.restore();
+  }
   for(const p of peers){
     const x=px(p.x),y=py(p.y);
     if(x>=0&&x<=w&&y>=0&&y<=h)circle(x,y,3.5,'#f2a89a',yarnPalette.ink);

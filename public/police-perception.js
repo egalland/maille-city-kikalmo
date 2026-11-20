@@ -1,11 +1,19 @@
 // Observations contain copies. An unseen suspect can never move a previous sighting.
 const position = point => ({x:point.x, y:point.y});
 const gap = (a,b) => Math.hypot(a.x-b.x,a.y-b.y);
+const searchRadii=[52,70,94,118,145];
+
+export function policeSearchArea(report,stars,visible){
+  if(!report||!stars)return null;
+  return {x:report.x,y:report.y,radius:searchRadii[stars-1],visible:!!visible};
+}
+
+export function searchEscapeDelay(stars){return 8+Math.max(0,stars-1)*2;}
 
 export function canIdentify(observer,suspect,clear) {
   if(!observer||!suspect||observer.down||observer.stunned)return false;
   const distance=gap(observer,suspect);
-  if(distance>(suspect.motion==='crouch'?29:45))return false;
+  if(Math.hypot(distance,(suspect.lift||0)-(observer.lift||0))>(suspect.motion==='crouch'?29:52))return false;
   if(distance>12){
     const bearing=Math.atan2(suspect.y-observer.y,suspect.x-observer.x);
     if(Math.cos(bearing-(observer.angle||0))<-.15)return false;
@@ -28,7 +36,8 @@ export function observePursuit(state,{now,observer,suspect,report,clear,walkable
   if(!state.lastKnown||state.reportAt<(report.at||0)){
     state.lastKnown=position(report);state.reportAt=report.at||0;state.searched=0;state.searchGoal=null;
   }
-  if(now>=(state.nextLook||0)){
+  if(!observer)state.visible=false;
+  else if(now>=(state.nextLook||0)){
     state.nextLook=now+.28;
     state.visible=canIdentify(observer,suspect,clear);
     if(state.visible){

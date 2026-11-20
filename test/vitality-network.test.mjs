@@ -130,6 +130,26 @@ test('Peers receive bounded player vitality, a public avatar without linking dat
   assert.equal(second.length,0);assert.deepEqual(second.rays,[]);assert(!Object.hasOwn(second,'impact'));
 });
 
+test('a fallen police officer remains dead across time and reconnect while a new patrol starts at full health',async t=>{
+  const {browser,epoch,advance}=sharedWorld(t);
+  const driver=browser('Conducteur'),observer=browser('Témoin');
+  assert.deepEqual(await Promise.all([driver.net.start(),observer.net.start()]),[true,true]);
+  const original='u-p-test-first-0-foot',replacement='u-p-test-second-0-foot';
+  const hit=(id,damage)=>driver.net.emit('npc',{id,type:'police',x:11,y:10,damage,cause:'traffic'});
+  const world=()=>observer.net.world().npcs;
+  assert.ok(hit(original,30));
+  await until(()=>world()[original]?.health===40,'Police start with 70 HP');
+  assert.ok(hit(original,50));
+  await until(()=>world()[original]?.dead===true,'Both clients receive a lethal result');
+  const deathAt=world()[original].healthAt;
+  assert.equal(deathAt,epoch);
+  advance(20000);assert.ok(hit(original,20));assert.ok(hit(replacement,10));
+  await until(()=>world()[replacement]?.health===60,'The replacement has its own health');
+  assert.equal(world()[original].health,0);assert.equal(world()[original].healthAt,deathAt);
+  observer.net.stop();assert(await observer.net.start());
+  assert.equal(world()[original].dead,true);assert.equal(world()[replacement].health,60);
+});
+
 
 test('a second online player receives the climb, landing, and vehicle transition; pavement pickups require ground reach',async t=>{
   const {browser}=sharedWorld(t),a=browser('Grimpe'),b=browser('Parvis');

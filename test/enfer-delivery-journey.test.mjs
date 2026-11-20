@@ -98,8 +98,9 @@ test('walk, board, deliver, crash, repair and start a new job on the continuous 
     for(let i=0;i<10;i++){step();if(i%3===0)await sync();}
   }
   assert.ok(hud.wanted>=1,'witnesses reported shots near the unloading place');
+  const reported=game.getPursuitSnapshot().report;
   await driveTo(careerPlaces.garage);
-  assert.equal(hud.wanted,0,'the search ends when the moving suspect loses contact');
+  assert.ok(hud.wanted&&distance(game.getPursuitSnapshot().report,reported)>65,'the patrol follows the slowly moving driver beyond the initial search area');
   if(hud.vehicleHealth===100){
     const g=game.getPosition();let obstacle;
     for(let d=6;d<21&&!obstacle;d+=.6)for(let i=0;i<32;i++){

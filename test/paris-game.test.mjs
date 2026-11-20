@@ -5,6 +5,7 @@ import { createGame } from '../public/game.js';
 import { propMaxHealth } from '../public/prop-damage.js';
 import { vehicleSpec, vehicleDoorways } from '../public/vehicle-types.js';
 import { nearbyWeaponDrops } from '../public/weapon-drops.js';
+import {wantedThresholds} from '../public/wanted.js';
 
 test('Chase-camera controls, car possession, shared effects and travel share the real Paris world',()=>{
   const saved={};for(const k of ['document','window','requestAnimationFrame','cancelAnimationFrame'])saved[k]=globalThis[k];
@@ -88,7 +89,7 @@ test('Chase-camera controls, car possession, shared effects and travel share the
     assert.deepEqual(visiblePeers.map(e=>e.id),['nearby-fox']);
     eventCallback({type:'npc',player:'nearby-fox',data:{id:'unit-police-nearby-fox',kind:'police',...here,started:epoch-13000,level:1}});
     step();
-    const officer=viewState.entities.find(e=>e.id==='unit-police-nearby-fox-foot');
+    const officer=viewState.entities.find(e=>e.id.startsWith('u-p-nearbyfox-')&&e.id.endsWith('-foot'));
     assert(officer);
     const clearance=Math.hypot(officer.x-otherSpot.x,officer.y-otherSpot.y);
     assert.ok(clearance>=.75&&clearance<4,'the officer reaches the remote suspect while leaving both bodies clear');
@@ -265,9 +266,22 @@ test('One action gives exactly one wanted event, preserves the action weight on 
   assert.equal(h.state.wanted,2);assert.equal(h.state.wantedEvent.points,33.6);
   const saved=game.exportTravelState();assert.deepEqual(saved.pursuit,game.getPursuitSnapshot());
   assert(game.restoreTravelState(saved));assert.equal(h.state.wantedPoints,71.6);
-  assert(game.restoreTravelState({...saved,pursuit:{points:290,sinceCrime:0}}));h.step(26);
+  assert(game.restoreTravelState({...saved,pursuit:{points:wantedThresholds.at(-1),sinceCrime:0}}));h.step(26);
   assert.equal(h.state.wanted,5);assert.equal(h.state.wantedProgress,1);
   assert(h.actions.some(e=>e.name==='npc'&&e.data.kind==='swat'&&e.data.level===5));
+});
+
+test('a suspect must stay outside the last-known search circle until the countdown ends',t=>{
+  const h=startGame(t),{game}=h;
+  const departure=game.exportTravelState();
+  const report={x:departure.x-210,y:departure.y,enfer:false};
+  assert(game.restoreTravelState({...departure,pursuit:{points:18,report}}));
+  h.step(35);
+  assert.match(h.state.policeContact,/^Hors zone/);
+  assert.deepEqual(game.getPursuitSnapshot().report,report);
+  h.step(250);assert.equal(h.state.wanted,1);
+  h.step(225);assert.equal(h.state.wanted,0);
+  assert(h.notices.some(message=>message.includes('semé la police')));
 });
 
 test('A rejected prediction restores the other player’s confirmed damage and keeps the object solid',t=>{

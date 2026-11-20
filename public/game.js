@@ -3,13 +3,13 @@ import {airfields,isAircraft} from './airfield.js';
 import {stepAircraft,aircraftObstructed} from './flight.js';
 import {planAutorotation,sampleAutorotation,flightSampleMs} from './autorotation.js';
 import {ammoCapacity,reloadMagazine} from './ammunition.js';
-import {vehicleContact,createVehicleDisplacements} from './vehicle-contact.js';
+import {vehicleContact,createVehicleDisplacements,sweptPedestrianContact} from './vehicle-contact.js';
 import {automaticGear,stepRoadDrive,impactSpeeds} from './vehicle-handling.js';
 import {cameraOptions,cameraModes,readCameraOptions,writeCameraOptions} from './camera-options.js';
 import {createFrameMeter} from './diagnostics.js';
 import {roadblockSite,findOfficerCover} from './police-tactics.js';
 import {crouchedPace,isLow,behindCar,guardedFraction} from './guard-stance.js';
-import {crimeHeardOrSeen,observePursuit,responseUnits,canUseForce,custodyTime} from './police-perception.js';
+import {crimeHeardOrSeen,observePursuit,responseUnits,canUseForce,custodyTime,policeSearchArea,searchEscapeDelay} from './police-perception.js';
 import {careerPlaces} from './career-catalog.js';
 import {officerKit} from './officer-kit.js';
 import {stepVehicleBody} from './vehicle-motion.js';
@@ -37,7 +37,7 @@ import { peerViewTime, recordPeerMotion, readPeerMotion } from './peer-motion-ne
 import { createView } from './game-render.js';
 import { nearbyWeaponDrops, weaponDrops } from './weapon-drops.js';
 import { createWanted } from './wanted.js';
-import { createVitality, impactEvent, npcHealthAt, pedestrianDamage, crashDamage } from './vitality.js';
+import { createVitality, impactEvent, npcHealthAt, npcMaxHealth, npcIsDead, isLawOfficer, officerBodyLifetime, npcVehicleDamage, pedestrianDamage, crashDamage } from './vitality.js';
 import { activeBleeding, bleedingAfterHit, hitSeverity } from './bleeding.js';
 import { ragdollPose } from './ragdoll.js';
 import { vehicleSpec, isVehicleType, vehicleDoorways } from './vehicle-types.js';
@@ -103,7 +103,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   }
   const displacedDrivers=new Map(),officerFiring=new Map();
   const policeReports=new Map();
-  let crouched=false,knownByPolice=false,lastThreat=-Infinity,custody=0;
+  let crouched=false,knownByPolice=false,lastThreat=-Infinity,custody=0,searchOutsideSince=null;
   const retiredVehicles=new Map(),vehicleWear=new Map(),exploded=new Set(),reactions=new Map(),audio=createStreetAudio();
   const propHealth=new Map(),confirmedProps=new Map(),soloProps=new Map(),pendingImpacts=new Map(),rewardedProps=new Set();
   let propDamageRevision=0,impactNumber=0;
@@ -132,6 +132,8 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   let weapon='pistol',car=null,nearCar=null,boarding=null,suspension=null,speed=0,vx=0,vy=0,steer=0,turn=0,impact=0,shootPose=0,braking=false;
   let yaw=p.angle,pitch=.13,drag=null,freeLookUntil=0,cameraSnap=true,stickX=0,stickY=0,aimX=0,aimY=0,fireHeld=false,sprintHeld=false,paused=false;
   let time=0,epoch=net?.serverTime?.()||Date.now(),networkTick=0,hudTick=0,mapTick=0,popTick=0,trafficTick=0,routeClock=0,lastState='',ready=false;
+  if(p.wanted&&initialPursuit?.report?.enfer===isEnfer&&Number.isFinite(initialPursuit.report.x+initialPursuit.report.y))
+    policeReports.set(net?.id||'self',{...initialPursuit.report,at:epoch});
   let reloading=0,cooldown=0,contactLock=0,actionAt=-2,score=0,arrivalChecked=false,isRunning=true;
   let roadMotion=null,mobileSteer=0,mobileThrottle=0,mobileLift=0;
   let actors=[],cars=[],routeActors=[],routeCars=[],remotes=[],obstacles=[],previousFrame=performance.now(),frameId;
@@ -220,7 +222,8 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     const canBail=inAircraft&&heightAboveLanding(p)>.16;
     const canBailRoad=!!(car||passengerSeat)&&!inAircraft&&p.lift<=.35&&Math.abs(speed)>=tumbleSpeed;
     const state={piloting,inAircraft,canBail,canBailRoad,flightHeight:inAircraft?Math.round(heightAboveLanding(p)):0,traversalReady,traversalAction,armor:armorLayer.armor,...life.state(epoch),health:Math.ceil(life.health),passenger:!!passengerSeat,nearPassengerSeat:!!nearCar?.peer,vehicleName:passengerSeat?'Passager · '+vehicleSpec(passengerSeat.type).label:car?vehicleSpec(car.type).label:'',vehicleHealth:passengerSeat?vehicleHealth({id:passengerSeat.car}):car?vehicleHealth(car):100,nearVehicleName:nearCar?vehicleSpec(nearCar.type).label:'',wanted:p.wanted,wantedPoints:wanted.points,wantedProgress:wanted.progress,wantedEvent,ownedWeapons:ownedWeapons(),nearPickup,trackedDrop:tracker(),district:district(),street:streetName,weapon,reserve:reserve[weapon],ammo:Number.isFinite(ammo[weapon])?ammo[weapon]:'∞',
-      crouched:isLow(p),policeContact:isEnfer&&p.wanted?(knownByPolice?'Repéré':'Recherché'):'',
+      crouched:isLow(p),policeContact:p.wanted?(knownByPolice?'En poursuite':searchOutsideSince!==null
+        ?'Hors zone · '+Math.max(0,Math.ceil(searchEscapeDelay(p.wanted)-time+searchOutsideSince))+' s':'Zone de recherche'):'',
       maxAmmo:Number.isFinite(weapons[weapon].mag)?weapons[weapon].mag:'∞',nearVehicle:!!nearCar,jackTarget:!!nearCar&&hasDriver(nearCar),boarding:!!boarding,inVehicle:!!(car||passengerSeat),gear:car?automaticGear(vehicleSpec(car.type),speed):null,speed:Math.round(Math.abs(speed)*3.6),score,
       reloading:reloading>0,ready,graphics:view.mode||(view.available?'webgl':'unavailable')};
     const packed=JSON.stringify(state);if(force||packed!==lastState){onState(state);lastState=packed;}
@@ -231,10 +234,33 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     const eye=(isLow(b)?.77:1.15)+(b.lift||0);
     return !behindCar(a,b,cars,trafficContact)&&!behindCar(b,a,cars,trafficContact)&&cameraDistance(a.x,a.y,isLow(a)?.77:1.25,Math.atan2(b.y-a.y,b.x-a.x),distance,eye,destroyed,.05)>=distance-.32;
   }
+  function responderId(d,part){
+    if(!isLawOfficer(d.kind))return d.id+'-'+part;
+    const [source,slot]=d.id.slice(('unit-'+d.kind+'-').length).split(':');
+    return 'u-'+(d.kind==='police'?'p':'s')+'-'+source.replaceAll('-','')+'-'+Math.round(d.started).toString(36)+'-'+(slot||0)+'-'+part;
+  }
+  function pursuitArea(){
+    if(!p.wanted)return null;
+    const id=net?.id||'self';
+    if(!policeReports.has(id))policeReports.set(id,{x:p.x,y:p.y,angle:p.angle,at:epoch});
+    return policeSearchArea(policeReports.get(id),p.wanted,knownByPolice);
+  }
+  function pursuitSnapshot(){
+    const snapshot=pursuit.snapshot(time),area=pursuitArea();
+    return area?{...snapshot,report:{x:area.x,y:area.y,enfer:isEnfer}}:snapshot;
+  }
+  function policeMap(){
+    return {search:pursuitArea(),police:p.wanted?[...actors.filter(o=>isLawOfficer(o.type)&&!o.down),
+      ...cars.filter(v=>isLawOfficer(v.driverRole)&&v.occupied)]:[]};
+  }
   function dispatch(kind,scene=p,slot=0){
     const id='unit-'+kind+'-'+(net?.id||'self')+(slot?':'+slot:''),old=incidents.get(id);
-    if(old&&epoch-old.started<(isEnfer?76000:42500))return;
-    const d={id,kind,x:scene.x,y:scene.y,angle:scene.angle||0,started:epoch,level:p.wanted};
+    if(old){
+      const officer=isLawOfficer(kind)&&npcShared.get(responderId(old,'foot'));
+      const replaceAt=npcIsDead(officer)?officer.healthAt+(p.wanted>=3?11000:17500):old.started+(isEnfer?76000:42500);
+      if(epoch<replaceAt)return;
+    }
+    const d={id,kind,x:scene.x,y:scene.y,angle:scene.angle||0,started:Math.round(epoch),level:p.wanted};
     incidents.set(id,d);emit('npc',d);
   }
   function dispatchPursuit(){
@@ -244,11 +270,11 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   function recordAction(action){
     if(isEnfer&&!crimeHeardOrSeen(action,p,[...actors,...remotes,...cars.filter(v=>v.occupied||v.routeId)],clearSight))return;
     const id=net?.id||'self',lastReport=policeReports.get(id);
+    const level=p.wanted,result=pursuit.add(action,time);
+    p.wanted=result.level;searchOutsideSince=null;
     if(['hitOfficer','hitCivilian','hitPlayer','gunshot'].includes(action))lastThreat=time;
     policeReports.set(id,{x:p.x,y:p.y,angle:p.angle,at:epoch});
-    if(net?.id&&(!lastReport||epoch-lastReport.at>1400||dist(lastReport,p)>15))emit('alert',{x:p.x,y:p.y,angle:p.angle,level:p.wanted});
-    const result=pursuit.add(action,time);
-    p.wanted=result.level;
+    if(net?.id&&(level!==p.wanted||!lastReport||epoch-lastReport.at>1400||dist(lastReport,p)>15))emit('alert',{x:p.x,y:p.y,angle:p.angle,level:p.wanted});
     if(result.lastGain)wantedEvent={id:++actionNumber,action,points:Math.round(result.lastGain*10)/10};
     if(action==='destroy')dispatch('firefighter');
     if(['hitCivilian','hitOfficer','hitPlayer'].includes(action))dispatch('medic');
@@ -342,19 +368,19 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   function rememberNpc(d,canonical=false){
     if(!d?.id||!Number.isFinite(d.x)||!Number.isFinite(d.y))return;
     const prev=npcShared.get(d.id),stamp=d.healthAt||d.stunnedUntil||0;
-    if(stamp+90000<epoch||(d.stunnedUntil<=epoch&&npcHealthAt(d,epoch)>=100))return;
+    if(stamp+90000<epoch||(d.stunnedUntil<=epoch&&npcHealthAt(d,epoch)>=npcMaxHealth(d.type)))return;
     if(!prev||stamp>(prev.healthAt||prev.stunnedUntil||0)||(canonical&&stamp===(prev.healthAt||prev.stunnedUntil||0)))npcShared.set(d.id,d);
   }
   function hurtNpc(actor,amount,angle,force,strike=null,weaponId=null){
-    const old=npcShared.get(actor.id),before=npcHealthAt(old,epoch);
+    const old=npcShared.get(actor.id),before=npcHealthAt(old,epoch,actor.type);
     if(before<=0)return false;
-    const health=Math.max(0,before-amount),downUntil=health===0?epoch+6500:0;
+    const health=Math.max(0,before-amount),downUntil=health===0?epoch+6500:0,dead=health===0&&isLawOfficer(actor.type);
     let fall=old?.ragdoll?.until>epoch?old.ragdoll:null;
     if(downUntil||(!fall&&!strike&&!weaponId&&force>=.70))fall=impactEvent(epoch,fallDirection(actor,angle),force,downUntil?6500:680+force*840,nextSeed());
     const cause=strike?'melee':weaponId?'weapon':'traffic';
     const bleeding=downUntil?null:bleedingAfterHit(old?.bleeding,hitSeverity(cause,amount,weaponId),epoch);
     const update={id:actor.id,x:actor.x,y:actor.y,type:actor.type,angle:actor.angle,color:actor.color,vehicleType:actor.vehicleType,
-      damage:amount,health,healthAt:epoch,threatX:p.x,threatY:p.y,downUntil,stunnedUntil:fall?.until||0,ragdoll:fall,bleeding,cause,...(weaponId?{weapon:weaponId}:{})};
+      damage:amount,health,healthAt:epoch,threatX:p.x,threatY:p.y,downUntil,stunnedUntil:fall?.until||0,ragdoll:fall,bleeding,cause,...(dead?{dead}:{}),...(weaponId?{weapon:weaponId}:{})};
     if(strike){
       const landing=knockbackEnd(actor,angle,meleeMoves[strike.kind].push,WALKER_RADIUS);
       update.recoil={at:epoch,fromX:actor.x,fromY:actor.y,angle,force};
@@ -364,7 +390,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     npcShared.set(actor.id,update);emit('npc',update);
     const reaction=(strike||weaponId)&&reactionTo(actor,p,epoch,true);
     if(reaction)reactions.set(actor.id,{...reaction,attacker:net?.id||'self'});
-    actor.health=health;actor.stunned=!!fall;actor.impact=1;actor.bleeding=bleeding;return true;
+    actor.health=health;actor.stunned=!!fall;actor.down=health===0;actor.dead=dead;actor.impact=1;actor.bleeding=bleeding;return true;
   }
   function trafficContact(v,person,margin=.1){
     const dx=person.x-v.x,dy=person.y-v.y,c=Math.cos(v.angle),s=Math.sin(v.angle),shape=vehicleSpec(v.type);
@@ -910,8 +936,15 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     const age=(epoch-d.started)/1000;
     const role=d.kind,type=services[role];
     if(age<0||age>(isEnfer?76:42.5)||!type||dist(d,p)>350)return;
-    const vehicleId=d.id+'-car',footId=d.id+'-foot';
+    const vehicleId=responderId(d,'car'),footId=responderId(d,'foot');
+    const injury=npcShared.get(footId);
     if(retired(vehicleId)||vehicleWear.get(vehicleId)?.fireAt||vehicleWear.get(vehicleId)?.hp===0)return;
+    if(npcIsDead(injury)){
+      const vehicle=dispatchStates.get(d)?.vehicle;
+      if(vehicle&&car?.id!==vehicleId&&!carsShared.has(vehicleId)&&!remotes.some(e=>e.vehicle?.id===vehicleId))
+        cars.push({...vehicle,id:vehicleId,type,isCar:true,driverRole:role,moving:false,move:false,speed:0});
+      return;
+    }
     const playerBody=car?collisionBody({...p,...car,isCar:true,vx,vy,speed}):
       pedestrianBody({...p,player:true,vx,vy,down:life.down,stunned:incapacitated(),ragdoll:ragdollPose(life.ragdoll,p.angle,epoch)});
     const bodies=[playerBody,...[...actors,...remotes,...cars,...trafficBlockers]
@@ -923,25 +956,30 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       halfWidth:spec.halfWidth+.12,destroyed,colliders});
     const [sourceId,slot]=d.id.slice(('unit-'+role+'-').length).split(':');
     const local=sourceId===(net?.id||'self'),suspect=local?p:remotes.find(r=>r.id===sourceId);
-    const police=role==='police'||role==='swat',chasing=police&&!!suspect?.wanted;
+    const police=isLawOfficer(role),chasing=police&&responseUnits(suspect?.wanted||0).some(([kind,index])=>kind===role&&index===(Number(slot)||0));
     let state=dispatchStates.get(d);
     if(!state){state={plan:null,arrived:null,foot:null,nextPlan:0,roadGoal:null};dispatchStates.set(d,state);}
     const report=policeReports.get(sourceId)||{...d,at:d.started};
     const vision=state.perception||(state.perception={});
     const observer=state.walker||state.foot||state.vehicle;
-    const officerDown=(npcShared.get(footId)?.downUntil||0)>epoch;
+    const officerDown=Math.max(injury?.downUntil||0,injury?.stunnedUntil||0)>epoch;
     const observedTarget=chasing?observePursuit(vision,{now:time,observer:officerDown?null:observer,suspect,report,
       clear:clearSight,walkable,slot:Number(slot)||0}):isEnfer&&role==='medic'?(suspect||d):d;
     if(isEnfer&&role==='swat'&&!slot&&d.level>=3&&chasing&&state.block===undefined){
       state.block=roadblockSite(report,nearbyDrivableStreets(report.x,report.y,100),vehicleSpec(type),(q,spec)=>carClear(q,spec,bodies));
     }
-    const destination=(chasing&&state.block)||observedTarget;
+    const suspectCar=chasing&&(local?car:suspect?.isCar&&suspect.vehicle);
+    const followingCar=!!(suspectCar&&vision.visible&&!isAircraft(suspectCar.type));
+    const velocity=local?{vx,vy}:suspect;
+    const lead=followingCar?Math.min(1.8,28/Math.max(1,Math.hypot(velocity.vx||0,velocity.vy||0))):0;
+    const ahead=lead?{x:observedTarget.x+(velocity.vx||0)*lead,y:observedTarget.y+(velocity.vy||0)*lead}:observedTarget;
+    const destination=(chasing&&state.block)||ahead;
     if(chasing&&vision.visible&&!officerDown){
       if(local)knownByPolice=true;
       if(epoch-report.at>550)policeReports.set(sourceId,{...vision.lastKnown,angle:suspect.angle||0,at:epoch});
     }
-    if(!state.foot&&age>=state.nextPlan&&(!state.plan||isEnfer&&state.vehicle&&state.roadGoal&&dist(state.roadGoal,destination)>38)){
-      state.nextPlan=age+3.5;
+    if(!state.foot&&age>=state.nextPlan&&(!state.plan||isEnfer&&state.vehicle&&(!state.roadGoal||dist(state.roadGoal,destination)>(followingCar?19:34)))){
+      state.nextPlan=age+(chasing?2:3.5);
       const reserved=[...bodies];
       for(const other of incidents.values()){
         const plan=other!==d&&dispatchStates.get(other)?.plan;
@@ -950,9 +988,11 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       const origin=state.vehicle||null;
       const available=(q,spec,parking)=>carClear(q,spec,parking||origin?reserved:[]);
       const roads=nearbyDrivableStreets(destination.x,destination.y,isEnfer?260:62);
-      const plan=isEnfer?planDistantDispatch(destination,type,roads,available,walkable,origin,chasing?state.block:null)
+      const plan=isEnfer?(planDistantDispatch(destination,type,roads,available,walkable,origin,chasing?state.block:null,
+        chasing&&role==='police'?67:122)
+        ||(chasing&&!origin&&!state.block&&age>=4?planDispatch(destination,type,roads,available,walkable):null))
         :planDispatch(destination,type,roads,available,walkable);
-      if(plan)Object.assign(state,{plan,distance:null,arrived:null,wait:0,roadGoal:{x:destination.x,y:destination.y}});
+      if(plan)Object.assign(state,{plan,distance:null,arrived:null,wait:0,roadGoal:{x:destination.x,y:destination.y},followUntil:null});
       else if(state.block){state.blockAttempts=(state.blockAttempts||0)+1;if(state.blockAttempts>=2)state.block=null;}
       else if(!isEnfer)state.arrived??=2;
     }
@@ -962,8 +1002,14 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         const vehicle=vehicleHealth({id:vehicleId})>0?stepDispatch(state,age,dt,(q,spec)=>carClear(q,spec,bodies)):null;
         if(vehicle){
           state.vehicle=vehicle;
-          cars.push({...vehicle,id:vehicleId,type,isCar:true,driverId:footId,driverRole:role,occupied:state.arrived==null,siren:true,move:vehicle.moving});
-          if(state.arrived!=null)state.foot=dispatchDoor(vehicle,type,destination,freeFoot);
+          cars.push({...vehicle,id:vehicleId,type,isCar:true,driverId:footId,driverRole:role,occupied:!state.foot,siren:true,move:vehicle.moving});
+          if(state.arrived!=null){
+            if(isEnfer&&followingCar&&!state.block&&dist(vehicle,suspect)>10){
+              state.followUntil??=age+3;
+              if(age<state.followUntil)state.roadGoal=null;
+              else state.foot=dispatchDoor(vehicle,type,destination,freeFoot);
+            }else state.foot=dispatchDoor(vehicle,type,destination,freeFoot);
+          }
         }else if(!state.vehicle){
           state.plan=null;if(!isEnfer)state.arrived=age;
         }else if(vehicleHealth({id:vehicleId})===0&&dist(state.vehicle,destination)<85){
@@ -978,7 +1024,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       }
     }else if(state.vehicle&&state.foot&&vehicleHealth({id:vehicleId})>0&&car?.id!==vehicleId&&!carsShared.has(vehicleId)&&!remotes.some(e=>e.vehicle?.id===vehicleId)){
       const holding=!!(chasing&&state.block&&dist(state.vehicle,state.block)<4);
-      cars.push({...state.vehicle,id:vehicleId,type,isCar:true,siren:holding,moving:false,move:false,speed:0});
+      cars.push({...state.vehicle,id:vehicleId,type,isCar:true,driverRole:role,siren:holding,moving:false,move:false,speed:0});
       if(holding&&local&&!state.announced&&dist(p,state.vehicle)<55){state.announced=true;onNotice('Barrage de police dans cette rue.');}
     }
     if(!isEnfer&&!state.plan&&!state.foot&&age>=(state.nextEntry||0)){
@@ -987,12 +1033,12 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     if(!state.foot||age<(state.arrived??age)+.3)return;
     const level=clamp(d.level||0,0,5);
     const target=chasing?(isEnfer?(vision.visible?observedTarget:destination):suspect):role==='medic'&&suspect?suspect:d;
-    const velocity=local?{vx,vy}:suspect;
     const moving=target===suspect&&Math.hypot(velocity?.vx||0,velocity?.vy||0)>.8;
     const heading=moving?Math.atan2(velocity.vy,velocity.vx):(suspect?.angle||0);
     const down=suspect&&(local?incapacitated():suspect.stunned||suspect.down);
     const closeContact=!!(chasing&&target===suspect&&!down&&!(local?car:suspect.isCar));
-    const stride=(role==='swat'?2.4:1.7)+(chasing ? .25*level : 0)+(isEnfer&&state.walker&&dist(state.walker,target)>24?1.6:0);
+    const stride=chasing?Math.min(5.9,3.35+.28*Math.max(level,suspect.wanted)+(state.walker&&dist(state.walker,target)>16?1.1:0)):
+      role==='swat'?2.4:1.7;
     const parked=cars.find(v=>v.id===vehicleId);
     let occupied;
     const available=q=>{
@@ -1036,7 +1082,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     }
     const foot=stepDispatchFoot(state,spot,age,stride,canWalk,target);
     if(state.walker)state.walker.motion=foot.motion=spot.motion==='crouch'&&dist(foot,spot)<.8?'crouch':foot.moving?'walk':'idle';
-    const kit=role==='police'||role==='swat'?officerKit(role,level):null;
+    const kit=police?officerKit(role,chasing?Math.max(level,suspect.wanted):level):null;
     actors.push({...foot,id:footId,type:role,responder:true,closeContact,walk:t*8,kit,engaged:!!kit&&local&&chasing&&vision.visible});
   }
   function pickThreat(reaction){
@@ -1167,20 +1213,23 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       if(actor)Object.assign(actor,goal);else actors.push(goal);
     }
     for(const [id,state] of npcShared){
+      const dead=npcIsDead(state),age=epoch-state.healthAt;
+      if(dead&&age>=officerBodyLifetime){if(age>90000)npcShared.delete(id);continue;}
       const health=npcHealthAt(state,epoch),until=Math.max(state.stunnedUntil||0,state.downUntil||0);
-      if(health>=100&&until+800<epoch){npcShared.delete(id);continue;}
+      if(health>=npcMaxHealth(state.type)&&until+800<epoch){npcShared.delete(id);continue;}
       if(dist(state,p)>135)continue;
       let actor=actors.find(e=>e.id===id);
-      if(until<=epoch&&!actor&&epoch-state.healthAt>10000)continue;
+      if(!dead&&until<=epoch&&!actor&&age>10000)continue;
       if(!actor){
         if(id.endsWith('-driver')&&health>0)continue;
         const body=id.endsWith('-driver')?vehicleDoorways({...state,type:state.vehicleType||'sedan'},.7).find(q=>!blocked(q.x,q.y,.48,destroyed)):null;
         actor={...state,...body,cabinExit:body,type:state.type||'human'};actors.push(actor);
       }
-      actor.health=health;actor.down=state.downUntil>epoch;actor.bleeding=actor.down?null:activeBleeding(state.bleeding,epoch);
-      const fall=ragdollPose(state.ragdoll,state.angle||0,epoch);
-      actor.impact=Math.max(0,1-(epoch-state.healthAt)/300);
-      if(until>epoch){
+      actor.health=health;actor.dead=dead;actor.down=dead||state.downUntil>epoch;actor.bleeding=actor.down?null:activeBleeding(state.bleeding,epoch);
+      const fallAt=dead&&state.ragdoll?Math.min(epoch,state.ragdoll.until-450):epoch;
+      const fall=ragdollPose(state.ragdoll,state.angle||0,fallAt);
+      actor.impact=Math.max(0,1-age/300);
+      if(dead||until>epoch){
         Object.assign(actor,{x:actor.cabinExit?.x??state.x,y:actor.cabinExit?.y??state.y,angle:state.angle,moving:false,move:false,stunned:!!fall||actor.down,braced:true,speed:0,
           ragdoll:fall});
         const reaction=recoilPhase(state.recoil,epoch);
@@ -1205,7 +1254,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     }
     const fixedBodies=[...(onDeckLevel(p)?[{...selfBody,lift:p.lift}]:[]),...remotes.filter(onDeckLevel).map(collisionBody),...cars.map(collisionBody)];
     // Begin with the pedestrians' last resolved positions, then let them react to this frame's actual vehicles.
-    const walkerBodies=actors.map(e=>collisionBody((!e.stunned&&lastWalkers.get(e.id))||e));
+    const walkerBodies=actors.filter(e=>!e.down).map(e=>collisionBody((!e.stunned&&lastWalkers.get(e.id))||e));
     drives=traffic.step(ambient,{dt,epoch,observer:p,excluded,checkpoints:trafficPeers.checkpoints,
       blockers:[...fixedBodies.filter(body=>!(body.lift>3.15)),...walkerBodies],blockedPose:streetBlocked,onVehicleContact:trafficContactImpulse,recycleAfter:28});
     const actualDrives=displacedCars.size?drives.map(v=>displacedCars.has(v.id)?{...v}:v):drives;
@@ -1224,8 +1273,8 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         const authority=[net?.id||'self',...remotes.filter(e=>dist(e,v)<34).map(e=>e.id)].sort()[0];
         if(authority!==(net?.id||'self'))continue;
         for(const actor of actors){
-          if(actor.stunned||!trafficContact(v,actor,-.04)||(npcShared.get(actor.id)?.healthAt||0)>epoch-2300)continue;
-          hurtNpc(actor,pedestrianDamage(v.speed),v.angle,clamp(Math.abs(v.speed)/13,.42,1));break outer;
+          if(actor.down||actor.stunned||!trafficContact(v,actor,-.04)||(npcShared.get(actor.id)?.healthAt||0)>epoch-2300)continue;
+          hurtNpc(actor,npcVehicleDamage(v.speed),v.angle+(v.speed<0?Math.PI:0),clamp(Math.abs(v.speed)/13,.70,1));break outer;
         }
       }
     }
@@ -1240,7 +1289,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   }
   function exportTravelState(){
     return {
-      version:2,sourceId:net?.id||'',x:p.x,y:p.y,angle:p.angle,yaw,pitch,vx,vy,health:p.health,vitality:life.snapshot(),wanted:p.wanted,pursuit:pursuit.snapshot(time),
+      version:2,sourceId:net?.id||'',x:p.x,y:p.y,angle:p.angle,yaw,pitch,vx,vy,health:p.health,vitality:life.snapshot(),wanted:p.wanted,pursuit:pursuitSnapshot(),
       score,weapon,ownedWeapons:ownedWeapons(),reloading,
       reserve:Object.fromEntries(ownedWeapons().filter(k=>Number.isFinite(ammo[k])).map(k=>[k,reserve[k]])),
       ammo:Object.fromEntries(ownedWeapons().filter(k=>Number.isFinite(ammo[k])).map(k=>[k,ammo[k]])),
@@ -1315,6 +1364,9 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     life.restore({...s.vitality,health:finite(s.health,100,0,100)},epoch);p.health=life.health;
     acceptShotsFrom=Math.max(Math.floor(net?.serverTime?.()??epoch),life.snapshot().protectedUntil||0);
     p.wanted=pursuit.restore(s.version===2?s.pursuit:{wanted:s.wanted,heat:s.heat,sinceCrime:s.sinceCrime},time).level;
+    const report=s.pursuit?.report,id=net?.id||'self';
+    policeReports.delete(id);searchOutsideSince=null;knownByPolice=false;
+    if(p.wanted&&report?.enfer===isEnfer&&dist(p,report)<600)policeReports.set(id,{...report,angle:p.angle,at:epoch});
     wantedEvent=null;nearPickup=null;score=Math.round(finite(s.score,0,0,1e9));
     const before=owned.size;
     if(s.version===2)addLoadout(s.ownedWeapons);
@@ -1676,7 +1728,8 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       const targetAngle=p.angle+(steer*wheel*turnRate*(onRoad?1:.18)+collisionSpin)*dt;
       const c=Math.cos(targetAngle),s=Math.sin(targetAngle),driveX=c*speed-s*lateralSpeed,driveY=s*speed+c*lateralSpeed;
       const dx=driveX*dt,dy=driveY*dt;
-      const options={radius:1,angle:targetAngle,...dimensions(car),footZ:p.lift||0,bodyHeight:spec.height,destroyed,colliders:obstacles};
+      const options={radius:1,angle:targetAngle,...dimensions(car),footZ:p.lift||0,bodyHeight:spec.height,destroyed,
+        colliders:obstacles.filter(body=>!body.person||body.player)};
       let result=moveBody(p.x,p.y,dx,dy,options);
       if(!paused&&(Math.abs(sy)>.12||Math.abs(speed)>.6)){
         const sign=Math.sign(sy||speed);
@@ -1693,6 +1746,27 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
           }
         }
       }
+      const collisionPace=Math.abs(oldSpeed);
+      const travelDistance=dist(p,result);
+      if(collisionPace>=2.8&&travelDistance>.005){
+        let struck=0,hitOfficer=false;
+        const heading=targetAngle+(oldSpeed<0?Math.PI:0);
+        const height=terrainHeight(p.x,p.y)+(p.lift||0);
+        for(const actor of actors){
+          if(actor.down||actor.stunned||dist(actor,p)>spec.halfLength+travelDistance+1.1||
+             Math.abs(height-(actor.lift||0)-terrainHeight(actor.x,actor.y))>1.25||
+             (npcShared.get(actor.id)?.healthAt||0)>epoch-1100||
+             !sweptPedestrianContact(p,result,targetAngle,spec,actor))continue;
+          if(hurtNpc(actor,npcVehicleDamage(collisionPace),heading,clamp(collisionPace/12,.70,1))){
+            struck++;hitOfficer||=isLawOfficer(actor.type);
+          }
+        }
+        if(struck){
+          speed*=Math.max(.78,.96-.028*struck);
+          impact=Math.max(impact,.22);
+          recordAction(hitOfficer?'hitOfficer':'hitCivilian');
+        }
+      }
       if(result.hit){
         const otherCar=result.touched?.isCar&&!isAircraft(result.touched.type)?result.touched:null;
         const shunt=otherCar&&vehicleContact({type:car.type,x:p.x,y:p.y,angle:targetAngle,vx:driveX,vy:driveY,spin:collisionSpin},
@@ -1707,18 +1781,13 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
             emit('vehicleShunt',{id:otherId,type:otherCar.type,x:otherCar.x,y:otherCar.y,...shunt.b});
           }
         }
-        const struck=actors.find(e=>e.id===result.touched?.id);
-        if(struck&&!struck.stunned&&Math.abs(speed)>4.8&&hurtNpc(struck,pedestrianDamage(speed),targetAngle+(speed<0?Math.PI:0),clamp(Math.abs(speed)/13,.4,1)))
-          recordAction(['police','swat'].includes(struck.type)?'hitOfficer':'hitCivilian');
         if(result.touched?.id==='boundary')speed*=.78;
         else if(contactLock<=0 && normalSpeed>2.2){
           impact=clamp(normalSpeed/12,.25,1);tone(95,.10,'triangle',.04,38);
-          if(!struck){
-            const other=result.touched?.isCar?vehicleSpec(result.touched.type):null;
-            const impulse=impactSpeeds(spec,other,normalSpeed);
-            damageChassis({...car,x:p.x,y:p.y,angle:p.angle},{cause:'crash',speed:impulse.own});
-            if(other)damageChassis(result.touched,{cause:'crash',speed:impulse.struck});
-          }
+          const other=result.touched?.isCar?vehicleSpec(result.touched.type):null;
+          const impulse=impactSpeeds(spec,other,normalSpeed);
+          damageChassis({...car,x:p.x,y:p.y,angle:p.angle},{cause:'crash',speed:impulse.own});
+          if(other)damageChassis(result.touched,{cause:'crash',speed:impulse.struck});
           if(normalSpeed>11.5){damage(crashDamage(normalSpeed),targetAngle,.3,'crash');if(life.down)return;}
           if(!otherCar&&result.touched?.id&&remotes.some(e=>e.id===result.touched.id)&&normalSpeed>8){
             emit('hit',{target:result.touched.id,damage:pedestrianDamage(oldSpeed),force:clamp(Math.abs(oldSpeed)/15,.4,1),angle:targetAngle+(speed<0?Math.PI:0),cause:'traffic'});recordAction('hitPlayer');
@@ -1816,12 +1885,16 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       const loaded=reloadMagazine(ammo[weapon],reserve[weapon],weapons[weapon].mag);
       ammo[weapon]=loaded.clip;reserve[weapon]=loaded.reserve;
     }}
-    const wasWanted=p.wanted;
-    const call=incidents.get('unit-police-'+(net?.id||'self'));
-    const awaitingUnit=call&&epoch-call.started<26000&&dist(p,call)<13;
-    const wanted=pursuit.tick(time,isEnfer&&!knownByPolice&&!awaitingUnit,knownByPolice);p.wanted=wanted.level;
+    const wasWanted=p.wanted,search=pursuitArea();
+    if(search&&!knownByPolice&&dist(p,search)>search.radius)searchOutsideSince??=time;
+    else searchOutsideSince=null;
+    if(searchOutsideSince!==null&&time-searchOutsideSince>=searchEscapeDelay(wasWanted)){
+      pursuit.clear(time);searchOutsideSince=null;policeReports.delete(net?.id||'self');
+    }else pursuit.tick(time,false,!!search);
+    p.wanted=pursuit.state().level;
     if(wasWanted&&!p.wanted)onNotice('Fin des recherches · Tu as semé la police.');
-    for(const [id,report] of policeReports)if(epoch-report.at>120000)policeReports.delete(id);
+    for(const [id,report] of policeReports)
+      if(epoch-report.at>120000&&!(p.wanted&&id===(net?.id||'self')))policeReports.delete(id);
     const medic=!car&&p.lift<1.2&&actors.some(o=>o.type==='medic'&&!o.stunned&&dist(o,p)<2.7);
     if(life.tick(epoch,medic)){
       acceptShotsFrom=life.snapshot().protectedUntil;
@@ -1925,7 +1998,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     drawAimLock();
     networkTick-=dt;if(networkTick<=0){publish();networkTick=.12;}
     hudTick-=dt;if(hudTick<=0){sendHud();hudTick=.12;}
-    mapTick-=dt;if(mapTick<=0){mapTick=.16;if(minimap)paintMap(minimap,p,{full:false,peers:remotes,vehicles:cars,pickups,tracked:trackedDrop});}
+    mapTick-=dt;if(mapTick<=0){mapTick=.16;if(minimap)paintMap(minimap,p,{full:false,peers:remotes,vehicles:cars,pickups,tracked:trackedDrop,...policeMap()});}
     if(measure)diagnostics.frame(t,populationMs,renderStart-simStart,hudStart-renderStart,performance.now()-hudStart,presented!==false,()=>({
       actors:actors.length,cars:cars.length+(car?1:0)+remotes.filter(e=>e.isCar).length,peers:remotes.length,
       requests:net?.requestCount??0,rtt:net?.lastRtt,mode:view.mode,draws:view.drawCalls
@@ -2153,7 +2226,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   });
   ready=true;sendHud(true);
   if(view.available){receivePeerSnapshots();syncPeers();population(.016);publish();frame(previousFrame+.1);}
-  return {available:view.available,diagnostics,get graphicsMode(){return view.mode;},getCameraOptions:()=>({...cameraConfig}),setCameraOptions,destinations,travel,exportTravelState,restoreTravelState,getPursuitSnapshot:()=>pursuit.snapshot(time),getVitalitySnapshot:()=>life.snapshot(),
+  return {available:view.available,diagnostics,get graphicsMode(){return view.mode;},getCameraOptions:()=>({...cameraConfig}),setCameraOptions,destinations,travel,exportTravelState,restoreTravelState,getPursuitSnapshot:pursuitSnapshot,getVitalitySnapshot:()=>life.snapshot(),
     setSkin(value){baseSkin=foxSkin(value).id;p.color=withJacket(baseSkin,jacketDye);publish();},
     setCareerOutfit(state){jacketDye=state.dye||null;p.color=withJacket(baseSkin,jacketDye);armorLayer.apply(state);sendHud(true);},
     getArmorWear:()=>armorLayer.wear(),
@@ -2180,7 +2253,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     getRoadMotion(){return paused||incapacitated()?null:roadMotion;},
     getAvailableDrops,
     trackDrop(drop){trackedDrop=drop;sendHud(true);},
-    drawFullMap(target,districtZoom=false){paintMap(target,p,{districtZoom,full:true,peers:net?.peers?.()||remotes,vehicles:cars,pickups:getAvailableDrops(),tracked:trackedDrop});},
+    drawFullMap(target,districtZoom=false){paintMap(target,p,{districtZoom,full:true,peers:net?.peers?.()||remotes,vehicles:cars,pickups:getAvailableDrops(),tracked:trackedDrop,...policeMap()});},
     destroy(){isRunning=false;clearAimLock();cancelAnimationFrame(frameId);detachEvent?.();view.dispose();
       window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);window.removeEventListener('blur',resetInputs);document.removeEventListener('visibilitychange',visibility);
       canvas.removeEventListener('pointerdown',pointerDown);canvas.removeEventListener('pointermove',pointerMove);canvas.removeEventListener('pointerup',pointerUp);

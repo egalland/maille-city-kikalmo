@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {vehicleContact,createVehicleDisplacements} from '../public/vehicle-contact.js';
+import {vehicleContact,createVehicleDisplacements,sweptPedestrianContact} from '../public/vehicle-contact.js';
 import {createTrafficFlow} from '../public/traffic-flow.js';
 import {vehicleSpec} from '../public/vehicle-types.js';
 import {createGame} from '../public/game.js';
@@ -8,6 +8,33 @@ import {localDatabase} from '../scripts/local-db.mjs';
 import {handleApi} from '../worker/game-api.js';
 
 const body=(type,x,y,vx,vy)=>({type,x,y,angle:0,vx,vy});
+test('a pedestrian in a fast swept path takes one hit without stopping the player vehicle',t=>{
+  const saved=Object.fromEntries(['window','document','requestAnimationFrame','cancelAnimationFrame'].map(k=>[k,globalThis[k]]));
+  globalThis.window=new EventTarget();globalThis.document=new EventTarget();
+  let frame,scene,receive,stamp=performance.now(),clock=1782250000000;
+  globalThis.requestAnimationFrame=cb=>(frame=cb,1);globalThis.cancelAnimationFrame=()=>{};
+  const start={x:325,y:-744},angle=Math.atan2(120,244),c=Math.cos(angle),s=Math.sin(angle);
+  const at=(d,lateral=0)=>({x:start.x+c*d-s*lateral,y:start.y+s*d+c*lateral});
+  const pedestrian={...at(6.8),id:'test-pedestrian',type:'human',health:96,healthAt:clock-3000,
+    stunnedUntil:clock+1500,angle:angle+Math.PI/2};
+  const spec=vehicleSpec('sedan');
+  assert.ok(sweptPedestrianContact(start,at(12),angle,spec,pedestrian));
+  assert.ok(!sweptPedestrianContact(start,at(12),angle,spec,at(6.8,2)));
+  const events=[];
+  const net={id:'test-driver',status:'offline',world:()=>({}),peers:()=>[],serverTime:()=>clock,
+    onEvent(fn){receive=fn;},emit:(type,data)=>{events.push({type,data});return true;}};
+  const game=createGame({canvas:new EventTarget(),net,buildView:()=>({available:true,render:s=>{scene=s;},aim:()=>0,effect(){},dispose(){}})});
+  t.after(()=>{game.destroy();for(const [k,v] of Object.entries(saved))if(v===undefined)delete globalThis[k];else globalThis[k]=v;});
+  assert.ok(game.restoreTravelState({...game.exportTravelState(),...start,angle,vehicle:{id:'test-car',type:'sedan',speed:17}}));
+  receive({type:'npc',player:'witness',data:pedestrian});
+  for(let i=0;i<32;i++){stamp+=1000/60;clock+=1000/60;frame(stamp);}
+  const contacts=events.filter(e=>e.type==='npc'&&e.data.id===pedestrian.id);
+  assert.equal(contacts.length,1);
+  assert.equal(contacts[0].data.health,0);
+  assert.ok((scene.p.x-pedestrian.x)*c+(scene.p.y-pedestrian.y)*s>0);
+  assert.ok(game.exportTravelState().vehicle.speed>14);
+});
+
 test('two bumpers share momentum; glancing contact retains tangent and turns the bodies',()=>{
   const car=body('compact',0,0,12,3),truck=body('van',4,0,2,1),normal=[-1,0];
   const hit=vehicleContact(car,truck,...normal),m1=vehicleSpec(car.type).mass,m2=vehicleSpec(truck.type).mass;

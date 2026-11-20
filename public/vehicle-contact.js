@@ -66,3 +66,17 @@ export function createVehicleDisplacements(){
   function retain(ids){for(const id of states.keys())if(!ids.has(id))states.delete(id);}
   return {push,advance,retain,has:id=>states.has(id),clear:()=>states.clear(),delete:id=>states.delete(id),get size(){return states.size;}};
 }
+// In the vehicle's frame, sweep the pedestrian against the expanded bumper
+// and side panels. The endpoint is the move actually allowed by walls and cars.
+export function sweptPedestrianContact(start,end,angle,spec,actor){
+  const c=Math.cos(angle),s=Math.sin(angle),ax=actor.x-start.x,ay=actor.y-start.y,dx=end.x-start.x,dy=end.y-start.y;
+  const axes=[[ax*c+ay*s,dx*c+dy*s,spec.halfLength+.24],[-ax*s+ay*c,-dx*s+dy*c,spec.halfWidth+.24]];
+  let enter=0,exit=1;
+  for(const [offset,travel,limit] of axes){
+    if(Math.abs(travel)<.00001){if(Math.abs(offset)>limit)return false;continue;}
+    const a=(offset-limit)/travel,b=(offset+limit)/travel;
+    enter=Math.max(enter,Math.min(a,b));exit=Math.min(exit,Math.max(a,b));
+    if(exit<enter)return false;
+  }
+  return true;
+}

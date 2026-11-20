@@ -1,6 +1,7 @@
 // Local pursuit uses a monotonic game clock in seconds. Snapshots contain ages,
 // so loading the next sector does not depend on the new page's clock origin.
-export const wantedThresholds = Object.freeze([18, 55, 110, 185, 280]);
+const previousThresholds=[0,18,55,110,185,280,320];
+export const wantedThresholds = Object.freeze([18, 55, 225, 475, 800]);
 
 export const wantedTuning = Object.freeze({
   repeatWindow: 6,
@@ -8,7 +9,7 @@ export const wantedTuning = Object.freeze({
   maxRepeatBonus: .6,
   calmDelay: 22,
   decayRate: 2.75,
-  maxPoints: 320
+  maxPoints: 850
 });
 
 function rule(label, points) {
@@ -30,6 +31,16 @@ const maxRepeats = Math.round(wantedTuning.maxRepeatBonus / wantedTuning.repeatS
 const isInfraction = action => Object.hasOwn(wantedRules, action) && wantedRules[action].points > 0;
 const finite = (value, fallback) => Number.isFinite(value) ? value : fallback;
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+const minor=new Set(['gunshot','destroy','stealVehicle','stealService']);
+
+function migratePoints(points){
+  const ranges=[0,...wantedThresholds,wantedTuning.maxPoints];
+  for(let i=1;i<previousThresholds.length;i++){
+    const lower=previousThresholds[i-1],upper=previousThresholds[i];
+    if(points<=upper)return ranges[i-1]+(ranges[i]-ranges[i-1])*clamp((points-lower)/(upper-lower),0,1);
+  }
+  return wantedTuning.maxPoints;
+}
 
 function legacyPoints(snapshot) {
   const oldLevel = clamp(Math.ceil(finite(snapshot.wanted, finite(snapshot.heat, 0))), 0, wantedThresholds.length);
@@ -93,10 +104,12 @@ export function createWanted(initialSnapshot = null, startTime = 0) {
     advance(time);
     if (!isInfraction(action)) return state();
     const previous = recent(action);
-    const bonus = Math.min(wantedTuning.maxRepeatBonus, previous.length * wantedTuning.repeatStep);
-    const gain = Math.round(wantedRules[action].points * (1 + bonus) * 10) / 10;
+    const escalating=points>=wantedThresholds[1];
+    const bonus = escalating?0:Math.min(wantedTuning.maxRepeatBonus, previous.length * wantedTuning.repeatStep);
+    const weight=escalating&&minor.has(action)?.25:1;
+    const gain = Math.round(wantedRules[action].points * (1 + bonus) * weight * 10) / 10;
     const total = Math.min(wantedTuning.maxPoints, points + gain);
-    lastGain = total - points;
+    lastGain = Math.round((total - points)*10)/10;
     lastAction = action;
     lastCrimeTime = clock;
     points = total;
@@ -112,13 +125,14 @@ export function createWanted(initialSnapshot = null, startTime = 0) {
       const times = recent(action);
       if (times.length) ages[action] = times.map(at => clock - at);
     }
-    return {version: 1, points, lastAction, lastGain, sinceCrime: lastCrimeTime === null ? null : clock - lastCrimeTime, ages};
+    return {version: 2, points, lastAction, lastGain, sinceCrime: lastCrimeTime === null ? null : clock - lastCrimeTime, ages};
   }
 
   function restore(value, time = clock) {
     clear(time);
     if (!value || typeof value !== 'object') return state();
-    points = clamp(finite(value.points, legacyPoints(value)), 0, wantedTuning.maxPoints);
+    points = value.version===1&&Number.isFinite(value.points)?migratePoints(value.points):
+      clamp(finite(value.points, legacyPoints(value)), 0, wantedTuning.maxPoints);
     if (points === 0) return state();
     // An older travel snapshot has its already-decayed heat and elapsed calm time.
     // Retain its displayed star count. Do not apply its elapsed decay a second time.
