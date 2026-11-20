@@ -2,8 +2,8 @@
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export function stepVehicleBody(previous,{x,y,angle,speed,halfLength,dt},ground){
   const c=Math.cos(angle),s=Math.sin(angle),wheelbase=halfLength*.73;
-  const floor=ground(x,y);
-  const slope=(ground(x+c*wheelbase,y+s*wheelbase)-ground(x-c*wheelbase,y-s*wheelbase))/(wheelbase*2);
+  const floor=ground(x,y,angle,previous?previous.height-previous.lift:undefined);
+  const slope=(ground(x+c*wheelbase,y+s*wheelbase,angle,floor)-ground(x-c*wheelbase,y-s*wheelbase,angle,floor))/(wheelbase*2);
   const pitch=Math.atan(clamp(slope,-.7,.7));
   if(!previous)return {height:floor,lift:0,vy:0,pitch,slope,landed:0};
   if(previous.lift>0){

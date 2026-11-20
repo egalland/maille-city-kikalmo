@@ -8,7 +8,8 @@ import {feltStone as stone,feltSlate as roofs,windowCloth,glassCloth,shopCloth,z
 import {paintKnit as knitArchitecture} from './wool-art.js';
 import {createBleedFibers} from './bleed-fibers.js';
 import {fiberLifetime,impactFibers} from './puppet-combat.js';
-import {terrainHeight,terrainGradient,buildingGround,waterLevel,walkingPose} from './terrain-height.js';
+import {gradedRoad} from './enfer-bridges.js';
+import {terrainHeight,terrainGradient,roadHeight,buildingGround,waterLevel,walkingPose} from './terrain-height.js';
 import {terracePanels} from './street-terraces.js';
 import {propDebris,propWearProfile,propWearStage,trackPropWear} from './prop-wear.js';
 import {buildShotEffect,effectDuration} from './weapon-effects.js';
@@ -58,7 +59,7 @@ function getSpatial(){
       const a=way.path[i-1],b=way.path[i],dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy);
       if(len<.4)continue;
       const bounds=loopBounds([a,b]),w=Math.max(1.8,way.w||4);bounds.r+=w;bounds.l-=w;bounds.rr+=w;bounds.t-=w;bounds.b+=w;
-      ways.add({a,b,nx:-dy/len,ny:dx/len,len,w,way,bounds});
+      ways.add({a,b,nx:-dy/len,ny:dx/len,len,w,way,index:i-1,bounds});
     }
   }
   spatial={blocks,ways};return spatial;
@@ -323,7 +324,7 @@ export function createCanvasView(canvas,spawn,onNotice){
     return {s:-dx*fy+dy*fx,v:v*cos-forward*sin,d:forward*cos+v*sin};
   }
   function project(v){return {x:w*.5+f*v.s/v.d,y:h*.5-f*v.v/v.d,d:v.d};}
-  function at(x,y,z){const p=xyz(x,y,z);return p.d>=near?project(p):null;}
+  function at(x,y,z,ground){const p=xyz(x,y,z,ground);return p.d>=near?project(p):null;}
   function drawBlood(strands,opacity=1){
     if(!strands)return;
     g.save();g.lineCap='round';g.lineJoin='round';g.globalAlpha=opacity;
@@ -376,7 +377,7 @@ export function createCanvasView(canvas,spawn,onNotice){
     }
   }
   function projectPoly(points){
-    const input=points.map(o=>xyz(o[0],o[1],o[2])),clipped=[];
+    const input=points.map(o=>xyz(...o)),clipped=[];
     let a=input[input.length-1];
     for(const b of input){
       if((a.d>=near)!==(b.d>=near)){const t=(near-a.d)/(b.d-a.d);clipped.push({s:mix(a.s,b.s,t),v:mix(a.v,b.v,t),d:near});}
@@ -400,13 +401,17 @@ export function createCanvasView(canvas,spawn,onNotice){
   }
   function roadRibbon(seg,extra,color,offset=0,a=seg.a,b=seg.b){
     const len=Math.hypot(b[0]-a[0],b[1]-a[1]);
-    if(len>18){
-      const parts=Math.ceil(len/18);let p=a;
+    const span=gradedRoad(seg.way,seg.index)?3:18;
+    if(len>span){
+      const parts=Math.ceil(len/span);let p=a;
       for(let j=1;j<=parts;j++){const q=[mix(a[0],b[0],j/parts),mix(a[1],b[1],j/parts)];roadRibbon(seg,extra,color,offset,p,q);p=q;}
       return;
     }
     const rad=Math.max(.035,seg.w*.5+extra),l=offset-rad,r=offset+rad,{nx,ny}=seg;
-    const plane=projectPoly([[a[0]+nx*l,a[1]+ny*l,0],[b[0]+nx*l,b[1]+ny*l,0],[b[0]+nx*r,b[1]+ny*r,0],[a[0]+nx*r,a[1]+ny*r,0]]);
+    const points=[[a,l],[b,l],[b,r],[a,r]].map(([p,d])=>{
+      const x=p[0]+nx*d,y=p[1]+ny*d;return [x,y,0,roadHeight(seg.way,seg.index,x,y)];
+    });
+    const plane=projectPoly(points);
     fillPath(plane,color);
   }
   function ellipseGround(x,y,r,z,color){
@@ -823,7 +828,7 @@ export function createCanvasView(canvas,spawn,onNotice){
     followX+=(p.x-followX)*blend;followY+=(p.y-followY)*blend;
     const model=car?vehicleSpec(car.type):null;
     fx=Math.cos(yaw);fy=Math.sin(yaw);const goal=car?8.15+Math.max(0,model.halfLength-2)*1.24+Math.min(heli?5.5:2.25,Math.abs(state.speed||0)*.065):5.25;
-    const swimming=!car&&p.motion==='swim',followGround=swimming?swimGround:terrainHeight;
+    const swimming=!car&&p.motion==='swim',followGround=swimming?swimGround:(x,y)=>terrainHeight(x,y,p.angle);
     const lift=(p.lift||0)-(swimming?.55:0),focus=lift+(car?Math.max(1.35,model.height*.77):1.17),wantedH=lift+(car?Math.max(2.92,model.height+1.05):2.18)+pitch*2.8;
     const ground=followGround(followX,followY),backGround=followGround(followX-fx*goal,followY-fy*goal),look=car?6.3:4.15;
     const dist=clamp(cameraDistance(followX,followY,focus,yaw+Math.PI,goal,wantedH,destroyed,.16,followGround),.3,goal);
@@ -882,11 +887,12 @@ export function createCanvasView(canvas,spawn,onNotice){
       for(const sign of [-1,1]){
         const dx=(s.b[0]-s.a[0])/s.len,dy=(s.b[1]-s.a[1])/s.len,edge=sign*(s.w*.5+.74);
         const a=[s.a[0]-dy*edge,s.a[1]+dx*edge],b=[s.b[0]-dy*edge,s.b[1]+dx*edge];
-        const face=(bottom,top,color)=>poly3([[...a,bottom],[...b,bottom],[...b,top],[...a,top]],color);
+        const ah=roadHeight(s.way,s.index,...a),bh=roadHeight(s.way,s.index,...b);
+        const face=(bottom,top,color)=>poly3([[...a,bottom,ah],[...b,bottom,bh],[...b,top,bh],[...a,top,ah]],color);
         face(-.51,.27,'#94837d');face(.7,.88,'#4a444e');
         for(let d=.6;d<s.len;d+=2.7){
           const x=a[0]+dx*d,y=a[1]+dy*d;
-          const foot=at(x,y,.22),head=at(x,y,.8);
+          const deck=roadHeight(s.way,s.index,x,y),foot=at(x,y,.22,deck),head=at(x,y,.8,deck);
           if(foot&&head){g.strokeStyle='#514950';g.lineWidth=Math.max(1,w/head.d*.006);g.beginPath();g.moveTo(foot.x,foot.y);g.lineTo(head.x,head.y);g.stroke();}
         }
       }
@@ -964,7 +970,8 @@ export function createCanvasView(canvas,spawn,onNotice){
     const playerBody=uprightBody(state.entities.find(e=>e.self));
     for(const e of state.entities){
       const swimmer=e.motion==='swim'&&!e.isCar;
-      const lift=swimmer?swimGround(e.x,e.y)-terrainHeight(e.x,e.y)-.67:e.lift||0,base=at(e.x,e.y,lift),high=e.isCar?vehicleSpec(e.type).height:1.78,top=at(e.x,e.y,lift+high);
+      const roadOffset=terrainHeight(e.x,e.y,e.angle)-terrainHeight(e.x,e.y);
+      const lift=swimmer?swimGround(e.x,e.y)-terrainHeight(e.x,e.y)-.67:(e.lift||0)+roadOffset,base=at(e.x,e.y,lift),high=e.isCar?vehicleSpec(e.type).height:1.78,top=at(e.x,e.y,lift+high);
       if(!base||!top||base.d>(e.isCar?160:96)||base.d<.61)continue;
       const ph=base.y-top.y;if(ph<2||base.x<-ph*2||base.x>w+ph*2)continue;
       // Collinear urban façades can hide traffic even though the shared simulation still runs behind them.
@@ -972,11 +979,11 @@ export function createCanvasView(canvas,spawn,onNotice){
       const fray=base.d<42?blood.actor(e):null;
       queue.push({z:depth(e.x,e.y)-.09,draw:()=>{
         const wid=ph*(e.isCar?.77:.27);
-        const floor=e.supportHeight||0,shadow=at(e.x,e.y,floor),shadowScale=1/(1+Math.max(0,lift-floor)*.08);
+        const floor=e.supportHeight||0,shadow=at(e.x,e.y,floor+roadOffset),shadowScale=1/(1+Math.max(0,lift-floor)*.08);
         if(shadow&&!swimmer){g.fillStyle='rgba(62,49,64,.25)';g.beginPath();g.ellipse(shadow.x,shadow.y-1,Math.max(1,wid*shadowScale),Math.max(1,wid*.2*shadowScale),0,0,tau);g.fill();}
         const theta=Math.atan2(e.y-camY,e.x-camX)-(e.angle||0);
         if(e.isCar){
-          const slope=terrainGradient(e.x,e.y);
+          const slope=terrainGradient(e.x,e.y,e.angle);
           g.save();g.translate(base.x,base.y);g.rotate(-Math.atan(-fy*slope.x+fx*slope.y));drawCanvasCar(g,e,0,0,ph,time,theta);g.restore();
         }
         else{

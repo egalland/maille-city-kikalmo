@@ -78,7 +78,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   let wearStorage;try{wearStorage=globalThis.localStorage;}catch{}
   const armorLayer=createArmorLayer(wearStorage);
   const p={...SPAWN,id:'local',type:'fox',color:baseSkin,health:100,wanted:0,walk:0,angle:SPAWN.angle||0,moving:false};
-  const traversal=createParkour(p,terrainHeight,terrainGradient,{onImpact:velocity=>{
+  const traversal=createParkour(p,(x,y)=>terrainHeight(x,y,p.angle),(x,y)=>terrainGradient(x,y,p.angle),{onImpact:velocity=>{
     damage(Math.min(48,Math.round((velocity-8)*3)),p.angle,Math.min(.8,.18+(velocity-8.5)*.11),'fall');
   }});
   const view=buildView(canvas,SPAWN,onNotice),keys=new Set(),destroyed=new Set(),peers=new Map(),carsShared=new Map(),npcShared=new Map(),incidents=new Map(),bubbles=new Map();
@@ -1572,7 +1572,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         speed=vx=vy=0;p.moving=false;braking=false;return;
       }
       const grip=(isEnfer?cityClimate(epoch).grip:1)*chassisGrip(vehicleHealth(car));
-      const grade=terrainGradient(p.x,p.y);
+      const grade=terrainGradient(p.x,p.y,p.angle);
       const incline=grade.x*Math.cos(p.angle)+grade.y*Math.sin(p.angle);
       const driveline=stepRoadDrive(spec,{speed,pedal:sy,grip,tyres,power,grounded:onRoad,incline,dt});
       speed=driveline.speed;braking=driveline.braking;

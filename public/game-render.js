@@ -93,7 +93,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   const driverView=createDriverView(scene);
   const shadows=makeShadow();scene.add(shadows);
   const shadowTransform=new THREE.Object3D(), projection=new THREE.Vector3(), cameraAim=new THREE.Vector3();
-  let width=0,height=0, cameraArm=5.6, camX=spawn.x,camY=spawn.y, lastPropTick=-100,props=[],inFrame=0,slowCount=0,scale=touch?.94:1, active=true;
+  let width=0,height=0, cameraArm=5.6, cameraFloor, camX=spawn.x,camY=spawn.y, lastPropTick=-100,props=[],inFrame=0,slowCount=0,scale=touch?.94:1, active=true;
   const models=new Map(), names=new Map(), effects=[];
   const blood=createBleedFibers(),bloodMesh=createBleedMesh(scene);
   const labels=document.createElement('div');
@@ -117,7 +117,8 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     item.used=inFrame;const g=item.object.group;
     g.userData.followedByCamera=!!e.self;
     const angle=e.angle||0;
-    const ground=terrainHeight(e.x,e.y),swim=e.motion==='swim' && !vehicle;
+    const ground=terrainHeight(e.x,e.y,e.angle,item.roadFloor),swim=e.motion==='swim' && !vehicle;
+    item.roadFloor=ground;
     const offset=swim?swimGround(e.x,e.y)-ground-.67:0;
     item.waterOffset=item.waterOffset==null?offset:item.waterOffset+(offset-item.waterOffset)*blend(9,dt);
     g.position.set(e.x,ground+(e.lift||0)+item.waterOffset,e.y);
@@ -125,7 +126,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     if(vehicle&&isAircraft(e.type)){
       g.rotation.z=e.carPitch||0;g.rotation.x=e.bank||0;
     }else if(vehicle){
-      const slope=terrainGradient(e.x,e.y),c=Math.cos(angle),s=Math.sin(angle);
+      const slope=terrainGradient(e.x,e.y,e.angle),c=Math.cos(angle),s=Math.sin(angle);
       g.rotation.z=e.carPitch??Math.atan(slope.x*c+slope.y*s);g.rotation.x=-Math.atan(-slope.x*s+slope.y*c);
     }
     g.visible=true;
@@ -142,7 +143,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   function badge(e,label,bubble){
     let el=names.get(e.id);
     if(!el){el=document.createElement('span');el.className='world-label';labels.append(el);names.set(e.id,el);}
-    el._used=inFrame;projection.set(e.x,(e.motion==='swim'?swimGround(e.x,e.y)-.67:terrainHeight(e.x,e.y))+(e.lift||0)+(e.isCar?vehicleSpec(e.type).height+.43:2.14),e.y);projection.project(camera);
+    el._used=inFrame;projection.set(e.x,(e.motion==='swim'?swimGround(e.x,e.y)-.67:terrainHeight(e.x,e.y,e.angle))+(e.lift||0)+(e.isCar?vehicleSpec(e.type).height+.43:2.14),e.y);projection.project(camera);
     const visible=projection.z>0&&projection.z<1&&Math.abs(projection.x)<1.1&&Math.abs(projection.y)<1;
     el.hidden=!visible;if(!visible)return;
     el.style.left=(50+50*projection.x)+'%';el.style.top=(50-50*projection.y)+'%';
@@ -204,7 +205,8 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     const chase=state.cameraConfig?.mode==='near'?5.1:8.15;
     const follow=car?chase+Math.max(0,model.halfLength-2)*1.24+(isAircraft(car.type)?2.8:0):5.25;
     const swimming=p.motion==='swim'&&!car;
-    const followGround=swimming?swimGround:terrainHeight;
+    cameraFloor=swimming?undefined:terrainHeight(p.x,p.y,p.angle,state.snap?undefined:cameraFloor);
+    const followGround=swimming?swimGround:(x,y)=>terrainHeight(x,y,p.angle,cameraFloor);
     const feet=(p.lift||0)-(swimming?.55:0);
     const focusY=feet+(car?Math.max(1.35,model.height*.77):1.17),lift=feet+(car?Math.max(2.92,model.height+1.05):2.18);
     const snap=state.snap || Math.hypot(camX-p.x,camY-p.y)>25 || inFrame===1;
@@ -249,9 +251,9 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
       if(d<42)bloodMesh.draw(blood.actor(e));
       if(index<65&&e.motion!=='swim'){
         const floor=e.supportHeight||0,angle=e.angle||0,c=Math.cos(angle),s=Math.sin(angle);
-        const slope=floor>.12?{x:0,y:0}:terrainGradient(e.x,e.y);
+        const slope=floor>.12?{x:0,y:0}:terrainGradient(e.x,e.y,e.angle);
         const scale=1/(1+.08*Math.max(0,(e.lift||0)-floor));
-        shadowTransform.position.set(e.x,terrainHeight(e.x,e.y)+floor+.10,e.y);
+        shadowTransform.position.set(e.x,terrainHeight(e.x,e.y,e.angle)+floor+.10,e.y);
         shadowTransform.rotation.set(-Math.atan(-slope.x*s+slope.y*c),-angle,Math.atan(slope.x*c+slope.y*s),'YXZ');
         const footprint=e.isCar?vehicleSpec(e.type):null;
         shadowTransform.scale.set(scale*(footprint?footprint.halfLength*2.1:1.1),1,scale*(footprint?footprint.halfWidth*2.2:.74));
@@ -292,7 +294,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   function aim(x,y,p){
     const r=canvas.getBoundingClientRect();if(!r.width||!r.height)return null;
     ray.setFromCamera(new THREE.Vector2((x-r.left)/r.width*2-1,1-(y-r.top)/r.height*2),camera);
-    floor.constant=-(terrainHeight(p.x,p.y)+(p.lift||0)+.87);
+    floor.constant=-(terrainHeight(p.x,p.y,p.angle)+(p.lift||0)+.87);
     if(ray.ray.intersectPlane(floor,point)&&point.distanceTo(camera.position)<160)return Math.atan2(point.z-p.y,point.x-p.x);
     return Math.atan2(ray.ray.direction.z,ray.ray.direction.x);
   }

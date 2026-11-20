@@ -10,7 +10,8 @@ import {cityViewRange,streetViewRange} from './view-range.js';
 import {streetFabric} from './street-fabric.js';
 import {feltSlate as slates,shopCloths as stripMaterials} from './paris-applique.js';
 import {cityClimate} from './city-climate.js';
-import {terrainHeight,buildingGround,waterLevel} from './terrain-height.js';
+import {gradedRoad} from './enfer-bridges.js';
+import {terrainHeight,baseTerrainHeight,roadHeight,buildingGround,waterLevel} from './terrain-height.js';
 import {terracePanels} from './street-terraces.js';
 import {propWearProfile,propWearStage,trackPropWear} from './prop-wear.js';
 import * as T from './three.js';
@@ -57,8 +58,8 @@ const defaultUV=[[0,0],[1,0],[1,1],[0,1]];
 class Batch {
   constructor(){this.buffers=new Map();this.base=0;this.drape=false;this.foundation=false;}
   lift(p){
-    const base=this.drape?terrainHeight(p[0],p[2]):this.base;
-    const floor=this.foundation&&p[1]===0?Math.min(base,terrainHeight(p[0],p[2]))-.18:base;
+    const base=this.road?roadHeight(this.road.street,this.road.i,p[0],p[2]):this.drape?terrainHeight(p[0],p[2]):this.base;
+    const floor=this.foundation&&p[1]===0?Math.min(base,baseTerrainHeight(p[0],p[2]))-.18:base;
     return [p[0],p[1]+floor,p[2]];
   }
   tri(mat,a,b,c,col=white,uv=defaultUV) {
@@ -589,10 +590,10 @@ function addRoad(b,seg,neighbours){
   if(path&&!bridge){
     strip(b,'pave',a1,d1,Math.max(1.45,w),.027,'#f5e9d2',streetFabric.paving.meters);return;
   }
-  const y=bridge?.103:.074;
+  const y=.074;
   const pavement=w+Math.min(6,w*.6);
   if(isEnfer){
-    const yCurb=bridge?.20:.185;
+    const yCurb=.185;
     for(const side of [-1,1]){
       const width=(pavement-w)*.5;
       for(const [start,end] of pavementRuns(a,d,side*(pavement+w)*.25,width*.5,neighbours)){
@@ -618,12 +619,25 @@ function addRoad(b,seg,neighbours){
       const s1=Math.min(s0+2.8,len-.5);strip(b,'plain',[a[0]+nx*s0,a[1]+nz*s0],[a[0]+nx*s1,a[1]+nz*s1],.14,y+.011,'#cdbfaf',2);
     }
   }
+  if(isEnfer&&gradedRoad(s,i)){
+    // Carry the approach down to the bank. The bridge itself has a thin slab with
+    // open space underneath, so a path or canal can continue through the crossing.
+    const nx=-dz/len,nz=dx/len,radius=pavement*.5;
+    if(bridge)strip(b,'felt',a,d,pavement,-.36,'#9a8a81',3);
+    for(const side of [-1,1]){
+      const ax=a[0]+nx*radius*side,az=a[1]+nz*radius*side,bx=d[0]+nx*radius*side,bz=d[1]+nz*radius*side;
+      const bottom=(x,z)=>bridge?-.36:Math.min(0,baseTerrainHeight(x,z)-roadHeight(s,i,x,z))-.07;
+      const za=bottom(ax,az),zb=bottom(bx,bz);
+      if(bridge||Math.min(za,zb)<-.18)
+        b.face('felt',[ax,za,az],[bx,zb,bz],[bx,y-.018,bz],[ax,y-.018,az],bridge?'#998a85':'#9d8b71');
+    }
+  }
   // The elevated deck uses the same walking surface as the street physics.
   if(bridge&&(isEnfer||w>6)&&!onNeuillyDeck((a[0]+d[0])/2,(a[1]+d[1])/2)){
     for(const sign of [-1,1]){
-      const edge=isEnfer?Math.min(1.15,w*.36):2.15;
+      const edge=isEnfer?(pavement-w)*.5-.12:2.15;
       const nx=-dz/len*sign*(w*.5+edge),nz=dx/len*sign*(w*.5+edge);
-      b.wall('felt',[a[0]+nx,a[1]+nz],[d[0]+nx,d[1]+nz],-1.5,.67,'#b6aab0',len/3,1);
+      b.wall('felt',[a[0]+nx,a[1]+nz],[d[0]+nx,d[1]+nz],isEnfer?-.36:-1.5,.67,'#b6aab0',len/3,1);
       b.tube([a[0]+nx,.85,a[1]+nz],[d[0]+nx,.85,d[1]+nz],.08,.08,'#625661',5,'plain');
       if(isEnfer)for(let t=.5;t<len;t+=2.4){
         const x=a[0]+dx*t/len+nx,z=a[1]+dz*t/len+nz;
@@ -645,7 +659,7 @@ function makeIndex(){
   for(const street of streets){
     const path=street.path||[];
     for(let i=0;i<path.length-1;i++){
-      const p=path[i],q=path[i+1],parts=Math.max(1,Math.ceil(Math.hypot(p[0]-q[0],p[1]-q[1])/(street.bridge?6:18)));
+      const p=path[i],q=path[i+1],parts=Math.max(1,Math.ceil(Math.hypot(p[0]-q[0],p[1]-q[1])/(gradedRoad(street,i)?3:18)));
       let a=p;
       for(let j=1;j<=parts;j++){
         const t=j/parts,d=[p[0]+(q[0]-p[0])*t,p[1]+(q[1]-p[1])*t];
@@ -796,7 +810,7 @@ function groundTile(batch,x0,z0,n,lakes,parks,country){
   const wet=lakes.filter(near),green=parks.filter(near),step=chunkSize/n,points=[];
   for(let j=0;j<=n;j++)for(let i=0;i<=n;i++){
     const x=x0+i*step,z=z0+j*step,lake=wet.find(q=>containsArea(q,x,z));
-    points.push([x,lake?lake.level-.8:terrainHeight(x,z)-.07,z]);
+    points.push([x,lake?lake.level-.8:baseTerrainHeight(x,z)-.07,z]);
   }
   for(let j=0;j<n;j++)for(let i=0;i<n;i++){
     const k=j*(n+1)+i,a=points[k],b=points[k+n+1],c=points[k+n+2],d=points[k+1];
@@ -814,7 +828,7 @@ function makeGround(b) {
     flatWithHoles(b,'water',poly,w.holes,.004,white,streetFabric.water.meters);
     for(let i=0;i<poly.length;i++){
       const a=poly[i],d=poly[(i+1)%poly.length];
-      const bank=Math.max(0,Math.min(5,terrainHeight(a[0],a[1])-b.base));
+      const bank=Math.max(0,Math.min(5,baseTerrainHeight(a[0],a[1])-b.base));
       b.wall('felt',a,d,-.12,bank,'#b69e92',Math.max(1,Math.hypot(d[0]-a[0],d[1]-a[1])/4),1);
       strip(b,'plain',a,d,1.05,.008,'#99abb0',2.5);
     }
@@ -904,12 +918,14 @@ export function createCity3D(scene,{software=false}={}){
     groundTile(b,ix*chunkSize,iz*chunkSize,target.detail?16:target.skyline?4:8,lakes,parks,isEnfer&&geo.buildings.length<15);
     for(const building of geo.buildings)addBuilding(b,building,target.detail,target.skyline);
     for(const seg of geo.segments){
+      b.road=seg;
       if(!target.skyline)addRoad(b,seg,isEnfer?index.adjacent(seg):[]);
       else if(seg.street.w>=8){
         b.base=0;b.foundation=false;b.drape=true;
         strip(b,'plain',seg.a,seg.d,seg.street.w,.03,'#827e84');
       }
     }
+    b.road=null;
     if(isEnfer && !target.skyline){
       b.base=0;b.foundation=false;b.drape=true;
       for(const span of nearbyEnclosures((ix+.5)*chunkSize,(iz+.5)*chunkSize,chunkSize/2+1)){

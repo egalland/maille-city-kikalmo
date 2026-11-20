@@ -1,5 +1,5 @@
 // World coordinates and heights are metres. XY are east/south. Source: IGN BD TOPO road Z.
-import {bridgeGround} from './enfer-bridges.js';
+import {bridgeGround,roadGround} from './enfer-bridges.js';
 import {grid,waterLevels} from './paris-heights.js';
 
 const bytes=Uint8Array.from(atob(grid.data),char=>char.charCodeAt(0));
@@ -17,9 +17,11 @@ export function baseTerrainHeight(x,y){
   const row=k=>{const n=k*cols;return cubic(values[n+i0],values[n+i],values[n+i2],values[n+i3],t);};
   return cubic(row(Math.max(0,j-1)),row(j),row(Math.min(rows-1,j+1)),row(Math.min(rows-1,j+2)),s);
 }
-export function terrainHeight(x,y){return bridgeGround(x,y,baseTerrainHeight(x,y));}
-export function terrainGradient(x,y){
-  return {x:(terrainHeight(x+1,y)-terrainHeight(x-1,y))*.5,y:(terrainHeight(x,y+1)-terrainHeight(x,y-1))*.5};
+export function terrainHeight(x,y,heading,previousHeight){return bridgeGround(x,y,baseTerrainHeight(x,y),heading,previousHeight);}
+export function roadHeight(road,index,x,y){return roadGround(road,index,x,y,baseTerrainHeight(x,y));}
+export function terrainGradient(x,y,heading){
+  const h=Number.isFinite(heading)?terrainHeight(x,y,heading):undefined;
+  return {x:(terrainHeight(x+1,y,heading,h)-terrainHeight(x-1,y,heading,h))*.5,y:(terrainHeight(x,y+1,heading,h)-terrainHeight(x,y-1,heading,h))*.5};
 }
 
 // A level roof uses the same origin for rendering and traversal, including unusually long buildings.
@@ -27,7 +29,7 @@ export function buildingGround(poly){
   if(buildingBases.has(poly))return buildingBases.get(poly);
   const n=poly.length;let x=0,y=0;
   for(const point of poly){x+=point[0];y+=point[1];}
-  const base=terrainHeight(x/n,y/n);buildingBases.set(poly,base);return base;
+  const base=baseTerrainHeight(x/n,y/n);buildingBases.set(poly,base);return base;
 }
 export function selectSectorTerrain(field){
   buildingBases=new WeakMap();
@@ -76,12 +78,12 @@ export function waterLevel(w){
   const measured=w.elevation??waterLevels[w.poly[0].join(',')];
   if(Number.isFinite(measured))return measured;
   let low=Infinity,left=Infinity,right=-Infinity,top=Infinity,bottom=-Infinity;
-  for(const [x,y] of w.poly){low=Math.min(low,terrainHeight(x,y));left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);}
+  for(const [x,y] of w.poly){low=Math.min(low,baseTerrainHeight(x,y));left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);}
   return Math.max(right-left,bottom-top)>650?Math.min(low-1.5,25.7+(left+right)*.0001):low-.45;
 }
 
 export function walkingPose(e){
   if(Number.isFinite(e.slope)||!e.moving)return e;
-  const slope=terrainGradient(e.x,e.y),angle=e.angle||0;
+  const slope=terrainGradient(e.x,e.y,e.angle),angle=e.angle||0;
   return {...e,slope:slope.x*Math.cos(angle)+slope.y*Math.sin(angle)};
 }
