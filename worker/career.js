@@ -9,6 +9,8 @@ export const careerSchema=[
     mission TEXT, car TEXT, mutation TEXT NOT NULL DEFAULT '')`,
   `CREATE TABLE IF NOT EXISTS mc_enterprises (profile TEXT PRIMARY KEY, bank INTEGER NOT NULL DEFAULT 0,
     licensed INTEGER NOT NULL DEFAULT 0, revenue INTEGER NOT NULL DEFAULT 0)`,
+  `CREATE TABLE IF NOT EXISTS mc_laps(profile TEXT PRIMARY KEY,best INTEGER,public INTEGER,alias TEXT)`,
+  'CREATE INDEX IF NOT EXISTS mc_ranked_laps ON mc_laps(public,alias) WHERE public IS NOT NULL',
   `CREATE TABLE IF NOT EXISTS mc_career_sessions (
     room TEXT NOT NULL, id TEXT NOT NULL, profile TEXT NOT NULL, PRIMARY KEY(room,id))`,
   `CREATE TRIGGER IF NOT EXISTS mc_career_disconnect AFTER DELETE ON mc_members BEGIN
@@ -17,19 +19,23 @@ export const careerSchema=[
 ];
 const profileId=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const maxPoseAge=25000;
-const readCareer=`SELECT c.*,e.bank,e.licensed,e.revenue FROM mc_careers c JOIN mc_enterprises e ON c.profile=e.profile WHERE c.profile=?`;
+const readCareer=`SELECT c.*,e.bank,e.licensed,e.revenue,l.best,l.public,
+    (SELECT json_group_array(json_object('name',alias,'ms',public)) FROM
+      (SELECT alias,public FROM mc_laps WHERE public IS NOT NULL ORDER BY public,alias,profile LIMIT 5)) AS leaders
+    FROM mc_careers c JOIN mc_enterprises e ON c.profile=e.profile
+    LEFT JOIN mc_laps l ON c.profile=l.profile WHERE c.profile=?`;
 const parse=data=>data?JSON.parse(data):null;
 function publicState(row){
   const mission=parse(row.mission);
-  return {version:2,bank:row.bank,licensed:!!row.licensed,revenue:row.revenue,revision:row.revision,cash:row.cash,completed:row.completed,reputation:row.reputation,owned:!!row.car,
-    mission:mission?{contract:mission.contract,stage:mission.stage,started:mission.started,deadline:mission.deadline}:null};
+  return {version:2,bestLapMs:row.best,publicLapMs:row.public,leaders:parse(row.leaders)||[],bank:row.bank,licensed:!!row.licensed,revenue:row.revenue,revision:row.revision,cash:row.cash,completed:row.completed,reputation:row.reputation,owned:!!row.car,
+    mission:mission?{contract:mission.contract,stage:mission.stage,car:mission.car||null,started:mission.started,deadline:mission.deadline}:null};
 }
 async function hashProfile(profile){
   const bytes=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('maille-career-v1/'+profile)));
   return Array.from(bytes,v=>v.toString(16).padStart(2,'0')).join('');
 }
 const near=(actor,place)=>Math.hypot(actor.x-place.x,actor.y-place.y)<=careerRadius;
-const allowed=new Set(['state','start','cancel','advance','repair','buy','collect','license','collectRent','deposit','withdraw']);
+const allowed=new Set(['state','start','cancel','advance','repair','buy','collect','license','collectRent','deposit','withdraw','publishLap','hideLap']);
 export async function runCareer(db,b,room,now){
   if(room!=='enfer:public'||!profileId.test(b.profile)||!allowed.has(b.action))
     return {ok:false,error:'Demande de carrière invalide.'};
@@ -83,6 +89,11 @@ export async function runCareer(db,b,room,now){
     return fail('La progression a changé. Les données ont été actualisées.');
   }else if(down||!Number.isFinite(actor.x+actor.y)){
     return fail('Patiente jusqu’au retour de ton personnage en ville.');
+  }else if(b.action==='publishLap'||b.action==='hideLap'){
+    if(!row.best)return fail('Termine d’abord un tour chronométré.');
+    const visible=b.action==='publishLap';
+    effects.push(q(`UPDATE mc_laps SET public=?,alias=? WHERE profile=? AND ${hasMutation}`,
+      visible?row.best:null,visible?member.name:null,profile,profile,marker));
   }else if(b.action==='start'){
     if(previous)return fail('Un contrat est déjà en cours.');
     if(!Object.hasOwn(careerContracts,b.contract))return fail('Contrat inconnu.');
@@ -101,7 +112,8 @@ export async function runCareer(db,b,room,now){
     if(c.id!=='race'&&Math.abs(actor.speed||0)>4)return fail('Arrête le véhicule près du repère.');
     if(previous.stage>0){
       const from=careerPlaces[c.stages[previous.stage-1].place];
-      const minimumMs=1000*Math.max(0,Math.hypot(place.x-from.x,place.y-from.y)-careerRadius*2)/(vehicleSpec(actor.vehicle.type).forward*1.25);
+      const metres=c.roadMetres?.[previous.stage]??Math.hypot(place.x-from.x,place.y-from.y);
+      const minimumMs=1000*Math.max(0,metres-careerRadius*2)/(vehicleSpec(actor.vehicle.type).forward*1.25);
       if(now-previous.last<minimumMs)return fail('Ce point de passage a été atteint trop rapidement.');
     }
     const buddyArgs=[room,b.id,actor.vehicle.id,now-maxPoseAge,profile];
@@ -112,12 +124,18 @@ export async function runCareer(db,b,room,now){
     }
     if(previous.stage+1===c.stages.length){
       cash+=c.reward;rep++;completed++;mission=null;
+      if(c.id==='race'&&previous.lapStart){
+        const lapMs=now-previous.lapStart;
+        effects.push(q(`INSERT INTO mc_laps(profile,best) SELECT ?,? WHERE ${hasMutation}
+          ON CONFLICT(profile) DO UPDATE SET best=min(mc_laps.best,excluded.best)`,profile,lapMs,profile,marker));
+      }
       if(licensed)revenue=Math.min(careerGarage.rentCap,revenue+careerGarage.rentPerContract);
       if(previous.buddy&&c.id!=='race')effects.push(q(`UPDATE mc_careers SET cash=cash+?,reputation=reputation+1,completed=completed+?,revision=revision+1
         WHERE profile=? AND profile=(${buddyQuery}) AND ${hasMutation}`,
         Math.round(c.reward*.35),c.cooperative?1:0,previous.buddy,...buddyArgs,profile,marker));
     }else{
       mission={...previous,stage:previous.stage+1,last:now,car:actor.vehicle.id,buddy:previous.stage===0?(buddy||null):previous.buddy};
+      if(c.id==='race'&&previous.stage===0){mission.lapStart=now;mission.deadline=now+c.seconds*1000;}
     }
   }else if(b.action==='deposit'||b.action==='withdraw'){
     if(![careerPlaces.market,careerPlaces.garage,careerPlaces.police].some(p=>near(actor,p)))return fail('Rejoins un guichet aux Halles, au garage ou au commissariat.');

@@ -29,7 +29,7 @@ test('three street contracts pay once via live driven vehicle, persist across se
   for(const c of Object.values(careerContracts).filter(c=>!c.cooperative)){
     state=(await active(who,'start',state.revision,c.id)).state;
     for(let i=0;i<c.stages.length;i++){
-      tick(12000);await pose(careerPlaces[c.stages[i].place]);
+      tick(c.id==='race'?23000:12000);await pose(careerPlaces[c.stages[i].place]);
       const before=state;
       const results=await Promise.all([active(who,'advance',state.revision),active(who,'advance',state.revision)]);
       assert.equal(results.filter(r=>r.ok).length,1,JSON.stringify(results));
@@ -161,4 +161,28 @@ test('the relay requires the same second player at every checkpoint and pays bot
   assert.equal(state.completed,1);assert.equal(state.cash,45+careerContracts.relay.reward);
   const buddy=(await active(b,'state')).state;
   assert.equal(buddy.completed,1);assert.equal(buddy.cash,45+Math.round(careerContracts.relay.reward*.35));
+});
+
+
+test('ranked lap uses server start gate, directed-road minima, anonymous-by-default records and a five-alias public board',async t=>{
+  const {active,who,b,pose,tick,DB}=await harness(t);
+  let state=(await active(who,'start',0,'race')).state;
+  tick(12000);await pose(careerPlaces.garage);
+  state=(await active(who,'advance',state.revision)).state;
+  tick(8000);await pose(careerPlaces.quay);
+  assert.ok(!(await active(who,'advance',state.revision)).ok,'straight-line time is too short for the one-way streets');
+  tick(15000);await pose(careerPlaces.quay);
+  state=(await active(who,'advance',state.revision)).state;
+  tick(12000);await pose(careerPlaces.market);
+  state=(await active(who,'advance',state.revision)).state;
+  assert.equal(state.bestLapMs,35000);assert.equal(state.publicLapMs,null);assert.deepEqual(state.leaders,[]);
+  for(let i=1;i<=6;i++)await DB.prepare('INSERT INTO mc_laps(profile,best,public,alias) VALUES(?,?,?,?)')
+    .bind('seed'+i,41000+i,41000+i,'Coureur '+i).run();
+  state=(await active(who,'publishLap',state.revision)).state;
+  assert.equal(state.leaders.length,5);assert.equal(state.publicLapMs,35000);
+  assert.deepEqual(Object.keys(state.leaders[0]).sort(),['ms','name']);
+  assert.equal(state.leaders[0].ms,35000);
+  state=(await active(who,'hideLap',state.revision)).state;
+  assert.equal(state.publicLapMs,null);assert.equal(state.bestLapMs,35000);assert.equal(state.leaders[0].ms,41001);
+  assert.ok(!(await active(b,'publishLap',0)).ok);
 });

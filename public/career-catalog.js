@@ -18,6 +18,6 @@ export const careerContracts={
     stop('station','Prendre le client'),stop('police','Déposer le client')]},
   relay:{id:'relay',title:'Les courriers en tandem',description:'En équipe, chargez aux Halles, faites viser le bordereau au garage et livrez à la cour. Le même coéquipier doit occuper le siège à chaque arrêt.',reward:180,seconds:300,difficulty:'En duo',cooperative:true,stages:[
     stop('market','Charger en équipe'),stop('garage','Faire viser le bordereau'),stop('quay','Remettre les ballots à deux')]},
-  race:{id:'race',title:'Le tour des ateliers',description:'Passe les trois contrôles avec le même véhicule avant la fin du chrono.',reward:145,seconds:125,difficulty:'Sportif',stages:[
+  race:{id:'race',title:'Le tour des ateliers',roadMetres:[0,829,319],description:'Passe les trois contrôles avec le même véhicule avant la fin du chrono.',reward:145,seconds:125,difficulty:'Sportif',stages:[
     stop('garage','Passer le départ'),stop('quay','Passer le contrôle'),stop('market','Franchir l’arrivée')]}
 };
