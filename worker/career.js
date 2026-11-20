@@ -7,6 +7,8 @@ export const careerSchema=[
     profile TEXT PRIMARY KEY, revision INTEGER NOT NULL DEFAULT 0, cash INTEGER NOT NULL DEFAULT 45,
     reputation INTEGER NOT NULL DEFAULT 0, completed INTEGER NOT NULL DEFAULT 0,
     mission TEXT, car TEXT, mutation TEXT NOT NULL DEFAULT '')`,
+  `CREATE TABLE IF NOT EXISTS mc_enterprises (profile TEXT PRIMARY KEY, bank INTEGER NOT NULL DEFAULT 0,
+    licensed INTEGER NOT NULL DEFAULT 0, revenue INTEGER NOT NULL DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS mc_career_sessions (
     room TEXT NOT NULL, id TEXT NOT NULL, profile TEXT NOT NULL, PRIMARY KEY(room,id))`,
   `CREATE TRIGGER IF NOT EXISTS mc_career_disconnect AFTER DELETE ON mc_members BEGIN
@@ -15,10 +17,11 @@ export const careerSchema=[
 ];
 const profileId=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const maxPoseAge=25000;
+const readCareer=`SELECT c.*,e.bank,e.licensed,e.revenue FROM mc_careers c JOIN mc_enterprises e ON c.profile=e.profile WHERE c.profile=?`;
 const parse=data=>data?JSON.parse(data):null;
 function publicState(row){
   const mission=parse(row.mission);
-  return {version:1,revision:row.revision,cash:row.cash,completed:row.completed,reputation:row.reputation,owned:!!row.car,
+  return {version:2,bank:row.bank,licensed:!!row.licensed,revenue:row.revenue,revision:row.revision,cash:row.cash,completed:row.completed,reputation:row.reputation,owned:!!row.car,
     mission:mission?{contract:mission.contract,stage:mission.stage,started:mission.started,deadline:mission.deadline}:null};
 }
 async function hashProfile(profile){
@@ -26,7 +29,7 @@ async function hashProfile(profile){
   return Array.from(bytes,v=>v.toString(16).padStart(2,'0')).join('');
 }
 const near=(actor,place)=>Math.hypot(actor.x-place.x,actor.y-place.y)<=careerRadius;
-const allowed=new Set(['state','start','cancel','advance','repair','buy','collect']);
+const allowed=new Set(['state','start','cancel','advance','repair','buy','collect','license','collectRent','deposit','withdraw']);
 export async function runCareer(db,b,room,now){
   if(room!=='enfer:public'||!profileId.test(b.profile)||!allowed.has(b.action))
     return {ok:false,error:'Demande de carrière invalide.'};
@@ -36,11 +39,12 @@ export async function runCareer(db,b,room,now){
   if(!member)return {ok:false,error:'Reconnecte-toi au monde pour accéder aux contrats.'};
   const result=await db.batch([
     q('INSERT OR IGNORE INTO mc_careers(profile) VALUES(?)',profile),
+    q('INSERT OR IGNORE INTO mc_enterprises(profile) VALUES(?)',profile),
     q(`INSERT INTO mc_career_sessions(room,id,profile) VALUES(?,?,?)
       ON CONFLICT(room,id) DO UPDATE SET profile=excluded.profile WHERE profile<>excluded.profile`,room,b.id,profile),
-    q('SELECT * FROM mc_careers WHERE profile=?',profile)
+    q(readCareer,profile)
   ]);
-  const row=result[2].results[0],actor=parse(member.state)||{},previous=parse(row.mission);
+  const row=result.at(-1).results[0],actor=parse(member.state)||{},previous=parse(row.mission);
   const fail=error=>({ok:false,error,state:publicState(row)});
   const down=actor.health===0||actor.downUntil>now;
   // Use one CAS plus a transaction marker for all dependent writes. A retry
@@ -49,6 +53,7 @@ export async function runCareer(db,b,room,now){
   let guard='',guardArgs=[];
   const effects=[];
   let mission=previous,cash=row.cash,rep=row.reputation,completed=row.completed,car=row.car,vehicle,repaired,notice;
+  let bank=row.bank,licensed=row.licensed,revenue=row.revenue;
   const hasMutation='EXISTS (SELECT 1 FROM mc_careers WHERE profile=? AND mutation=?)';
   const worldEvent=(type,data)=>{
     effects.push(q(`INSERT INTO mc_events(room,player,op,name,type,data,at) SELECT ?,?,?,?,?,?,? WHERE ${hasMutation}`,
@@ -100,27 +105,47 @@ export async function runCareer(db,b,room,now){
       if(now-previous.last<minimumMs)return fail('Ce point de passage a été atteint trop rapidement.');
     }
     const buddyArgs=[room,b.id,actor.vehicle.id,now-maxPoseAge,profile];
+    const buddy=c.id!=='race'?(await q(buddyQuery,...buddyArgs).first())?.profile:null;
+    if(c.cooperative){
+      if(!buddy||previous.stage>0&&buddy!==previous.buddy)return fail('Le même coéquipier doit être assis dans ton véhicule à chaque arrêt.');
+      guard+=' AND ?=('+buddyQuery+')';guardArgs.push(buddy,...buddyArgs);
+    }
     if(previous.stage+1===c.stages.length){
       cash+=c.reward;rep++;completed++;mission=null;
-      if(previous.buddy&&c.id!=='race')effects.push(q(`UPDATE mc_careers SET cash=cash+?,reputation=reputation+1,revision=revision+1
+      if(licensed)revenue=Math.min(careerGarage.rentCap,revenue+careerGarage.rentPerContract);
+      if(previous.buddy&&c.id!=='race')effects.push(q(`UPDATE mc_careers SET cash=cash+?,reputation=reputation+1,completed=completed+?,revision=revision+1
         WHERE profile=? AND profile=(${buddyQuery}) AND ${hasMutation}`,
-        Math.round(c.reward*.35),previous.buddy,...buddyArgs,profile,marker));
+        Math.round(c.reward*.35),c.cooperative?1:0,previous.buddy,...buddyArgs,profile,marker));
     }else{
-      const buddy=previous.stage===0&&c.id!=='race'?(await q(buddyQuery,...buddyArgs).first())?.profile:null;
-      mission={...previous,stage:previous.stage+1,last:now,car:actor.vehicle.id,buddy:buddy||previous.buddy||null};
+      mission={...previous,stage:previous.stage+1,last:now,car:actor.vehicle.id,buddy:previous.stage===0?(buddy||null):previous.buddy};
     }
+  }else if(b.action==='deposit'||b.action==='withdraw'){
+    if(![careerPlaces.market,careerPlaces.garage,careerPlaces.police].some(p=>near(actor,p)))return fail('Rejoins un guichet aux Halles, au garage ou au commissariat.');
+    if(!Number.isSafeInteger(b.amount)||b.amount<1||b.amount>1_000_000)return fail('Choisis un montant entier entre 1 et 1 000 000 ₣.');
+    const deposit=b.action==='deposit';
+    if((deposit?cash:bank)<b.amount)return fail('Le solde disponible est insuffisant.');
+    const transfer=deposit?b.amount:-b.amount;
+    cash-=transfer;bank+=transfer;
   }else{
     const garage=careerPlaces.garage;
     if(!near(actor,garage))return fail('Rejoins le Garage des Deux Bornes.');
-    if(b.action==='repair'){
+    if(b.action==='license'){
+      if(licensed)return fail('Tu possèdes déjà la concession du garage.');
+      if(cash<careerGarage.licensePrice)return fail('Ton argent en poche ne suffit pas pour acheter la concession.');
+      cash-=careerGarage.licensePrice;licensed=1;
+    }else if(b.action==='collectRent'){
+      if(!licensed||revenue<=0)return fail('Le garage n’a aucune recette à verser.');
+      cash+=revenue;revenue=0;
+    }else if(b.action==='repair'){
+      const price=licensed?careerGarage.memberRepair:careerGarage.repair;
       if(!(await verifyCar()))return fail('Présente le véhicule à réparer au garage.');
       if(Math.abs(actor.speed||0)>4)return fail('Arrête-toi devant le garage.');
-      if(cash<careerGarage.repair)return fail('Solde insuffisant pour la réparation.');
+      if(cash<price)return fail('Solde insuffisant pour la réparation.');
       const wear=await q("SELECT seq,data FROM mc_items WHERE room=? AND kind='vehicleDamage' AND item=?",room,actor.vehicle.id).first();
       const damage=parse(wear?.data);
       if(!damage||damage.hp>=100)return fail('Ce véhicule est déjà en bon état.');
       if(damage.fireAt||damage.hp<=0)return fail('Le garage ne peut plus prendre en charge ce véhicule.');
-      cash-=careerGarage.repair;repaired=actor.vehicle.id;
+      cash-=price;repaired=actor.vehicle.id;
       guard+=" AND EXISTS (SELECT 1 FROM mc_items WHERE room=? AND kind='vehicleDamage' AND item=? AND seq=?)";
       guardArgs.push(room,repaired,wear.seq);
       worldEvent('vehicleDamage',{id:repaired,type:actor.vehicle.type,x:actor.x,y:actor.y,hp:100,parts:0,damage:0,
@@ -157,7 +182,8 @@ export async function runCareer(db,b,room,now){
     q(`UPDATE mc_careers SET revision=revision+1,cash=?,reputation=?,completed=?,mission=?,car=?,mutation=?
       WHERE profile=? AND revision=? AND EXISTS(SELECT 1 FROM mc_members WHERE room=? AND id=? AND secret=? AND seen>?)${guard}
       RETURNING revision`,cash,rep,completed,mission?JSON.stringify(mission):null,car,marker,profile,row.revision,room,b.id,b.token,now-maxPoseAge,...guardArgs),
-    ...effects,q('SELECT * FROM mc_careers WHERE profile=?',profile)
+    q(`UPDATE mc_enterprises SET bank=?,licensed=?,revenue=? WHERE profile=? AND ${hasMutation}`,bank,licensed,revenue,profile,profile,marker),
+    ...effects,q(readCareer,profile)
   ]);
   const state=publicState(updated.at(-1).results[0]);
   if(!updated[0].results.length)return {ok:false,error:'La situation a changé. Réessaie.',state};

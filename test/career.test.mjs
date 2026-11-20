@@ -15,7 +15,7 @@ async function harness(t){
   };
   const drive=(p,extra={})=>({x:p.x,y:p.y,health:100,angle:0,speed:0,vehicle:car,...extra});
   const pose=(point,extra)=>post('sync',a,{state:drive(point,extra)});
-  const active=(who,action,revision,contract)=>post('career',who,{action,revision,contract});
+  const active=(who,action,revision,contract,amount)=>post('career',who,{action,revision,contract,amount});
   const market=careerPlaces.market;
   await post('join',a,{state:drive(market)});
   await post('join',b,{state:drive(market,{vehicle:null})});
@@ -26,7 +26,7 @@ test('three street contracts pay once via live driven vehicle, persist across se
   const {active,who,actor,pose,post,drive,tick}=await harness(t);
   let state=(await active(who,'state')).state;
   assert.equal(state.cash,45);
-  for(const c of Object.values(careerContracts)){
+  for(const c of Object.values(careerContracts).filter(c=>!c.cooperative)){
     state=(await active(who,'start',state.revision,c.id)).state;
     for(let i=0;i<c.stages.length;i++){
       tick(12000);await pose(careerPlaces[c.stages[i].place]);
@@ -95,4 +95,70 @@ test('only a different career sharing the ride at both ends receives a single co
   assert.ok(!(await active(who,'advance',2)).ok);
   const passenger=(await active(b,'state')).state;
   assert.equal(passenger.cash,45+Math.round(careerContracts.delivery.reward*.35));
+});
+
+test('bank counters enforce balances, proximity and duplicate protection; old wallets migrate on read',async t=>{
+  const {active,who,pose,DB}=await harness(t);
+  const old=await active(who,'state');
+  await DB.prepare('DELETE FROM mc_enterprises').run();
+  const migrated=await active(who,'state');assert.deepEqual(migrated.state,old.state);
+  await pose(careerPlaces.quay);
+  assert.ok(!(await active(who,'deposit',0,null,10)).ok);
+  await pose(careerPlaces.market);
+  for(const invalid of [0,-1,2.7,46,'10'])assert.ok(!(await active(who,'deposit',0,null,invalid)).ok);
+  const simultaneous=await Promise.all([active(who,'deposit',0,null,25),active(who,'deposit',0,null,25)]);
+  assert.equal(simultaneous.filter(r=>r.ok).length,1);
+  const saved=(await active(who,'state')).state;
+  assert.equal(saved.cash,20);assert.equal(saved.bank,25);
+  assert.ok(!(await active(who,'withdraw',saved.revision,null,26)).ok);
+  const back=await active(who,'withdraw',saved.revision,null,15);
+  assert.equal(back.state.cash,35);assert.equal(back.state.bank,10);
+});
+
+test('garage license pays only after finished contracts up to the reserve cap and grants discounted repairs',async t=>{
+  const {active,who,pose,tick,DB,car}=await harness(t);
+  let state=(await active(who,'state')).state;
+  async function finish(id){
+    state=(await active(who,'start',state.revision,id)).state;
+    for(const s of careerContracts[id].stages){
+      tick(12000);await pose(careerPlaces[s.place]);
+      const reply=await active(who,'advance',state.revision);assert.ok(reply.ok,JSON.stringify(reply));state=reply.state;
+    }
+  }
+  await finish('delivery');await finish('taxi');
+  assert.equal(state.cash,245);assert.equal(state.revenue,0);
+  assert.ok(!(await active(who,'license',state.revision)).ok);
+  await pose(careerPlaces.garage);state=(await active(who,'license',state.revision)).state;
+  assert.ok(state.licensed);assert.equal(state.cash,245-careerGarage.licensePrice);
+  assert.ok(!(await active(who,'license',state.revision)).ok);
+  for(let i=0;i<6;i++)await finish('delivery');
+  assert.equal(state.revenue,careerGarage.rentCap);
+  await pose(careerPlaces.garage);
+  const before=state.cash;
+  state=(await active(who,'collectRent',state.revision)).state;
+  assert.equal(state.revenue,0);assert.equal(state.cash,before+careerGarage.rentCap);
+  assert.ok(!(await active(who,'collectRent',state.revision)).ok);
+  await DB.prepare("INSERT INTO mc_items(room,kind,item,seq,owner,data,at) VALUES('enfer:public','vehicleDamage',?,0,'',?,?)")
+    .bind(car.id,JSON.stringify({hp:70,id:car.id,parts:1}),Date.now()).run();
+  assert.equal((await active(who,'repair',state.revision)).state.cash,state.cash-careerGarage.memberRepair);
+});
+
+test('the relay requires the same second player at every checkpoint and pays both careers',async t=>{
+  const {active,who,b,pose,post,drive,car,tick}=await harness(t);
+  await active(b,'state');
+  let state=(await active(who,'start',0,'relay')).state;
+  assert.ok(!(await active(who,'advance',state.revision)).ok);
+  const seat=(place,op,leave)=>post('sync',b,{state:drive(place,{vehicle:null}),events:[{type:'seat',op,data:{driver:who.id,car:car.id,leave}}]});
+  await seat(careerPlaces.market,'join-team',false);
+  state=(await active(who,'advance',state.revision)).state;assert.equal(state.mission.stage,1);
+  tick(12000);await pose(careerPlaces.garage);
+  await seat(careerPlaces.garage,'get-out',true);
+  assert.ok(!(await active(who,'advance',state.revision)).ok);
+  await seat(careerPlaces.garage,'get-back-in',false);
+  state=(await active(who,'advance',state.revision)).state;assert.equal(state.mission.stage,2);
+  tick(12000);await pose(careerPlaces.quay);
+  state=(await active(who,'advance',state.revision)).state;
+  assert.equal(state.completed,1);assert.equal(state.cash,45+careerContracts.relay.reward);
+  const buddy=(await active(b,'state')).state;
+  assert.equal(buddy.completed,1);assert.equal(buddy.cash,45+Math.round(careerContracts.relay.reward*.35));
 });
