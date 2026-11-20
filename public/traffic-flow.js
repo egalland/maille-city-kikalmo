@@ -393,7 +393,7 @@ export function createTrafficFlow(sample,chooseDetour){
     if(adjust>0 && car.target<car.seed.cruiseSpeed-.05)target=car.target;
     target=clamp(target,0,car.seed.cruiseSpeed+2.25);
     if(target<.15)target=0;
-    const accel=Math.min(2.8,car.spec.accel*.43),brake=car.spec.brake*.76;
+    const accel=Math.min(2.8,3.5*car.spec.cruise**2),brake=car.spec.brake*.76;
     const speed=car.speed+clamp(target-car.speed,-brake*dt,accel*dt);
     const movement=(car.speed+speed)*.5*dt;
     car.speed=speed<.035?0:speed;
