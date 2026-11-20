@@ -11,6 +11,7 @@ import {normalizeAppearance} from '../public/kikalmo-schema.js';
 import {encodeRoster} from '../public/roster-wire.js';
 import {stateReferences,restoreStateFields} from '../public/state-wire.js';
 import { decodeDropId, matchesPickup, decodeOfficerDrop, officerLootWindow } from '../public/drop-id.js';
+import {careerSchema,runCareer} from './career.js';
 import {prepareFire,readFireSession,rememberFirePose,recordFire} from './fire-netcode.js';
 
 // The Worker owns these tables. They are initialized once per D1 binding and isolate.
@@ -21,6 +22,7 @@ const SCHEMA = [
     state TEXT NOT NULL, joined INTEGER NOT NULL, seen INTEGER NOT NULL,
     PRIMARY KEY (room,id))`,
   'CREATE INDEX IF NOT EXISTS mc_members_seen ON mc_members (seen)',
+  ...careerSchema,
   `CREATE TABLE IF NOT EXISTS mc_events (
     seq INTEGER PRIMARY KEY AUTOINCREMENT, room TEXT NOT NULL, player TEXT NOT NULL,
     op TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL,
@@ -425,7 +427,7 @@ function vehicleDamageStatement(q,{room,id,op,name,data,now}){
       max(0,coalesce(json_extract(old,'$.hp'),100)-?) AS next_hp FROM prior
   ) INSERT OR IGNORE INTO mc_events (room,player,op,name,type,data,at)
   SELECT ?,?,?,?,'vehicleDamage',json_set(?,'$.hp',next_hp,'$.damage',hp-next_hp,
-    '$.parts',coalesce(json_extract(old,'$.parts'),0)|?,
+    '$.parts',coalesce(json_extract(old,'$.parts'),0)|?,'$.repairedAt',coalesce(json_extract(old,'$.repairedAt'),0),
     '$.fireAt',CASE WHEN next_hp<=32 THEN coalesce(nullif(json_extract(old,'$.fireAt'),0),?) ELSE 0 END,
     '$.explodeAt',CASE WHEN next_hp<=32 THEN
       coalesce(nullif(json_extract(old,'$.explodeAt'),0),coalesce(nullif(json_extract(old,'$.fireAt'),0),?)+?) ELSE 0 END),?
@@ -603,7 +605,7 @@ async function sync(db,b,now,room) {
 }
 export async function handleApi(request, env) {
   const pathname=new URL(request.url).pathname;
-  const match=/^\/api(?:\/(world|paris))?\/(join|sync|leave)$/.exec(pathname);
+  const match=/^\/api(?:\/(world|paris))?\/(join|sync|leave|career)$/.exec(pathname);
   if(!match)return json({error:'route'},404);
   const [,generation,operation]=match;
   if(!generation)return json({error:'update_required'},410);
@@ -620,6 +622,7 @@ export async function handleApi(request, env) {
   if (!UUID.test(b.id) || !UUID.test(b.token)) return json({error:'session'},400);
   if (!env.DB) return json({error:'storage'},503);
   await ready(env.DB);
+  if (operation==='career') return json(await runCareer(env.DB,b,room,Date.now()));
   if (operation==='join') return join(env.DB,b,Date.now(),room);
   if (operation==='leave') {
     await env.DB.prepare('DELETE FROM mc_members WHERE room=? AND id=? AND secret=?').bind(room,b.id,b.token).run();
