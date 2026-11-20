@@ -1,3 +1,6 @@
+import {createSaddleRig} from './saddle-rider.js';
+import {createHelicopter} from './helicopter-model.js';
+import {createAirship} from './airship-model.js';
 import {drawCabinDriver} from './cabin-art.js';
 import {appearanceKey} from './kikalmo-avatar.js';
 import {yarnPalette} from './wool-art.js';
@@ -370,15 +373,23 @@ function bakeStaticHierarchy(root){
   batchGroup(g);return g;
 }
 const peopleTemplates=new Map();
-export function createPuppet(type='fox',color,seed=0){
-  const look=puppetAppearance(type,color,seed);
-  type=look.type;
-  const {animal,coat:cloth,pick}=look;
+function puppetTemplate(look){
+  const {type,animal,coat:cloth}=look;
   const key=type+'|'+animal+'|'+cloth+'|'+look.pelt.fur+(animal==='human'?'|'+look.pick%6:'');
   if(!peopleTemplates.has(key)){
     peopleTemplates.set(key,{near:makeBody(look,true),far:bakeStaticHierarchy(makeBody(look,false))});
   }
-  const template=peopleTemplates.get(key),near=template.near.clone(true),far=template.far.clone(true);
+  return peopleTemplates.get(key);
+}
+function mountedPuppet(identity,mount,type){
+  const look=puppetAppearance(identity.role,identity.skin,identity.seed);
+  return createSaddleRig(puppetTemplate(look).near.clone(true),mount,type);
+}
+export function createPuppet(type='fox',color,seed=0){
+  const look=puppetAppearance(type,color,seed);
+  type=look.type;
+  const {animal,coat:cloth,pick}=look;
+  const template=puppetTemplate(look),near=template.near.clone(true),far=template.far.clone(true);
   const group=new THREE.Group(),lod=new THREE.LOD();group.add(lod);lod.addLevel(near,0);lod.addLevel(far,type==='fox'?48:29,.12);
   const bone={};near.traverse(o=>{if(o.name)bone[o.name]=o;});
   let styleSeed=motionSeed(seed),lastId;
@@ -807,7 +818,7 @@ function carServiceDetails(g,type,isVan){
 }
 function createCarBody(type='car',color,seed=0){
   type=String(type?.type??type).toLowerCase();
-  if(isStreetVehicle(type))return createStreetVehicle(THREE,{geo,addPart,batchGroup},type,color,seed);
+  if(isStreetVehicle(type))return createStreetVehicle(THREE,{geo,addPart,batchGroup,mountedPuppet},type,color,seed);
   if(type==='fire'||type==='firefighter')type='firetruck';
   if(type==='medic')type='ambulance';
   if(type==='cop')type='police';
@@ -953,7 +964,8 @@ function makeVehicleSignals(type,spec){
   // Positions follow the lamps modelled into each family, accounting for frame scaling.
   const shaped=type==='compact'||type==='sport',bus=type==='bus',van=['van','firetruck','swat','ambulance'].includes(type);
   const lamp=shaped?[.99,.49,.66,.98,.50,.66]:bus?[1.00,.284,.65,1.0,.35,.76]:
-    van?[.861,.467,.60,.969,.50,.70]:spec.openSeat?[.89,.75,0,.86,.62,0]:
+    van?[.861,.467,.60,.969,.50,.70]:type==='motorbike'?[.57,.753,0,.91,.52,0]:
+    type==='scooter'?[.76,.874,0,.90,.438,0]:spec.openSeat?[.89,.75,0,.86,.62,0]:
     type==='pickup'?[.96,.52,.67,.97,.53,.73]:[.922,.49,.658,.905,.49,.705];
   for(const side of spec.openSeat?[0]:[-1,1]){
     function lens(group,material,x,y,z,scale){
@@ -973,7 +985,32 @@ function makeVehicleSignals(type,spec){
 const frayedChassis=new THREE.MeshLambertMaterial({color:'#493940'});
 const flameYarn=new THREE.MeshBasicMaterial({color:'#f8a451'});
 const cottonSmoke=new THREE.MeshBasicMaterial({color:'#82747e',transparent:true,opacity:.42,depthWrite:false});
+function roadsterWreck(spec){
+  const wreck=new THREE.Group(),l=spec.halfLength,h=spec.height;
+  wreck.name='Carcasse';
+  const fallen=joint(wreck,'Cadre couché',0,.16,0);
+  fallen.rotation.x=-1.20;
+  carTrim(fallen,[-.65,.29,0],[.34,.28,0],.062,'#443840');
+  carTrim(fallen,[-.52,.36,0],[-.27,.65,0],.047,'#55424b');
+  carTrim(fallen,[-.27,.65,0],[.30,.33,.09],.052,'#714f49');
+  carBall(fallen,.02,.47,0,.205,.143,.151,'#49383c');
+  for(const [cx,r,z] of [[-l*.66,h*.26,0],[l*.68,h*.245,.09]]){
+    carPart(fallen,spoolWelt,cx,r,z,r*.95,r*.95,r*.95,'#332d34');
+    for(let i=0;i<3;i++){
+      const a=i*Math.PI/3,dx=Math.cos(a)*r*.77,dy=Math.sin(a)*r*.77;
+      carTrim(fallen,[cx-dx,r-dy,z],[cx+dx,r+dy,z],.014,'#735e59');
+    }
+  }
+  carTrim(fallen,[.32,.54,.02],[l*.67,.30,.10],.043,'#77615e');batchGroup(fallen);
+  return wreck;
+}
+
 export function createCar(type='car',color,seed=0){
+  const kind=type?.type??type;
+  if(kind==='helicopter'||kind==='airship'){
+    const factory=kind==='helicopter'?createHelicopter:createAirship;
+    return factory(THREE,{geo,addPart,batchGroup,cord,carTrim,updateSeatedFigures},color,seed);
+  }
   const body=createCarBody(type,color,seed),spec=vehicleSpec(type?.type??type);
   let wear=null,cabin=null,door=null,wreck=null,hiddenIntact=null;
   const intact=[...body.group.children],seated=[{},{},{}];
@@ -986,6 +1023,9 @@ export function createCar(type='car',color,seed=0){
     }
     hiddenIntact??=intact.map(part=>part.visible);
     for(const part of intact)part.visible=false;
+    if(!wreck&&(type==='motorbike'||type==='scooter')){
+      wreck=roadsterWreck(spec);body.group.add(wreck);
+    }
     if(!wreck){
       wreck=new THREE.Group();wreck.name='Carcasse';
       const l=spec.halfLength,w=spec.halfWidth,h=spec.height;
@@ -1021,7 +1061,8 @@ export function createCar(type='car',color,seed=0){
       batchGroup(door);body.group.add(door);
     }
     const side=Math.sign(open);
-    door.visible=true;door.position.set(spec.halfLength*.40,0,side*spec.halfWidth*.94);
+    const hingeX=body.windowHost?.userData.townDoorHinge??spec.halfLength*.40;
+    door.visible=true;door.position.set(hingeX,0,side*spec.halfWidth*.94);
     door.rotation.y=side*Math.abs(open)*1.04;
   }
   function updateCabin(pose){
@@ -1092,7 +1133,11 @@ export function createCar(type='car',color,seed=0){
     if(!signals&&!front&&!rear)return;
     if(!signals){
       signals=makeVehicleSignals(type,spec);
-      body.group.add(signals.front,signals.rear);
+      const fork=spec.openSeat&&body.group.getObjectByName('guidon');
+      if(fork){
+        signals.front.position.x=-fork.position.x;
+        fork.add(signals.front);body.group.getObjectByName('carrosserie').add(signals.rear);
+      }else body.group.add(signals.front,signals.rear);
     }
     signals.front.visible=!!front;signals.rear.visible=!!rear;
   }
@@ -1146,5 +1191,5 @@ export function createCar(type='car',color,seed=0){
       puff.scale.setScalar(.075+.34*age);
     });
   }
-  return {...body,update,dispose(){for(const seat of seated)seat.figure?.removeFromParent();if(signals){signals.front.removeFromParent();signals.rear.removeFromParent();}if(door)for(const part of door.children)part.geometry.dispose();if(wreck)for(const part of wreck.children)part.geometry.dispose();if(cabin){cabin.group.removeFromParent();for(const pane of cabin.group.children)pane.geometry.dispose();for(const picture of cabin.pictures){picture.map.dispose();picture.material.dispose();}}body.dispose();}};
+  return {...body,update,dispose(){for(const seat of seated)seat.figure?.removeFromParent();if(signals){signals.front.removeFromParent();signals.rear.removeFromParent();}if(door)for(const part of door.children)part.geometry.dispose();if(wreck){wreck.removeFromParent();wreck.traverse(part=>part.geometry?.dispose());}if(cabin){cabin.group.removeFromParent();for(const pane of cabin.group.children)pane.geometry.dispose();for(const picture of cabin.pictures){picture.map.dispose();picture.material.dispose();}}body.dispose();}};
 }

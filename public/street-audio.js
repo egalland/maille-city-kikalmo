@@ -1,7 +1,7 @@
 import {broadcastBeat,readRadio} from './car-radio.js';
 const floor=.001;
 export function createStreetAudio(){
-  let context,master,bed,noise,roll,engine,siren,enabled=false,footAt=0;
+  let context,master,bed,noise,roll,engine,rotorPulse,rotorDepth,siren,enabled=false,footAt=0;
   let beat=-1,lastChirp=0,radio=readRadio();
   function toggle(on){
     enabled=on;
@@ -25,6 +25,8 @@ export function createStreetAudio(){
         roll=context.createGain();roll.gain.value=.018;
         bed.connect(breeze).connect(roll).connect(master);bed.start();
         engine=loop('triangle');siren=loop('sine');
+        rotorPulse=context.createOscillator();rotorDepth=context.createGain();rotorDepth.gain.value=0;
+        rotorPulse.connect(rotorDepth).connect(engine.gain.gain);rotorPulse.start();
       }
       if(context.state==='suspended')void context.resume().catch(()=>{});
     }catch{}
@@ -48,10 +50,14 @@ export function createStreetAudio(){
     gain.gain.setValueAtTime(volume,t);gain.gain.exponentialRampToValueAtTime(floor,t+seconds);
     node.connect(filter).connect(gain).connect(master);node.start(t,Math.random());node.stop(t+seconds);
   }
-  function update({speed,driving,walking,city,sirenDistance,time,epoch,weather}){
+  function update({speed,driving,vehicleType,walking,city,sirenDistance,time,epoch,weather}){
     if(!enabled||context?.state!=='running')return;
     const t=context.currentTime;
-    engine.oscillator.frequency.setTargetAtTime(32+Math.abs(speed)*2.3,t,.08);
+    const helicopter=vehicleType==='helicopter',blimp=vehicleType==='airship',rate=Math.abs(speed);
+    const pitch=helicopter?58+rate*.9:blimp?42+rate*1.3:32+rate*2.3;
+    engine.oscillator.frequency.setTargetAtTime(pitch,t,.08);
+    rotorPulse.frequency.setTargetAtTime(helicopter?11+rate*.09:6.4+rate*.11,t,.35);
+    rotorDepth.gain.setTargetAtTime(driving?(helicopter?.028:blimp?.012:0):0,t,.22);
     engine.gain.gain.setTargetAtTime(driving?.035+Math.min(.045,Math.abs(speed)*.002):floor,t,.15);
     siren.oscillator.frequency.setTargetAtTime(680+215*Math.sin(time*5.6),t,.07);
     siren.gain.gain.setTargetAtTime(Math.max(floor,.10*(1-sirenDistance/145)),t,.11);

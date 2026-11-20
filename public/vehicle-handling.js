@@ -1,11 +1,15 @@
 // Fictional fleet tuning. Mass in kg, axle load as fraction of static weight.
 const tuning={
+  helicopter:[1050,.50,'all',1,1],
+  airship:[2060,.48,'all',.91,1],
   car:[1270,.54,'rear',.96,5],compact:[920,.61,'front',.94,5],
   sedan:[1480,.52,'rear',.99,5],taxi:[1580,.55,'rear',.98,5],
   van:[2190,.61,'front',.87,5],bus:[9800,.40,'rear',.80,5],
   sport:[1280,.46,'rear',1.18,6],police:[1710,.54,'all',1.08,6],
   ambulance:[3470,.56,'all',.90,5],firetruck:[8200,.46,'all',.84,5],
   swat:[3520,.53,'all',.91,5],scooter:[205,.43,'rear',.85,1],
+  estate:[1530,.56,'front',1.01,5],camper:[2270,.43,'rear',.83,4],
+  flatbed:[4190,.48,'rear',.87,5],motorbike:[229,.48,'rear',1.09,6],
   cargo:[380,.47,'rear',.76,1],pickup:[2070,.57,'all',.95,5]
 };
 export function fleetHandling(type){

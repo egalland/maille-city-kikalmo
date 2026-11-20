@@ -12,6 +12,7 @@ import { buildings, streets, water, green, metadata, enclosureRows } from './par
 import {enferStops,enferDistrict,enferStreet} from './enfer-places.js';
 import { terrainHeight, buildingGround, waterLevel } from './terrain-height.js';
 import {workshopId,workshopColliders} from './workshop.js';
+import {airfields} from './airfield.js';
 import { terraceProfiles } from './street-terraces.js';
 import { authoredWeaponDrops } from './drop-id.js';
 import { vehicleSpec, vehicleDoorways } from './vehicle-types.js';
@@ -709,6 +710,9 @@ const tintedCars=['#8ac7b4','#bb6681','#bb8657','#65829d','#ab6256','#98aaa4','#
 const tintedPeds=['#91bcae','#c98a82','#c1a17c','#929dc3','#b7738c','#8fa27f','#9d81b4'];
 const serviceTypes=['police','firefighter','medic','swat'];
 const parkedFleet=['compact','scooter','cargo','pickup','compact','taxi','sport','sport','sedan','compact'];
+// These landmarks give the four silhouettes a dependable home in Enfer. The first
+// delivery compact and previously saved vehicle IDs keep their usual spawn.
+const enferParkedByStop={gare:'estate',morlincourt:'flatbed',salency:'camper','trois-ponts':'motorbike'};
 const trafficSeeds=new Map(),walkerSeeds=new Map();
 const cellKey=(x,y,size)=>Math.floor(x/size)+4096*Math.floor(y/size);
 function considerSeed(store,key,candidate,rank){
@@ -820,7 +824,7 @@ function lanesNearStop(stop,radius){
   return lanes;
 }
 function parkedVehicleAtStop(stop,i){
-  const preferred=sector?parkedFleet[hash(Math.round(midX)+':'+Math.round(midY))%parkedFleet.length]:parkedFleet[i];
+  const preferred=sector?parkedFleet[hash(Math.round(midX)+':'+Math.round(midY))%parkedFleet.length]:(isEnfer&&enferParkedByStop[stop.key]||parkedFleet[i]||'compact');
   const lanes=lanesNearStop(stop,34);
   const street=closestRoad(stop.x,stop.y,35,s=>s.kind!=='motorway'&&s.kind!=='path');
   const roadAngle=street?.angle??stop.angle;
@@ -904,6 +908,8 @@ for(const {p} of walkerSeeds.values()){
 }
 const flocks=['pedestrian','pedestrian','pedestrian','pedestrian','police','pedestrian','pedestrian','firefighter','pedestrian','medic','pedestrian','swat','pedestrian','pedestrian'];
 const fleet=['compact','sedan','taxi','police','van','scooter','sport','ambulance','cargo','bus','firetruck','pickup','taxi','swat','compact','sedan','car','bus'];
+const regionalFleet=['motorbike','estate','camper','flatbed'];
+const replaceableFleet=new Set(['car','compact','sedan','van','pickup','scooter']);
 // Stable global identities let a delayed car keep the same wardrobe and footprint on every client.
 export function trafficVehicleAt(originRouteId,index,routeId=originRouteId){
   const route=trafficRoutes.get(originRouteId);
@@ -912,6 +918,11 @@ export function trafficVehicleAt(originRouteId,index,routeId=originRouteId){
   // Large vehicles get a scheduled slot on routes wide enough for their envelope.
   const canBus=route.availableWidth>=6&&route.clearance.halfLength>=vehicleSpec('bus').halfLength;
   let type=slot===0&&canBus?'bus':fleet[seed%fleet.length];
+  // Expand ordinary civilian slots without rescheduling the emergency fleet.
+  if(replaceableFleet.has(type)){
+    const draw=hash(originRouteId+'/'+slot);
+    if(draw%5<2)type=regionalFleet[(draw>>>7)%regionalFleet.length];
+  }
   const body=vehicleSpec(type);
   if((type==='bus'&&!canBus)||body.halfWidth*4+.12>route.availableWidth||body.halfWidth>route.clearance.halfWidth||body.halfLength>route.clearance.halfLength)type='compact';
   const cruiseSpeed=(4.7+(route.key%51)*.08)*vehicleSpec(type).cruise;
@@ -962,6 +973,7 @@ export function routeAgents(x,y,radius=140,epochMs=Date.now()){
       type:'human',kind:'human',variant:n%8,color:tintedPeds[n%tintedPeds.length],walk:sec*5});
   }
   for(const v of parkedCars)consider(cars,{...v});
+  if(isEnfer)for(const site of airfields)consider(cars,{...site,id:'air-'+site.id,kind:'car',parked:true,speed:0,moving:false});
   return {actors:actors.sort((a,b)=>a.distanceSq-b.distanceSq).slice(0,32),cars:cars.sort((a,b)=>a.distanceSq-b.distanceSq).slice(0,24)};
 }
 

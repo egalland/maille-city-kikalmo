@@ -215,3 +215,17 @@
   #guard[aria-pressed=true]{background:var(--weft),#e7c081;color:#29363a}
 }
 @media(max-height:500px) and (pointer:coarse){#guard:not([hidden]){left:116px;bottom:25px}}
+
+#flightAltimeter[hidden],#flightShortcut[hidden],#traversalShortcut[hidden]{display:none}
+#flightAltimeter{color:#a7ebd0;font-size:.8em;white-space:nowrap}
+.drive-controls .flight-collective{display:none}
+@media(pointer:coarse),(max-width:670px){
+  #scene[data-piloting] .flight-collective{display:flex;left:12px;bottom:calc(var(--drive-bottom) + 64px)}
+  .flight-collective button{width:clamp(47px,13vw,67px);border-color:#a2c0af}
+  .flight-collective button strong{line-height:.82}
+  #scene[data-piloting] .drive-utilities{left:auto;right:12px;transform:none}
+  #scene[data-piloting] :is(#driveHorn,#driveLamps){display:none}
+}
+@media(pointer:coarse),(max-width:670px){
+  #scene[data-piloting]:not(.he-editing) #fire{bottom:calc(15px + 2 * 67px + 37px)}
+}

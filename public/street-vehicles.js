@@ -1,13 +1,18 @@
-import {appearanceKey,getKikalmoLook,zones} from './kikalmo-avatar.js';
+import {roadsterRecipe} from './roadster-model.js';
+import {Vector3,TorusGeometry} from './three.js';
+import {saddles,gripOnFork,riderIdentity} from './saddle-rider.js';
+import {puppetAppearance} from './puppet-dyes.js';
 import {fleetFabric} from './vehicle-fabric.js';
 import {wheelPart} from './vehicle-damage.js';
+import {townFleetPaint,createTownCarRecipe} from './town-fleet.js';
 import {vehicleSpec} from './vehicle-types.js';
 
 const {ink,thread:cream,tyre:rubber,brass,silver:iron}=fleetFabric;
 const seat='#694b46',wood='#b27b50';
-const colors={scooter:'#79a7a0',cargo:'#4f8886',pickup:'#a16458'};
+const colors={...townFleetPaint,motorbike:'#a95346',scooter:'#79a7a0',cargo:'#4f8886',pickup:'#a16458'};
 export const isStreetVehicle=type=>Object.hasOwn(colors,type);
-const occupied=e=>!!(e.self||e.peer||e.occupied||(!e.parked&&e.routeId));
+const bicycleWheel=new TorusGeometry(1,.15,6,28);
+const twoWheeler=type=>type==='scooter'||type==='motorbike';
 const limit=(n,lo,hi)=>Math.max(lo,Math.min(hi,n));
 const box=(parts,p,size,c,thread=false)=>parts.push({kind:'box',p,size,c,thread});
 const egg=(parts,p,size,c)=>parts.push({kind:'egg',p,size,c});
@@ -19,13 +24,17 @@ const section=(name,p=[0,0,0])=>({name,p,parts:[]});
 function makeWheel(x,z,r,width,front,spoked){
   const wheel=section('roue',[x,r,z]),parts=wheel.parts;
   wheel.r=r;wheel.front=front;
-  disc(parts,[0,0,0],r,width,rubber);
+  if(spoked)parts.push({kind:'ring',p:[0,0,0],r,width,c:rubber});
+  else disc(parts,[0,0,0],r,width,rubber);
   for(const side of [-1,1]){
     const edge=side*width*.5;
-    disc(parts,[0,0,edge],r*.79,.009,cream);
-    disc(parts,[0,0,edge+side*.009],r*.63,.010,spoked?'#786f70':iron);
+    if(spoked)parts.push({kind:'ring',p:[0,0,edge*.61],r:r*.81,width:.012,c:iron});
+    else{
+      disc(parts,[0,0,edge],r*.79,.009,cream);
+      disc(parts,[0,0,edge+side*.009],r*.63,.010,iron);
+    }
     for(let i=0;i<(spoked?6:3);i++){
-      const a=i*Math.PI/(spoked?6:3),dx=Math.cos(a)*r*.62,dy=Math.sin(a)*r*.62;
+      const a=i*Math.PI/(spoked?6:3),spoke=r*(spoked?.77:.62),dx=Math.cos(a)*spoke,dy=Math.sin(a)*spoke;
       rod(parts,[-dx,-dy,edge+side*.017],[dx,dy,edge+side*.017],spoked?.009:.018,spoked?cream:brass);
     }
     disc(parts,[0,0,edge+side*.022],r*.30,.017,brass);
@@ -51,32 +60,38 @@ function parcel(parts,x,y,z,l,h,w,paper){
     rod(parts,[x+s*m*.68,top+.083,z+.05],[x,top,z],.015,cream);
   }
 }
-function makeRider(x,saddle,grip,foot){
-  const node=section('conducteur',[x,saddle,0]),parts=node.parts;
-  egg(parts,[0,.21,0],[.18,.27,.19],'#387b7a');
-  const fur='#d88845';
-  egg(parts,[-.17,.145,-.09],[.17,.117,.136],fur);
-  egg(parts,[-.29,.214,-.155],[.19,.135,.149],fur);
-  egg(parts,[-.421,.313,-.212],[.173,.141,.153],fur);
-  cone(parts,[-.445,.327,-.228],[-.634,.549,-.338],.139,cream);
-  egg(parts,[.026,.543,0],[.209,.196,.204],fur);
-  egg(parts,[.154,.477,0],[.153,.087,.151],cream);
-  egg(parts,[.293,.504,0],[.041,.035,.054],ink);
-  for(const s of [-1,1]){
-    cone(parts,[-.021,.656,s*.116],[-.065,.964,s*.249],.117,fur);
-    cone(parts,[.048,.694,s*.138],[.001,.888,s*.226],.057,'#c87973');
-    cone(parts,[-.038,.487,s*.134],[-.155,.485,s*.256],.094,cream);
-    egg(parts,[-.035,.488,s*.147],[.105,.071,.071],cream);
-    const knee=[foot[0]-x+.07,.015,s*.141],boot=[foot[0]-x,foot[1]-saddle,s*.14];
-    const hand=[grip[0]-x,grip[1]-saddle,s*grip[2]],elbow=[.13,.20,s*.22];
-    rod(parts,[0,.03,s*.085],knee,.070,ink);rod(parts,knee,boot,.056,ink);
-    egg(parts,[boot[0]+.044,boot[1],boot[2]],[.11,.057,.067],seat);
-    rod(parts,[.018,.35,s*.135],elbow,.057,'#387b7a');rod(parts,elbow,hand,.045,cream);
-    egg(parts,hand,[.061,.054,.055],cream);
-    egg(parts,[.163,.584,s*.125],[.044,.040,.030],cream);
-    egg(parts,[.187,.584,s*.142],[.023,.029,.017],ink);
+// Simplified fallback used only when neither of the mesh renderers can draw.
+// Its pose, grips, footwear and dyes correspond to the same mount and rider.
+function sketchRider(mount,id,steering){
+  const {pelt,coat,animal}=puppetAppearance(id.role,id.skin,id.seed);
+  const rider=section('conducteur'),p=rider.parts,[x,y]=mount.hip;
+  const headX=x+.09+mount.lean*.3;
+  egg(p,[x+.035,y+.26,0],[.19,.28,.215],coat);
+  egg(p,[headX,y+.66,0],[.245,.24,.255],pelt.fur);
+  if(animal==='human'){
+    egg(p,[headX-.055,y+.795,0],[.217,.108,.238],pelt.shade);
+    egg(p,[headX+.218,y+.60,0],[.061,.057,.055],pelt.inner);
+  }else{
+    egg(p,[headX+.18,y+.605,0],[.15,.099,.15],pelt.cream);
+    egg(p,[headX+.29,y+.627,0],[.046,.043,.065],ink);
+    egg(p,[x-.245,y+.14,.11],[.243,.121,.127],pelt.fur);
+    egg(p,[x-.433,y+.225,.20],[.119,.124,.122],pelt.cream);
   }
-  return node;
+  for(const side of [-1,1]){
+    if(animal==='fox')cone(p,[headX-.04,y+.82,side*.135],[headX-.079,y+1.06,side*.21],.105,pelt.fur);
+    egg(p,[headX+.193,y+.696,side*.14],[.032,.045,.029],ink);
+    const hand=gripOnFork(mount,side,steering,new Vector3()).toArray();
+    const elbow=[x+.11,y+.285,side*.25],knee=[x+.18,y-.09,side*.20],boot=[mount.foot[0],mount.foot[1],side*mount.foot[2]];
+    rod(p,[x+.09,y+.415,side*.177],elbow,.071,coat);rod(p,elbow,hand,.054,coat);
+    egg(p,hand,[.074,.065,.065],pelt.cream);
+    rod(p,[x,y+.015,side*.106],knee,.076,ink);rod(p,knee,boot,.061,ink);
+    egg(p,boot,[.118,.061,.078],seat);
+  }
+  return rider;
+}
+
+function makeMotorbike(paint){
+  return roadsterRecipe(paint,{section,egg,disc,box,rod,makeWheel});
 }
 function makeScooter(paint){
   const chassis=section('carrosserie'),p=chassis.parts,fork=section('guidon',[.61,0,0]),f=fork.parts;
@@ -101,13 +116,19 @@ function makeScooter(paint){
   egg(f,[.101,1.047,0],[.055,.088,.099],brass);
   egg(f,[.132,1.047,0],[.038,.070,.082],fleetFabric.lamp);
   for(const s of [-1,1])egg(f,[.165,1.047,s*.028],[.008,.009,.009],ink);
-  rod(f,[-.007,1.06,-.075],[-.089,1.055,-.336],.024,iron);rod(f,[-.007,1.06,.075],[-.089,1.055,.336],.024,iron);
   for(const s of [-1,1]){
-    rod(f,[-.089,1.055,s*.276],[-.089,1.055,s*.371],.032,seat);
-    rod(f,[-.084,1.07,s*.246],[-.035,1.174,s*.304],.011,iron);
-    egg(f,[-.035,1.171,s*.304],[.025,.043,.052],cream);
+    rod(f,[-.007,1.06,s*.075],[-.15,1.102,s*.223],.024,iron);
+    rod(f,[-.15,1.102,s*.223],[-.40,1.055,s*.283],.024,iron);
+    rod(f,[-.40,1.055,s*.283],[-.425,1.055,s*.372],.032,seat);
+    rod(f,[-.18,1.096,s*.234],[-.09,1.174,s*.304],.012,iron);
+    egg(f,[-.09,1.171,s*.304],[.025,.043,.052],cream);
   }
-  return {chassis,fork,rider:makeRider(-.25,.744,[.52,1.057,.32],[.10,.356]),wheels:[makeWheel(-.68,0,.305,.147,false,false),makeWheel(.66,0,.305,.147,true,false)]};
+  // Rolled saddle welt, stitched channels and the exposed left-hand drive cover.
+  for(let i=0;i<5;i++)rod(p,[-.545+i*.084,.782,-.141],[-.545+i*.084,.782,.141],.008,'#a78363');
+  egg(p,[-.52,.349,-.158],[.31,.102,.107],iron);
+  rod(p,[-.48,.34,.183],[-.85,.37,.199],.044,iron);
+  egg(p,[-.917,.352,.199],[.094,.051,.050],ink);
+  return {chassis,fork,mount:saddles.scooter,wheels:[makeWheel(-.68,0,.305,.147,false,false),makeWheel(.66,0,.305,.147,true,false)]};
 }
 function makeCargo(paint){
   const chassis=section('carrosserie'),p=chassis.parts,fork=section('guidon',[-.12,0,0]),f=fork.parts;
@@ -133,11 +154,11 @@ function makeCargo(paint){
   parcel(p,.922,.516,.059,.373,.496,.39,'#a3a26d');
   rod(f,[0,.84,0],[-.021,1.132,0],.022,iron);
   for(const s of [-1,1]){
-    rod(f,[-.021,1.131,0],[-.09,1.099,s*.337],.023,iron);
-    rod(f,[-.076,1.105,s*.247],[-.101,1.093,s*.352],.031,seat);
+    rod(f,[-.021,1.131,0],[-.15,1.099,s*.264],.023,iron);
+    rod(f,[-.15,1.099,s*.264],[-.211,1.097,s*.355],.031,seat);
   }
   egg(f,[.034,1.091,0],[.067,.069,.069],cream);
-  return {chassis,fork,rider:makeRider(-.737,.883,[-.21,1.097,.307],[-.45,.265]),wheels:[makeWheel(-1.01,0,.315,.081,false,true),...[-.472,.472].map(z=>makeWheel(.878,z,.288,.089,true,true))]};
+  return {chassis,fork,mount:saddles.cargo,wheels:[makeWheel(-1.01,0,.315,.081,false,true),...[-.472,.472].map(z=>makeWheel(.878,z,.288,.089,true,true))]};
 }
 function makePickup(paint){
   const chassis=section('carrosserie'),p=chassis.parts;
@@ -181,48 +202,11 @@ const models=new Map();
 function modelFor(type,color){
   const paint=typeof color==='string'&&/^#[a-f\d]{6}$/i.test(color)?color:colors[type],key=type+paint;
   if(!models.has(key)){
-    const model=(type==='scooter'?makeScooter:type==='cargo'?makeCargo:makePickup)(paint);
+    const model=Object.hasOwn(townFleetPaint,type)?createTownCarRecipe(type,paint,{section,box,egg,rod,makeWheel}):
+      (type==='motorbike'?makeMotorbike:type==='scooter'?makeScooter:type==='cargo'?makeCargo:makePickup)(paint);
     models.set(key,model);if(models.size>80)models.delete(models.keys().next().value);
   }
   return models.get(key);
-}
-function seatColor(c,appearance){
-  if(c==='#d88845'&&/^#[a-f\d]{6}$/i.test(appearance?.color))return appearance.color;
-  if(c==='#387b7a'&&Number.isInteger(appearance?.outfit))return ['#a17176','#768a6a','#745e77','#445d76','#ad7048','#917b63'][appearance.outfit]||c;
-  return c;
-}
-// Copy the coloured threads from the equipped catalogue layers onto the seated head.
-// Each short run follows the curved face. The same strips render in both engines.
-const gearCache=new WeakMap();
-function riderGear(value){
-  if(!value||!(value.headwear||value.facewear||value.adornment||value.accessory||value.costume)||typeof document==='undefined'||typeof Image==='undefined')return null;
-  const art=getKikalmoLook(value,0)?.art;if(!art)return null;
-  if(gearCache.has(art))return gearCache.get(art);
-  const cols=21,rows=25;
-  function sample(layer){
-    const canvas=document.createElement('canvas');canvas.width=cols;canvas.height=rows;
-    const ctx=canvas.getContext('2d');
-    ctx.imageSmoothingEnabled=false;ctx.drawImage(layer,0,0,cols,rows);
-    return ctx.getImageData(0,0,cols,rows).data;
-  }
-  const mask=sample(art.tag),front=sample(art.front),back=sample(art.rear),parts=[];
-  const metric=.79/rows,width=.79*art.front.width/art.front.height;
-  const step=width/cols;
-  function thread(image,i){
-    const rgb=[0,1,2].map(n=>Math.min(255,Math.round(image[i+n]/16)*16));
-    return '#'+rgb.map(v=>v.toString(16).padStart(2,'0')).join('');
-  }
-  for(let row=0;row<rows;row++)for(let col=0;col<cols;col++){
-    const i=(row*cols+col)*4,zone=Math.round(mask[i]/24);
-    const cap=zone===zones.headwear,glasses=zone===zones.facewear,jewel=zone===zones.adornment;
-    if(!(cap||glasses||jewel)||mask[i+3]<95||front[i+3]<95)continue;
-    const y=.852-(row+.5)*metric,z=(.5-(col+.5)/cols)*width;
-    const face=.033+.19*Math.sqrt(Math.max(.05,1-(z/.248)**2-((y-.565)/.235)**2));
-    const tint=thread(front,i);
-    box(parts,[face+.011,y,z],[.034,metric*1.08,step*1.08],tint,true);
-    if(cap&&back[i+3]>95)box(parts,[-face+.033,y,z],[.045,metric*1.08,step*1.08],thread(back,i),true);
-  }
-  gearCache.set(art,parts);return parts;
 }
 function newMotion(){return {steering:0,roll:0,pitch:0,bob:0,phase:0,lastHeading:null,lastSpeed:null};}
 function advanceMotion(m,type,e,dt,time,seed){
@@ -231,7 +215,7 @@ function advanceMotion(m,type,e,dt,time,seed){
   const yaw=m.lastHeading===null?0:Math.atan2(Math.sin(heading-m.lastHeading),Math.cos(heading-m.lastHeading))/dt;
   const input=e.steer??e.turn??yaw*.51;m.lastHeading=heading;
   m.steering+=(limit(input,-1,1)*.52-m.steering)*blend;
-  const bank=type==='scooter'?.61:type==='cargo'?.125:.09;
+  const bank=type==='motorbike'?.94:type==='scooter'?.61:type==='cargo'?.125:.09;
   m.roll+=(m.steering*bank*limit(Math.abs(speed)/7,0,1)-m.roll)*blend;
   const a=m.lastSpeed===null?0:limit((speed-m.lastSpeed)/dt,-13,10);m.lastSpeed=speed;
   m.pitch+=((a*.0025-(e.brake?.027:0))-m.pitch)*blend;
@@ -241,11 +225,22 @@ function advanceMotion(m,type,e,dt,time,seed){
 export function createStreetVehicle(THREE,art,type,color,seed=0){
   const model=modelFor(type,color),root=new THREE.Group(),suspension=new THREE.Group(),cached=[],up=new THREE.Vector3(0,1,0);
   root.name='Maille véhicule '+type;root.add(suspension);
-  function build(section,appearance,gear=[]){
+  function build(section){
     const node=new THREE.Group();node.name=section.name;node.position.set(...section.p);
-    for(const v of [...section.parts,...gear]){
-      const col=seatColor(v.c,appearance);
-      if(v.kind==='box'||v.kind==='egg')art.addPart(node,v.kind==='box'?art.geo.box:art.geo.littleBall,...v.p,...v.size,col);
+    const panelGeometry=[];
+    for(const v of section.parts){
+      const col=v.c;
+      if(v.kind==='panel'){
+        const positions=[],uv=[];
+        for(let i=1;i+1<v.points.length;i++)for(const point of [v.points[0],v.points[i],v.points[i+1]]){
+          positions.push(...point);uv.push((point[0]+point[2])*.58,point[1]*.8);
+        }
+        const g=new THREE.BufferGeometry();
+        g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+        g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.computeVertexNormals();
+        art.addPart(node,g,0,0,0,1,1,1,col,0,0,0,v.glass?'glass':'yarn');panelGeometry.push(g);
+      }else if(v.kind==='box'||v.kind==='egg')art.addPart(node,v.kind==='box'?art.geo.box:art.geo.littleBall,...v.p,...v.size,col);
+      else if(v.kind==='ring')art.addPart(node,bicycleWheel,...v.p,v.r/1.15,v.r/1.15,v.width/.30,col);
       else if(v.kind==='disc')art.addPart(node,art.geo.cylinder,...v.p,v.r,v.width,v.r,col,Math.PI/2);
       else{
         const a=new THREE.Vector3(...v.a),b=new THREE.Vector3(...v.b),d=b.clone().sub(a);
@@ -253,10 +248,12 @@ export function createStreetVehicle(THREE,art,type,color,seed=0){
         part.quaternion.setFromUnitVectors(up,d.normalize());
       }
     }
-    art.batchGroup(node);return node;
+    art.batchGroup(node);for(const g of panelGeometry)g.dispose();return node;
   }
   function release(node){for(const m of node.children)m.geometry?.dispose();node.removeFromParent();}
   const body=build(model.chassis);suspension.add(body);cached.push(body);
+  if(model.seats3D){body.userData.seats3D=model.seats3D;body.userData.townDoorHinge=model.seats3D.x+.66;}
+  const glazing=model.seats3D?body.children.find(mesh=>mesh.material?.transparent):null;
   const fork=model.fork&&build(model.fork);
   if(fork){suspension.add(fork);cached.push(fork);}
   const wheels=model.wheels.map(w=>{
@@ -265,27 +262,44 @@ export function createStreetVehicle(THREE,art,type,color,seed=0){
     return {pivot,spin,w};
   });
   const motion=newMotion();
-  let rider=null,appearance='',gearParts=null;
+  let rider=null,identity=null;
+  function clearRider(){
+    if(!rider)return;
+    release(rider.distant);rider.group.removeFromParent();rider=null;
+  }
   function update(e={},dt=.016,time=0){
     advanceMotion(motion,type,e,dt,time,seed);
     const {steering,roll,pitch,bob,phase}=motion;
     suspension.position.y=bob;
     suspension.rotation.set(roll,0,pitch);
+    if(glazing)glazing.visible=!(e.parts&1);
     if(fork)fork.rotation.y=-steering;
     for(const {pivot,spin,w} of wheels){
       pivot.rotation.y=w.front?-steering:0;
-      pivot.rotation.x=type==='scooter'?roll:0;
+      pivot.rotation.x=twoWheeler(type)?roll:0;
       const flat=(e.parts&wheelPart(w.front,w.p[2]>0))!==0||(w.p[2]===0&&(e.parts&wheelPart(w.front,true))!==0);
       pivot.position.y=w.r*(flat?.75:1);pivot.scale.y=flat?.68:1;
       spin.rotation.z=phase/w.r;
     }
-    if(model.rider){
-      const visible=occupied(e),tone=visible?appearanceKey(e.appearance):'',gear=visible?riderGear(e.appearance):null;
-      if(rider&&(!visible||(tone!==appearance||gear!==gearParts))){release(rider);rider=null;}
-      if(visible&&!rider){rider=build(model.rider,e.appearance,gear||[]);suspension.add(rider);appearance=tone;gearParts=gear;}
+    if(model.mount){
+      const next=riderIdentity(e);
+      if(rider&&(!next||next.id!==identity.id||next.role!==identity.role||next.skin!==identity.skin)){
+        clearRider();
+      }
+      if(next&&!rider){
+        const close=art.mountedPuppet(next,model.mount,type);
+        close.group.name='Pantin au guidon';
+        const distant=build(sketchRider(model.mount,next,0));
+        distant.name='Silhouette au guidon';
+        const lod=new THREE.LOD();lod.name='conducteur';
+        lod.addLevel(close.group,0);lod.addLevel(distant,27,.12);distant.visible=false;
+        rider={group:lod,update:close.update,distant};
+        suspension.add(lod);identity=next;
+      }
+      rider?.update(motion,e,time);
     }
   }
-  return {group:root,update,dispose(){for(const n of cached)release(n);if(rider)release(rider);root.removeFromParent();}};
+  return {group:root,windowHost:model.seats3D?body:undefined,update,dispose(){for(const n of cached)release(n);clearRider();root.removeFromParent();}};
 }
 
 const cube=[[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
@@ -325,9 +339,9 @@ export function drawStreetVehicle(c,e,x,y,height,time=0,viewAngle=0,weave=null){
     const depth=points.reduce((total,p)=>total+p[2],0)/points.length;
     draw.push({kind:'face',points,depth,fill,edges,woven});
   }
-  function build(section,steering=0,spin=0,body=false,appearance=null,gear=null){
+  function build(section,steering=0,spin=0,body=false){
     const [ox,oy,oz]=section.p,cc=Math.cos(spin),ss=Math.sin(spin),cd=Math.cos(steering),sd=Math.sin(steering);
-    const bank=body||e.type==='scooter'?roll:0,cb=Math.cos(bank),sb=Math.sin(bank),cp=Math.cos(pitch),sp=Math.sin(pitch);
+    const bank=body||twoWheeler(e.type)?roll:0,cb=Math.cos(bank),sb=Math.sin(bank),cp=Math.cos(pitch),sp=Math.sin(pitch);
     function point(a,b,d){
       const ax=a*cc-b*ss,by=a*ss+b*cc;
       let px=ox+ax*cd+d*sd,pz=oz-ax*sd+d*cd,py=oy+by;
@@ -336,10 +350,17 @@ export function drawStreetVehicle(c,e,x,y,height,time=0,viewAngle=0,weave=null){
       const flat=section.r&&(e.parts&(section.p[2]===0?wheelPart(section.front,true)|wheelPart(section.front,false):wheelPart(section.front,section.p[2]>0)));
       return project(px,flat?py*.76:py,zz);
     }
-    for(const v of gear?[...section.parts,...gear]:section.parts){
+    for(const v of section.parts){
       if(height<22&&((v.kind==='rod'&&v.r*size<.33)||(v.kind==='egg'&&v.size[0]*size<.7)))continue;
-      const fill=seatColor(v.c,appearance);
-      if(v.kind==='box'){
+      const fill=v.c;
+      if(v.kind==='panel'){
+        if(v.glass&&(e.parts&1))continue;
+        const points=v.points.map(([x,y,z])=>point(x,y,z));
+        const ax=v.points[1][0]-v.points[0][0],ay=v.points[1][1]-v.points[0][1],az=v.points[1][2]-v.points[0][2];
+        const bx=v.points[2][0]-v.points[0][0],by=v.points[2][1]-v.points[0][1],bz=v.points[2][2]-v.points[0][2];
+        const nx=ay*bz-az*by,ny=az*bx-ax*bz,nz=ax*by-ay*bx,n=Math.hypot(nx,ny,nz)||1;
+        face(points,v.glass?'rgba(153,187,177,.24)':shade(fill,Math.round((.91+.17*ny/n+.05*nx/n)*16)/16),false,!v.glass);
+      }else if(v.kind==='box'){
         const corners=cube.map(k=>point(...k.map((n,i)=>v.p[i]+n*v.size[i]/2)));
         for(let i=0;i<5;i++){
           const q=sides[i].map(k=>corners[k]);
@@ -359,6 +380,17 @@ export function drawStreetVehicle(c,e,x,y,height,time=0,viewAngle=0,weave=null){
         const a=point(...v.b),ring=circle.map(([co,si])=>point(v.a[0]+v.r*(co*ux+si*vx),v.a[1]+v.r*si*vy,v.a[2]+v.r*(co*uz+si*vz)));
         for(let i=0;i<ring.length;i++)face([ring[i],ring[(i+1)%ring.length],a],shade(fill,[.88,.93,1,1.04][Math.floor(i/3)]));
         face(ring,shade(fill,.91));
+      }else if(v.kind==='ring'){
+        const [cx,cy,cz]=v.p;
+        const ring=(r,z)=>circle.map(([dx,dy])=>point(cx+r*dx,cy+r*dy,cz+z));
+        const front=ring(v.r,v.width/2),back=ring(v.r,-v.width/2);
+        const frontHole=ring(v.r*.74,v.width/2),backHole=ring(v.r*.74,-v.width/2);
+        for(let i=0;i<circle.length;i++){
+          const j=(i+1)%circle.length;
+          face([front[i],front[j],back[j],back[i]],shade(fill,i<6?.97:.8));
+          face([front[i],front[j],frontHole[j],frontHole[i]],fill);
+          face([back[i],back[j],backHole[j],backHole[i]],fill);
+        }
       }else if(v.kind==='rod'){
         const a=point(...v.a),b=point(...v.b);
         draw.push({kind:'rod',a,b,r:v.r,fill,depth:(a[2]+b[2])/2});
@@ -375,8 +407,23 @@ export function drawStreetVehicle(c,e,x,y,height,time=0,viewAngle=0,weave=null){
     }
   }
   build(model.chassis,0,0,true);
+  if(model.seats3D){
+    const {x:seatX,y:seatY,spacing,scale}=model.seats3D;
+    for(const [index,active] of [e.driver,e.passenger,e.fare].entries()){
+      if(!active)continue;
+      const seat=section('siège',[seatX-(index===2?.60:0),seatY,index?spacing:-spacing]);
+      const player=index===0?(e.self||e.peer):index===1&&e.passengerSkin;
+      const dye=puppetAppearance(player?'fox':'human',index===0?e.driverSkin:e.passengerSkin,index);
+      const {fur}=dye.pelt,coat=dye.coat;
+      egg(seat.parts,[0,.14*scale,0],[.12*scale,.17*scale,.16*scale],coat);
+      egg(seat.parts,[.012,.384*scale,0],[.143*scale,.15*scale,.15*scale],fur);
+      if(player)for(const s of [-1,1])cone(seat.parts,[-.03,.482*scale,s*.079],[-.05,.611*scale,s*.109],.059*scale,fur);
+      build(seat,0,0,true);
+    }
+  }
   if(model.fork)build(model.fork,-steer,0,true);
-  if(model.rider&&occupied(e))build(model.rider,0,0,true,e.appearance,riderGear(e.appearance));
+  const rider=model.mount&&riderIdentity(e);
+  if(rider)build(sketchRider(model.mount,rider,steer),0,0,true);
   for(const w of model.wheels)build(w,w.front?-steer:0,phase/w.r);
   c.save();c.translate(x,y);c.scale(size,size);c.lineJoin='round';c.lineCap='round';
   function yarn(o){

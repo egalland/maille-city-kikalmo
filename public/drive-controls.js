@@ -6,7 +6,8 @@ export function installDriveControls(root,change){
     const values=new Set([...held.values()].map(button=>button.dataset.drive));
     for(const button of buttons)button.classList.toggle('is-pressed',values.has(button.dataset.drive));
     change(Number(values.has('right'))-Number(values.has('left')),
-      values.has('brake')?-1:Number(values.has('throttle')));
+      values.has('brake')?-1:Number(values.has('throttle')),
+      Number(values.has('ascend'))-Number(values.has('descend')));
   }
   function release(){if(held.size){held.clear();update();}}
   for(const button of buttons){

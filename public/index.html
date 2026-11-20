@@ -64,7 +64,7 @@
       <div id="wantedFeedback" class="alert-feedback" hidden></div>
     </div>
   </section>
-  <div data-hud="speed" id="driveHud" class="drive-hud" hidden><i data-icon="car"></i><span><span id="vehicleName">Au volant</span><span class="chassis-status" id="chassisStatus"></span></span><b id="carSpeed">0 km/h</b></div>
+  <div data-hud="speed" id="driveHud" class="drive-hud" hidden><i data-icon="car"></i><span><span id="vehicleName">Au volant</span><span class="chassis-status" id="chassisStatus"></span></span><b id="carSpeed">0 km/h</b><b id="flightAltimeter" hidden aria-label="Hauteur au-dessus du sol">0 m</b></div>
   <div class="ko-notice" id="koNotice" role="status" hidden><strong>K.-O.</strong><span id="reviveTimer"></span></div>
   <div id="sectorEdge" role="status" hidden></div>
   <div class="game-notice" id="notice" role="status" aria-live="polite"></div>
@@ -92,6 +92,10 @@
         <button type="button" data-drive="left" aria-label="Braquer à gauche"><strong aria-hidden="true">‹</strong><span>Gauche</span></button>
         <button type="button" data-drive="right" aria-label="Braquer à droite"><strong aria-hidden="true">›</strong><span>Droite</span></button>
       </div>
+      <div class="flight-collective" aria-label="Altitude">
+        <button type="button" data-drive="descend" aria-label="Descendre en altitude"><strong aria-hidden="true">−</strong><span>Descendre</span></button>
+        <button type="button" data-drive="ascend" aria-label="Monter en altitude"><strong aria-hidden="true">+</strong><span>Monter</span></button>
+      </div>
       <div class="drive-utilities">
         <button type="button" id="driveLamps" aria-label="Changer le mode des phares"><span>Phares</span></button>
         <button type="button" id="driveHorn" aria-label="Klaxonner"><i data-icon="volume"></i><span>Klaxon</span></button>
@@ -115,7 +119,7 @@
 </main>
 <footer class="keybar">
   <div class="keys-desktop">
-    <span><kbd>ZQSD</kbd> Déplacer</span><span id="traversalShortcut"><kbd>Espace</kbd><span>Sauter</span></span><span class="shoot-key"><kbd><i data-icon="mouse"></i></kbd><span id="primaryVerb">Tirer</span></span><span class="melee-key"><kbd>V</kbd> Frapper</span><span id="rideShortcut"><kbd>E</kbd><span>Véhicule</span></span><span class="camera-key"><kbd>Clic droit</kbd> Caméra</span>
+    <span><kbd>ZQSD</kbd> Déplacer</span><span id="flightShortcut" hidden><kbd>Espace</kbd> Monter <kbd>Ctrl</kbd> Descendre</span><span id="traversalShortcut"><kbd>Espace</kbd><span>Sauter</span></span><span class="shoot-key"><kbd><i data-icon="mouse"></i></kbd><span id="primaryVerb">Tirer</span></span><span class="melee-key"><kbd>V</kbd> Frapper</span><span id="rideShortcut"><kbd>E</kbd><span>Véhicule</span></span><span class="camera-key"><kbd>Clic droit</kbd> Caméra</span>
     <button data-panel="weapons"><kbd>TAB</kbd> Roue d’armes</button><button data-panel="emotes"><kbd>B</kbd> Émotes</button><button id="chatKey"><kbd>T</kbd> Chat</button>
   </div>
   <div class="keys-mobile"><button data-panel="weapons"><i data-icon="aim"></i>Armes</button><button data-panel="emotes"><i data-icon="smile"></i>Émotes</button><button data-panel="map"><i data-icon="map"></i>Carte</button><button id="chatMobile"><i data-icon="chat"></i>Chat</button></div>

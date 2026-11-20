@@ -16,3 +16,17 @@ test('steering and pedals accept simultaneous touch and release independently',(
   assert.equal(root.hidden,true);
   assert.deepEqual(inputs,[[-1,0],[-1,1],[-1,-1],[-1,1],[0,1],[0,0]]);
 });
+
+test('a pilot holds altitude, yaw and forward thrust independently and releases on exit',()=>{
+  const inputs=[],buttons=Object.fromEntries(['left','throttle','ascend','descend'].map(name=>[name,Object.assign(new EventTarget(),{
+    dataset:{drive:name},classList:{toggle(){}},setPointerCapture(){}
+  })]));
+  const controls=installDriveControls({querySelectorAll:()=>Object.values(buttons)},(...axes)=>inputs.push(axes));
+  const touch=(name,type,pointerId)=>buttons[name].dispatchEvent(Object.assign(new Event(type,{cancelable:true}),{button:0,pointerId}));
+  controls.setActive(true);
+  touch('ascend','pointerdown',1);touch('left','pointerdown',2);touch('throttle','pointerdown',3);
+  assert.deepEqual(inputs.at(-1),[-1,1,1]);
+  touch('ascend','pointercancel',1);touch('descend','pointerdown',4);
+  assert.deepEqual(inputs.at(-1),[-1,1,-1]);
+  controls.setActive(false);assert.deepEqual(inputs.at(-1),[0,0,0]);
+});

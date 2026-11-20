@@ -68,7 +68,20 @@ function setTouchAim(enabled) {
 const controlsAreTouch=()=>matchMedia('(pointer:coarse),(max-width:670px)').matches;
 renderIcons();
 const traversal=installTraversalControl($('#jump'),$('#traversalShortcut'),pressed=>game.action('jump',pressed));
-const driving=installDriveControls($('#driveControls'),(steering,throttle)=>game?.setDrive(steering,throttle));
+const driving=installDriveControls($('#driveControls'),(steering,throttle,vertical)=>{
+  game?.setDrive(steering,throttle);game?.setFlightVertical(vertical);
+});
+function showFlightControls(active){
+  $('#scene').toggleAttribute('data-piloting',active);
+  $('#flightShortcut').hidden=!active;
+  $('#traversalShortcut').hidden=active;
+  const captions=active?['Reculer','Avancer']:['Frein · Recul','Accélérer'];
+  for(const [i,key] of ['brake','throttle'].entries()){
+    const button=document.querySelector('[data-drive="'+key+'"]');
+    button.querySelector('span').textContent=captions[i];
+    button.setAttribute('aria-label',active||key==='throttle'?captions[i]:'Freiner puis reculer à l’arrêt');
+  }
+}
 const combat=installCombatControls($('#fire'),$('#melee'),{
   action:(name,pressed)=>game?.action(name,pressed),
   setAim:(x,y)=>game?.setAim(x,y),
@@ -186,17 +199,23 @@ function showLife(){
   }
 }
 function onState(next){
-  const wasDriving=Boolean(state.inVehicle&&!state.passenger);
+  const wasDriving=Boolean(state.inVehicle&&!state.passenger),wasFlying=Boolean(state.piloting);
   state={...state,...next};
   const drivingNow=Boolean(state.inVehicle&&!state.passenger);
   $('#scene').toggleAttribute('data-passenger',Boolean(state.passenger));
   if(wasDriving!==drivingNow){stopStick();$('#scene').toggleAttribute('data-driving',drivingNow);}
+  if(wasFlying!==Boolean(state.piloting)){
+    driving.release();showFlightControls(Boolean(state.piloting));
+  }
   driving.setActive(drivingNow&&state.lifeState!=='down');
   $('#district').textContent=state.district;
   const street=state.street||'';
   $('#street').textContent=street===state.district?'':street;
   $('#driveHud').hidden=!state.inVehicle;
-  $('#carSpeed').textContent=(state.speed||0)+' km/h'+(state.gear==null?'':' · '+(state.gear<0?'R':'D'+state.gear));
+  const altitude=$('#flightAltimeter');
+  altitude.hidden=!state.inAircraft;
+  if(!altitude.hidden)altitude.textContent=Math.round(state.flightHeight)+' m / sol';
+  $('#carSpeed').textContent=(state.speed||0)+' km/h'+(state.gear==null||state.piloting?'':' · '+(state.gear<0?'R':'D'+state.gear));
   $('#vehicleName').textContent=state.vehicleName||'Au volant';
   const condition=$('#chassisStatus'),integrity=Math.round(state.vehicleHealth??100);
   condition.textContent=integrity===0?'En panne':'Carrosserie · '+integrity+' %';
@@ -233,7 +252,8 @@ game=createGame({canvas:city,minimap:$('#minimap'),net,onState,onNotice:notify,o
 const sectorPosition=new URL(location.href).searchParams;
 const positionKey='position.v1.'+(isEnfer?'enfer':(sectorPosition.get('lon')||'paris')+':'+(sectorPosition.get('lat')||''));
 function savePosition(){
-  const {x,y,angle,swimming}=game.getPosition();
+  const {x,y,angle,swimming,airborne}=game.getPosition();
+  if(airborne)return;
   if(Number.isFinite(x+y+angle)&&game.getVitalitySnapshot().health>0)write(positionKey,JSON.stringify({x,y,angle,...(swimming?{swimming:true}:{})}));
 }
 if(!sectorTransfer){

@@ -1,6 +1,7 @@
+import {airfields} from './airfield.js';
 import {careerPlaces} from './career-catalog.js';
 import {makeCareerRouter} from './career-route.js';
-export const placeSymbols={market:'M',garage:'G',station:'S',quay:'Q',police:'P'};
+export const placeSymbols={market:'M',garage:'G',station:'S',quay:'Q',police:'P',helipad:'H',mooring:'A'};
 let goal=null,route=[],districtRouter=null,cityRouter=null,origin=null;
 const inDistrict=(x,y,margin)=>Math.abs(x-careerPlaces.market.x)<=margin&&Math.abs(y-careerPlaces.market.y)<=margin;
 function itinerary(streets,player,target){
@@ -33,8 +34,8 @@ export function paintCareerNavigation(c,player,streets,{px,py,w,h,full}){
     c.lineWidth=full?4:5;c.strokeStyle='#46392f';c.stroke();
     c.lineWidth=full?2.2:3;c.strokeStyle='#ffca65';c.stroke();
   }
-  const pins=Object.values(careerPlaces);
-  if(goal&&!careerPlaces[goal.id])pins.push(goal);
+  const pins=[...Object.values(careerPlaces),...airfields];
+  if(goal&&!pins.some(p=>p.id===goal.id))pins.push(goal);
   for(const p of pins){
     const active=p.id===goal?.id,r=active?8:6.5;
     let x=px(p.x),y=py(p.y);

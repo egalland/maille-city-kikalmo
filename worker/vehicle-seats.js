@@ -40,7 +40,10 @@ export function requestSeat(stmts,q,{room,id,name,op,now,aliveSince,driver,car,l
   // Commands participate in the same ordered, retryable batch as vehicle ownership.
   const fresh="NOT EXISTS (SELECT 1 FROM mc_events WHERE room=? AND player=? AND op=?)";
   if(leave){
-    stmts.push(q(`DELETE FROM mc_seats WHERE room=? AND rider=? AND ${fresh}`,room,id,room,id,op));
+    stmts.push(q(`DELETE FROM mc_seats WHERE room=? AND rider=? AND ${fresh} AND NOT EXISTS (
+      SELECT 1 FROM mc_members d WHERE d.room=mc_seats.room AND d.id=mc_seats.driver AND d.seen>?
+      AND json_extract(d.state,'$.vehicle.type') IN ('helicopter','airship') AND
+      (coalesce(json_extract(d.state,'$.lift'),0)>.18 OR abs(coalesce(json_extract(d.state,'$.speed'),0))>1.5))`,room,id,room,id,op,aliveSince));
   }else{
     stmts.push(q(`DELETE FROM mc_seats WHERE room=? AND car=? AND
       (NOT EXISTS (SELECT 1 FROM mc_members WHERE room=mc_seats.room AND id=mc_seats.driver AND seen>?)
@@ -52,10 +55,11 @@ export function requestSeat(stmts,q,{room,id,name,op,now,aliveSince,driver,car,l
       JOIN mc_items v ON v.room=r.room AND v.owner=d.id AND v.kind='vehicle' AND v.item=?
       WHERE r.room=? AND r.id=? AND d.seen>? AND r.seen>?
         AND json_extract(d.state,'$.vehicle.id')=v.item
-        AND json_extract(d.state,'$.vehicle.type') NOT IN ('scooter','cargo')
+        AND json_extract(d.state,'$.vehicle.type') NOT IN ('scooter','motorbike','cargo')
         AND coalesce(json_extract(d.state,'$.health'),100)>0 AND coalesce(json_extract(r.state,'$.health'),100)>0
         AND coalesce(json_extract(r.state,'$.downUntil'),0)<=? AND coalesce(json_extract(r.state,'$.lift'),0)<0.8
         AND json_extract(r.state,'$.vehicle.id') IS NULL
+        AND coalesce(json_extract(d.state,'$.lift'),0)<0.35
         AND abs(coalesce(json_extract(d.state,'$.speed'),0))<=2.5
         AND (json_extract(d.state,'$.x')-json_extract(r.state,'$.x'))*(json_extract(d.state,'$.x')-json_extract(r.state,'$.x'))
           + (json_extract(d.state,'$.y')-json_extract(r.state,'$.y'))*(json_extract(d.state,'$.y')-json_extract(r.state,'$.y'))<=36

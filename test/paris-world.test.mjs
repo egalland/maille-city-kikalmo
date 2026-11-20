@@ -79,7 +79,7 @@ test('an independent Paris-region tile spawns beside a real road, retains histor
   const fixture={
     buildings:[{id:'local-building',poly:[[x-25,y-15],[x+25,y-15],[x+25,y+15],[x-25,y+15]],h:12}],
     streets:[{id:'local-road',level:0,w:11,kind:'residential',name:'Rue de la République',path:[[x-480,y+37],[x+480,y+37]]}],
-    green:[],water:[],
+    green:[],water:[],enclosureRows:[],
     metadata:{sector:{name:'Saint-Denis',x,y,lat:48.88-y/111320,lon:2.25+x/73190},
       boundary:[[x-700,y-700],[x+700,y-700],[x+700,y+700],[x-700,y+700]]}
   };

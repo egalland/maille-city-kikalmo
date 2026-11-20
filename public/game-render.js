@@ -1,5 +1,7 @@
 import {districtEventDisplay} from './district-event-models.js';
+import {createAirfieldMarkings} from './airfield-markings.js';
 import {woolDisplay} from './lost-wool-model.js';
+import {isAircraft} from './airfield.js';
 import {cameraFieldOfView} from './camera-options.js';
 import {createDriverView} from './driver-view.js';
 import {createMeshRenderer} from './mesh-renderer.js';
@@ -85,6 +87,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   }
   const wool=woolDisplay(scene),incidents=districtEventDisplay(scene);
   const city=createCity3D(scene,{software:renderer.software}), pickupDisplay=createPickupDisplay(scene);
+  const landingMarks=isEnfer?createAirfieldMarkings(scene):null;
   const camera=new THREE.PerspectiveCamera(51,1,.12,6300);
   const driverView=createDriverView(scene);
   const shadows=makeShadow();scene.add(shadows);
@@ -117,7 +120,9 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     item.waterOffset=item.waterOffset==null?offset:item.waterOffset+(offset-item.waterOffset)*blend(9,dt);
     g.position.set(e.x,ground+(e.lift||0)+item.waterOffset,e.y);
     g.rotation.set(0,-angle,0,'YXZ');
-    if(vehicle){
+    if(vehicle&&isAircraft(e.type)){
+      g.rotation.z=e.carPitch||0;g.rotation.x=e.bank||0;
+    }else if(vehicle){
       const slope=terrainGradient(e.x,e.y),c=Math.cos(angle),s=Math.sin(angle);
       g.rotation.z=e.carPitch??Math.atan(slope.x*c+slope.y*s);g.rotation.x=-Math.atan(-slope.x*s+slope.y*c);
     }
@@ -193,9 +198,9 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     const {p,car,yaw,pitch,destroyed}=state;
     // Tighten the boom immediately at walls, extend it gently after clearing a corner.
     const model=car?vehicleSpec(car.type):null;
-    const cockpit=!!car&&!state.passengerView&&state.cameraConfig?.mode==='driver';
+    const cockpit=!!car&&!isAircraft(car.type)&&!state.passengerView&&state.cameraConfig?.mode==='driver';
     const chase=state.cameraConfig?.mode==='near'?5.1:8.15;
-    const follow=car?chase+Math.max(0,model.halfLength-2)*1.24:5.25;
+    const follow=car?chase+Math.max(0,model.halfLength-2)*1.24+(isAircraft(car.type)?2.8:0):5.25;
     const swimming=p.motion==='swim'&&!car;
     const followGround=swimming?swimGround:terrainHeight;
     const feet=(p.lift||0)-(swimming?.55:0);
@@ -223,6 +228,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     lighting?.update(p,ground,time,snap,scale,epoch);
     atmosphere?.update(epoch,camera);
     if(time-lastPropTick>.30 || snap){props=nearbyProps(p.x,p.y,320);lastPropTick=time;}
+    landingMarks?.update(p);
     city.update(p,time,{epoch,props,destroyed,propHealth:state.propHealth,propDamageRevision:state.propDamageRevision});
     pickupDisplay.update(state.pickups,p,time);wool.update(state.lostWool,p);incidents.update(state.districtIncident,p,epoch);
     const candidates=state.entities.filter(e=>Number.isFinite(e.x)&&Number.isFinite(e.y)).sort((a,b)=>distance(a,p)-distance(b,p));
@@ -293,6 +299,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     active=false;canvas.removeEventListener('webglcontextlost',contextLost);labels.remove();
     for(const item of models.values())item.object.dispose?.();
     incidents.dispose();wool.dispose();driverView.dispose();bloodMesh.dispose();pickupDisplay.dispose();city.dispose?.();
+    landingMarks?.dispose();
     atmosphere?.dispose();lighting?.dispose();shadows.geometry.dispose();shadows.material.map.dispose();shadows.material.dispose();
     sky.geometry.dispose();sky.material.map.dispose();sky.material.dispose();renderer.dispose();
   }};
