@@ -7,7 +7,7 @@ export function roadblockSite(report,roads,spec,clear){
   const lead={x:report.x+Math.cos(heading)*53,y:report.y+Math.sin(heading)*53};
   let best=null,cost=Infinity;
   for(const road of roads){
-    if(road.oneway||road.bridge||road.w<6.6||road.kind==='path')continue;
+    if(road.oneway||road.bridge||road.w<2*spec.halfWidth+2.24+.56||road.kind==='path')continue;
     for(let i=1;i<road.path.length;i++){
       const [x,y]=road.path[i-1],[bx,by]=road.path[i],length=Math.hypot(bx-x,by-y);
       if(length<spec.halfLength*2+2)continue;
@@ -15,7 +15,7 @@ export function roadblockSite(report,roads,spec,clear){
       const margin=spec.halfLength+1,t=clamp((lead.x-x)*dx+(lead.y-y)*dy,margin,length-margin);
       const cx=x+t*dx,cy=y+t*dy;
       if(dx*Math.cos(heading)+dy*Math.sin(heading)<0){dx=-dx;dy=-dy;}
-      const side=road.w*.5-spec.halfWidth-.36;
+      const side=road.w*.5-spec.halfWidth-.24;
       const park={x:cx-dy*side,y:cy+dx*side,angle:Math.atan2(dy,dx)};
       const ahead=(cx-report.x)*Math.cos(heading)+(cy-report.y)*Math.sin(heading);
       if(ahead<18||gap(report,park)>90)continue;

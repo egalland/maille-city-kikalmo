@@ -35,3 +35,20 @@ test('officers require a real occluder and a nearby clear observation point',()=
   assert.equal(findOfficerCover(unit,target,()=>false,sight),null);
   assert.equal(findOfficerCover(unit,{x:150,y:0},clear,sight),null);
 });
+
+test('the pilot district has a reachable blockade on the actual two-way streets near spawn and police HQ',async t=>{
+  const {readFile}=await import('node:fs/promises');
+  t.mock.method(globalThis,'fetch',async()=>new Response(await readFile(new URL('../public/map-enfer.gz',import.meta.url))));
+  globalThis.location=new URL('https://maille.test/?monde=enfer');
+  t.after(()=>delete globalThis.location);
+  const {careerPlaces}=await import('../public/career-catalog.js');
+  const {SPAWN,nearbyDrivableStreets,contactAt}=await import('../public/paris-world.js');
+  const carClear=(q,s)=>!contactAt(q.x,q.y,{angle:q.angle,halfLength:s.halfLength+.16,halfWidth:s.halfWidth+.12});
+  for(const point of [SPAWN,careerPlaces.police]){
+    const site=roadblockSite({...point,angle:0},nearbyDrivableStreets(point.x,point.y,100),vehicleSpec('swat'),carClear);
+    assert.ok(site);
+    const plan=planDistantDispatch(site,'swat',nearbyDrivableStreets(site.x,site.y,260),carClear,
+      q=>!contactAt(q.x,q.y,{radius:.4}),null,site);
+    assert.ok(plan&&Math.hypot(plan.park.x-site.x,plan.park.y-site.y)<.5);
+  }
+});
