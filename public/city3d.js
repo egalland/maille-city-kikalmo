@@ -869,6 +869,7 @@ function disposeGroup(group){
 export function createCity3D(scene,{software=false}={}){
   const materials=cityMaterials(isEnfer), index=makeIndex(),root=new T.Group();root.name=isEnfer?'Maille City · Enfer':'Maille City · Paris';
   if(isEnfer)materials.signalLight=new T.MeshBasicMaterial({vertexColors:true,side:T.DoubleSide,toneMapped:false});
+  root.userData.cpuStaticCity=software;root.userData.cpuRevision=0;
   const terrain=new Batch();makeGround(terrain);
   const base=terrain.mesh(materials);
   if(isEnfer)for(const surface of base.children)surface.receiveShadow=true;
@@ -929,7 +930,7 @@ export function createCity3D(scene,{software=false}={}){
       surface.receiveShadow=true;
       surface.castShadow=target.detail&&surface.material!==materials.park&&surface.material!==materials.pave&&surface.material!==materials.road;
     }
-    root.add(object);
+    root.add(object);root.userData.cpuRevision++;
     const before=chunks.get(target.key);if(before)disposeGroup(before.object);
     chunks.set(target.key,{object,detail:target.detail,skyline:target.skyline});
   }
@@ -943,7 +944,7 @@ export function createCity3D(scene,{software=false}={}){
       const detail=dd<(software?130:245),skyline=dd>(software?280:streetViewRange);
       keys.add(k);next.push({key:k,detail,skyline,dist:dd});
     }
-    for(const [k,entry] of chunks)if(!keys.has(k)){disposeGroup(entry.object);chunks.delete(k);}
+    for(const [k,entry] of chunks)if(!keys.has(k)){disposeGroup(entry.object);chunks.delete(k);root.userData.cpuRevision++;}
     targets=next.filter(t=>!chunks.has(t.key)||chunks.get(t.key).detail!==t.detail||chunks.get(t.key).skyline!==t.skyline).sort((a,b)=>a.dist-b.dist);
     lastX=pos.x;lastZ=pos.y;
   }
@@ -959,6 +960,7 @@ export function createCity3D(scene,{software=false}={}){
   }
   let visibleSignal=false,lastSignalTick=-1;
   function updateProps(pos,state){
+    root.userData.cpuRevision++;
     visibleSignal=false;propGroups.clear();let shadowIndex=0;
     for(const prop of pickProps(state?.props,pos,software?78:220)){
       if(state.destroyed?.has?.(prop.id))continue;
@@ -966,7 +968,8 @@ export function createCity3D(scene,{software=false}={}){
       const type=prop.type||prop.kind||'bollard',h=hash(prop.id),variant=type==='tree'?h%3:type==='signal'?
         ['red','amber','green'].indexOf(lampState(prop.signal,prop.angle,state.epoch))+(pedestrianGreen(prop.signal,state.epoch)?4:0):0;
       const stage=propWearStage(state.propHealth?.get(prop.id));
-      const distant=type==='tree'&&(prop.x-pos.x)**2+(prop.y-pos.y)**2>58*58,k=type+variant+'/'+stage+'/'+distant;
+      const treeDetailDistance=software?34:58;
+      const distant=type==='tree'&&(prop.x-pos.x)**2+(prop.y-pos.y)**2>treeDetailDistance**2,k=type+variant+'/'+stage+'/'+distant;
       if(!propGroups.has(k))propGroups.set(k,{items:[],type,variant,stage,distant});
       propGroups.get(k).items.push(prop);
       const tree=type==='tree',lamp=type==='lamp',radius=tree?1.38:lamp?.42:.45;

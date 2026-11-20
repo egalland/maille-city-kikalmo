@@ -1,4 +1,5 @@
 // CPU depth buffer for the same 3D scene and camera when WebGL cannot start.
+import {verticesPerBlock,triangleBlocks,blockVisible} from './software-geometry.js';
 import {Color, Frustum, Matrix4, Sphere, Vector3, DoubleSide, BackSide} from './three.js';
 
 const near=.12,far=380;
@@ -10,7 +11,21 @@ const channel=v=>srgb[Math.max(0,Math.min(1024,Math.round(v*1024)))];
 const mix=(a,b,t)=>a+(b-a)*t;
 const linear=Array.from({length:256},(_,i)=>i*i/65025);
 
-export function createMeshRenderer(canvas){
+const shadeRows = new Map();
+// Texture lighting changes once per face. Cache the 256 possible channel results.
+function shadeRow(gain,addition){
+  const a=Math.max(0,Math.min(128,Math.round(gain*64))),b=Math.max(0,Math.min(64,Math.round(addition*64)));
+  const key=a*65+b;
+  let row=shadeRows.get(key);
+  if(!row){
+    row=new Uint8Array(256);
+    for(let i=0;i<256;i++)row[i]=channel((a*linear[i]+b)/64);
+    shadeRows.set(key,row);
+  }
+  return row;
+}
+
+export function createMeshRenderer(canvas,{adaptive=true}={}){
   let surface=canvas,context=surface.getContext('2d',{alpha:false});
   if(!context){
     surface=document.createElement('canvas');
@@ -24,15 +39,28 @@ export function createMeshRenderer(canvas){
   const projection=new Matrix4(),matrix=new Matrix4(),model=new Matrix4(),instance=new Matrix4();
   const viewSphere=new Sphere(),frustum=new Frustum(),eye=new Vector3(),normal=new Vector3(),vertex=new Vector3();
   const geometries=new WeakMap(),textures=new WeakMap(),sky=new Color();
-  let fog=[.2,.28,.3],quality=1,ambient=1;
+  let background=null,cachedCity=null,revision=-1,shade=-1,backdrop=-1;
+  const lastProjection=new Matrix4();
+  let fog=[.2,.28,.3],quality=1,ambient=1,workScale=1,viewportWidth=0,viewportHeight=0;
+  let expensive=0,headroom=0,focalPixels=1;
+  function adjustBudget(elapsed,cacheHit){
+    if(!adaptive||cacheHit)return;
+    expensive=elapsed>37?expensive+1:Math.max(0,expensive-1);
+    headroom=elapsed<21?headroom+1:0;
+    const next=expensive>=5?Math.max(.63,workScale-.10):headroom>=85?Math.min(1,workScale+.06):workScale;
+    if(next!==workScale){
+      workScale=next;expensive=headroom=0;
+    }
+  }
   const renderer={software:true,shadowMap:{},setPixelRatio(ratio){quality=Math.min(1,ratio);},setSize,render,dispose};
   function setSize(w,h){
-    const factor=Math.min(.72,630/Math.max(w,h))*quality;
+    viewportWidth=w;viewportHeight=h;
+    const factor=Math.min(.72,630/Math.max(w,h))*quality*workScale;
     width=Math.max(1,Math.round(w*factor));height=Math.max(1,Math.round(h*factor));
     surface.width=width;surface.height=height;
     image=context.createImageData(width,height);
     pixels=new Uint32Array(image.data.buffer);depth=new Float32Array(width*height);
-    frame=-Infinity;
+    frame=-Infinity;background=null;
   }
 
   function texture(map,size=64){
@@ -63,21 +91,47 @@ export function createMeshRenderer(canvas){
     const now=performance.now();
     if(!force&&now-frame<1000/23)return false;
     frame=now;
+    const desiredWidth=Math.round(Math.min(.72,630/Math.max(viewportWidth,viewportHeight))*quality*workScale*viewportWidth);
+    if(desiredWidth!==width){setSize(viewportWidth,viewportHeight);frame=now;}
     scene.updateMatrixWorld();camera.updateMatrixWorld();cameraEye.setFromMatrixPosition(camera.matrixWorld);
     projection.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
     frustum.setFromProjectionMatrix(projection);
     const fy=camera.projectionMatrix.elements[5]*height*.5;
+    focalPixels=fy;
     const horizon=height*.5-fy*camera.matrixWorldInverse.elements[9]/Math.max(.25,camera.matrixWorldInverse.elements[10]);
     sky.copy(scene.fog?.color||scene.background||new Color('#c6c9ae'));
     ambient=scene.userData.ambientBrightness??1;
-    fog=[sky.r,sky.g,sky.b];depth.fill(0);
-    for(let y=0;y<height;y++){
-      const t=Math.max(0,Math.min(1,1-y/Math.max(1,horizon)));
-      const r=channel(mix(fog[0],.27*ambient,t)),g=channel(mix(fog[1],.51*ambient,t)),b=channel(mix(fog[2],.64*ambient,t));
-      pixels.fill(0xff000000|(b<<16)|(g<<8)|r,y*width,(y+1)*width);
+    // Retain the town's color AND depth when the observer stands still. Moving
+    // citizens keep their normal depth test against doors, cars and façades.
+    const city=scene.children.find(o=>o.userData.cpuStaticCity),level=Math.round(ambient*45);
+    const skyKey=(channel(sky.r)<<16)|(channel(sky.g)<<8)|channel(sky.b);
+    const same=city && cachedCity===city && revision===city.userData.cpuRevision &&
+      shade===level && backdrop===skyKey && projection.equals(lastProjection);
+    fog=[sky.r,sky.g,sky.b];
+    const cacheHit=!!(same&&background);
+    if(cacheHit){
+      pixels.set(background.color);depth.set(background.depth);
+    }else{
+      depth.fill(0);
+      for(let y=0;y<height;y++){
+        const t=Math.max(0,Math.min(1,1-y/Math.max(1,horizon)));
+        const r=channel(mix(fog[0],.27*ambient,t)),g=channel(mix(fog[1],.51*ambient,t)),b=channel(mix(fog[2],.64*ambient,t));
+        pixels.fill(0xff000000|(b<<16)|(g<<8)|r,y*width,(y+1)*width);
+      }
+      if(city){
+        visit(city);
+        // The first still frame after coming to rest seeds the cache. Do not copy
+        // full buffers while driving or rotating the camera.
+        if(same){
+          background={color:pixels.slice(),depth:depth.slice()};
+        }else background=null;
+        cachedCity=city;revision=city.userData.cpuRevision;shade=level;backdrop=skyKey;lastProjection.copy(projection);
+      }
     }
-    visit(scene);
+    for(const child of scene.children)if(child!==city)visit(child);
     context.putImageData(image,0,0);
+    adjustBudget(performance.now()-now,cacheHit);
+    return true;
   }
 
   function visit(object){
@@ -89,7 +143,7 @@ export function createMeshRenderer(canvas){
       if(level){const visible=level.object.visible;level.object.visible=true;visit(level.object);level.object.visible=visible;}
       return;
     }
-    if(object.isMesh&&object.geometry.attributes.position){
+    if(object.isMesh&&object.geometry.attributes.position&&(Array.isArray(object.material)||visibleMaterial(object.material))){
       if(object.isInstancedMesh){
         for(let i=0;i<object.count;i++){
           object.getMatrixAt(i,instance);
@@ -112,26 +166,48 @@ export function createMeshRenderer(canvas){
     const vp=projection.elements,{x,y,z}=viewSphere.center;
     const distance=vp[3]*x+vp[7]*y+vp[11]*z+vp[15];
     if(distance-viewSphere.radius>far||distance+viewSphere.radius<near)return;
+    // The bounding sphere of a distant prop can be smaller than a single pixel.
+    if(distance>viewSphere.radius && 2*focalPixels*viewSphere.radius<.8*(distance-viewSphere.radius))return;
     const p=geometry.attributes.position,uv=geometry.attributes.uv,col=geometry.attributes.color,normals=geometry.attributes.normal,index=geometry.index?.array;
-    let projected=geometries.get(geometry);
-    if(!projected){projected=new Float32Array(p.count*3);geometries.set(geometry,projected);}
-    const m=matrix.multiplyMatrices(projection,world).elements,positions=p.array;
-    for(let i=0;i<positions.length;i+=3){
-      if(object.isSkinnedMesh)object.getVertexPosition(i/3,vertex);
-      const x=object.isSkinnedMesh?vertex.x:positions[i],y=object.isSkinnedMesh?vertex.y:positions[i+1],z=object.isSkinnedMesh?vertex.z:positions[i+2];
-      projected[i]=m[0]*x+m[4]*y+m[8]*z+m[12];
-      projected[i+1]=m[1]*x+m[5]*y+m[9]*z+m[13];
-      projected[i+2]=m[3]*x+m[7]*y+m[11]*z+m[15];
+    const positions=p.array,m=matrix.multiplyMatrices(projection,world).elements;
+    let cache=geometries.get(geometry);
+    if(!cache){
+      const blocks=!index&&!object.isSkinnedMesh&&!Array.isArray(material)&&p.count>=verticesPerBlock*2?triangleBlocks(positions):null;
+      cache={projected:new Float32Array(p.count*3),codes:new Uint8Array(p.count),blocks,version:p.version};
+      geometries.set(geometry,cache);
+    }else if(cache.blocks&&cache.version!==p.version){
+      cache.blocks=triangleBlocks(positions);cache.version=p.version;
     }
-    if(Array.isArray(material)){
-      for(const group of geometry.groups)draw(material[group.materialIndex],group.start,group.count);
-    }else draw(material,0,index?.length??p.count);
+    const {projected,codes,blocks}=cache;
+    function project(start,end){
+      for(let j=start;j<end;j++){
+        const i=j*3;
+        if(object.isSkinnedMesh)object.getVertexPosition(j,vertex);
+        const x=object.isSkinnedMesh?vertex.x:positions[i],y=object.isSkinnedMesh?vertex.y:positions[i+1],z=object.isSkinnedMesh?vertex.z:positions[i+2];
+        const px=m[0]*x+m[4]*y+m[8]*z+m[12],py=m[1]*x+m[5]*y+m[9]*z+m[13],w=m[3]*x+m[7]*y+m[11]*z+m[15];
+        projected[i]=px;projected[i+1]=py;projected[i+2]=w;
+        codes[j]=(px < -w ? 1 : 0)|(px > w ? 2 : 0)|(py < -w ? 4 : 0)|(py > w ? 8 : 0)|(w<near?16:0)|(w>far?32:0);
+      }
+    }
+    if(blocks){
+      for(let i=0,first=0;i<blocks.length;i+=6,first+=verticesPerBlock){
+        if(!blockVisible(blocks,i,m,near,far))continue;
+        const end=Math.min(p.count,first+verticesPerBlock);
+        project(first,end);draw(material,first,end-first);
+      }
+    }else{
+      project(0,p.count);
+      if(Array.isArray(material)){
+        for(const group of geometry.groups)draw(material[group.materialIndex],group.start,group.count);
+      }else draw(material,0,index?.length??p.count);
+    }
 
     function draw(material,start,count){
       if(!visibleMaterial(material))return;
       const tex=texture(material.map,material.map?.userData.cpuSize||(material.alphaTest>.1?128:64)),base=material.color||{r:1,g:1,b:1};
       for(let i=start;i+2<start+count;i+=3){
         const a=index?index[i]:i,b=index?index[i+1]:i+1,c=index?index[i+2]:i+2;
+        if(codes[a]&codes[b]&codes[c])continue;
         const ax=a*3,bx=b*3,cx=c*3,za=projected[ax+2],zb=projected[bx+2],zc=projected[cx+2];
         if(Math.max(za,zb,zc)<near||Math.min(za,zb,zc)>far)continue;
         let light=1;
@@ -174,21 +250,34 @@ export function createMeshRenderer(canvas){
     const bright=1-haze,rr=r*bright,gg=g*bright,bb=b*bright,fr=fog[0]*haze,fg=fog[1]*haze,fb=fog[2]*haze;
     const flat=0xff000000|(channel(bb+fb)<<16)|(channel(gg+fg)<<8)|channel(rr+fr);
     const offset=material.map?.offset,wrap=material.map?.wrapS!==1001,flip=material.map?.flipY;
+    const ox=offset?.x||0,oy=offset?.y||0;
+    const textured=tex && Math.abs(side)>120;
+    const red=textured?shadeRow(rr,fr):null,green=textured?shadeRow(gg,fg):null,blue=textured?shadeRow(bb,fb):null;
     const alpha=Math.max(84,(material.alphaTest||0)*255),size=tex?.size,texels=tex?.pixels;
+    const dz=ux*(a-c)+vx*(d-c),du=ux*(a*au-c*cu)+vx*(d*bu-c*cu),dv=ux*(a*av-c*cv)+vx*(d*bv-c*cv);
+    const ww=-ux-vx;
+    // Clip each scanline once. In particular a diagonal yarn or a near-plane
+    // clipped wall can otherwise scan a screen-sized box for just a few pixels.
     for(let y=y0;y<=y1;y++){
-      let u=1+(x0+.5-ax)*ux+(y+.5-ay)*uy,v=(x0+.5-ax)*vx+(y+.5-ay)*vy;
-      for(let x=x0,at=y*width+x0;x<=x1;x++,at++,u+=ux,v+=vx){
-        const w=1-u-v;
-        if(Math.min(u,v,w)<0)continue;
-        const ia=u*a,ib=v*d,ic=w*c,z=ia+ib+ic;
+      const u=1+(x0+.5-ax)*ux+(y+.5-ay)*uy,v=(x0+.5-ax)*vx+(y+.5-ay)*vy,w=1-u-v;
+      let lo=0,hi=x1-x0;
+      if(ux>0)lo=Math.max(lo,Math.ceil(-u/ux));else if(ux<0)hi=Math.min(hi,Math.floor(-u/ux));else if(u<0)continue;
+      if(vx>0)lo=Math.max(lo,Math.ceil(-v/vx));else if(vx<0)hi=Math.min(hi,Math.floor(-v/vx));else if(v<0)continue;
+      if(ww>0)lo=Math.max(lo,Math.ceil(-w/ww));else if(ww<0)hi=Math.min(hi,Math.floor(-w/ww));else if(w<0)continue;
+      if(hi<lo)continue;
+      const ia=u*a,ib=v*d,ic=w*c;
+      let z=ia+ib+ic+lo*dz,sz=ia*au+ib*bu+ic*cu+lo*du,tz=ia*av+ib*bv+ic*cv+lo*dv;
+      const end=y*width+x0+hi;
+      for(let at=y*width+x0+lo;at<=end;at++,z+=dz,sz+=du,tz+=dv){
         if(z+bias<=depth[at])continue;
         if(!tex){pixels[at]=flat;depth[at]=z+bias;continue;}
-        const s=(ia*au+ib*bu+ic*cu)/z+(offset?.x||0),sampleY=(ia*av+ib*bv+ic*cv)/z+(offset?.y||0),t=flip?1-sampleY:sampleY;
+        const iz=1/z,s=sz*iz+ox,sampleY=tz*iz+oy,t=flip?1-sampleY:sampleY;
         const tx=wrap?Math.floor(s*size)&(size-1):Math.min(size-1,Math.max(0,Math.floor(s*size)));
         const ty=wrap?Math.floor(t*size)&(size-1):Math.min(size-1,Math.max(0,Math.floor(t*size)));
         const j=(ty*size+tx)*4;
         if(texels[j+3]<alpha)continue;
-        pixels[at]=0xff000000|(channel(bb*linear[texels[j+2]]+fb)<<16)|(channel(gg*linear[texels[j+1]]+fg)<<8)|channel(rr*linear[texels[j]]+fr);
+        pixels[at]=textured?0xff000000|(blue[texels[j+2]]<<16)|(green[texels[j+1]]<<8)|red[texels[j]]:
+          0xff000000|(channel(bb*linear[texels[j+2]]+fb)<<16)|(channel(gg*linear[texels[j+1]]+fg)<<8)|channel(rr*linear[texels[j]]+fr);
         depth[at]=z+bias;
       }
     }
