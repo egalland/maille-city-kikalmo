@@ -1,7 +1,8 @@
 import {lampState,pedestrianGreen} from './street-signals.js';
 import {streetFurniture} from './street-furniture.js';
 import {drawBoundary} from './residential-boundaries.js';
-import {nearbySignals,nearbyEnclosures} from './paris-world.js';
+import {vehicleSpec} from './vehicle-types.js';
+import {nearbySignals,nearbyEnclosures,nearbyParkedCars} from './paris-world.js';
 import {pavementRuns} from './curb-clearance.js';
 import {frontageSigns,frontageStyle,careerFronts} from './enfer-frontage.js';
 import {workshopId,workshopEdge,bayDoor,headroom} from './workshop.js';
@@ -928,6 +929,19 @@ export function createCity3D(scene,{software=false}={}){
     b.road=null;
     if(isEnfer && !target.skyline){
       b.base=0;b.foundation=false;b.drape=true;
+      for(const slot of nearbyParkedCars((ix+.5)*chunkSize,(iz+.5)*chunkSize,chunkSize/2+1)){
+        if(!slot.bay||key(slot.x,slot.y)!==target.key)continue;
+        const spec=vehicleSpec(slot.type),l=spec.halfLength+.53,w=spec.halfWidth+.30;
+        const c=Math.cos(slot.angle),s=Math.sin(slot.angle);
+        const at=(u,v)=>[slot.x+c*u-s*v,slot.y+s*u+c*v];
+        const h=slot.bay==='apron'?.068:.095;
+        if(slot.bay==='apron')strip(b,'pave',at(-l,0),at(l,0),w*2,h,'#cec3b6',streetFabric.paving.meters);
+        if(target.detail)for(const end of [-1,1])for(const side of [-1,1]){
+          const corner=at(end*(l-.08),side*(w-.09));
+          strip(b,'plain',corner,at(end*(l-.60),side*(w-.09)),.075,h+.012,'#e4d7b9',1);
+          strip(b,'plain',corner,at(end*(l-.08),side*(w-.39)),.075,h+.012,'#e4d7b9',1);
+        }
+      }
       for(const span of nearbyEnclosures((ix+.5)*chunkSize,(iz+.5)*chunkSize,chunkSize/2+1)){
         if(key(span.x,span.y)===target.key)drawBoundary(b,span,target.detail&&!software);
       }

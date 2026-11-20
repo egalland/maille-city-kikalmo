@@ -45,13 +45,23 @@ test('Chase-camera controls, car possession, shared effects and travel share the
     const prop=nearbyProps(pose.x,pose.y,45)[0];
     assert(prop);eventCallback({type:'destroy',data:{id:prop.id},player:'other'});step();
     assert(viewState.destroyed.has(prop.id));
-    assert(game.travel(SPAWN.key));step(4);assert(viewState.destroyed.has(prop.id));assert.equal(pose.x,SPAWN.x);
+    assert(game.travel(SPAWN.key));step(4);assert(viewState.destroyed.has(prop.id));
+    // The just-parked car can cover the old arrival point after a short drive.
+    // Arrival stays at the stop and leaves enough space for the player's capsule.
+    assert.ok(Math.hypot(pose.x-SPAWN.x,pose.y-SPAWN.y)<2);
+    assert.ok(!blocked(pose.x,pose.y,.42));
+    const parked=viewState.entities.find(e=>e.id==='car-etoile');
+    assert.ok(parked&&surfaceDistance({...parked,type:parked.type||'car'},pose)>=.4);
     const target=nearbyProps(SPAWN.x,SPAWN.y,20).sort((a,b)=>Math.hypot(a.x-SPAWN.x,a.y-SPAWN.y)-Math.hypot(b.x-SPAWN.x,b.y-SPAWN.y))[0];
-    assert(target);aim=Math.atan2(target.y-SPAWN.y,target.x-SPAWN.x);
+    assert(target);
+    const line=Math.atan2(target.y-parked.y,target.x-parked.x);
+    const behind={...game.exportTravelState(),x:parked.x-4*Math.cos(line),y:parked.y-4*Math.sin(line)};
+    assert(game.restoreTravelState(behind));step(18);
+    aim=Math.atan2(target.y-pose.y,target.x-pose.x);
     game.selectWeapon('pistol');step(16);
     canvas.dispatchEvent(Object.assign(new Event('pointerdown'),{button:0,pointerType:'mouse',clientX:300,clientY:200,pointerId:1}));
     canvas.dispatchEvent(Object.assign(new Event('pointerup'),{button:0,pointerType:'mouse',pointerId:1}));
-    step(2);assert(!viewState.destroyed.has(target.id),'the parked car stops the first shot to this tree');
+    step(2);assert(!viewState.propHealth.has(target.id),'the parked car stops the first shot to this tree');
     const closer={...game.exportTravelState(),x:target.x+1.8,y:target.y+1.4};
     assert(game.restoreTravelState(closer));step(18);
     const pos=game.getPosition();aim=Math.atan2(target.y-pos.y,target.x-pos.x);

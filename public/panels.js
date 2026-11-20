@@ -43,7 +43,7 @@ const shortcuts = [
   ['Recentrer à pied ou changer de vue au volant', ['C']],
   ['Recharger', ['R']],
   ['Utiliser une trousse de secours', ['H']],
-  ['Entrer ou sortir d’un véhicule', ['E']],
+  ['Entrer, sortir ou sauter d’un hélicoptère en vol', ['E']],
   ['Roue d’armes', ['Tab']],
   ['Changer d’arme', ['Molette']],
   ['Émotes', ['B']],
@@ -355,9 +355,9 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
     let built=false,region=false,zoom=false;
     if(career){
       const tools=node('div','career-map-tools'),selector=node('select','mc-input');selector.id='venue-choice';
-      const parking=parkedCars.filter(car=>['motorbike','estate','flatbed','camper'].includes(car.type)).map(car=>{
+      const parking=parkedCars.filter(car=>car.bay ? ['gt','supercar'].includes(car.type) : ['motorbike','estate','flatbed','camper'].includes(car.type)).map(car=>{
         const stop=coreDestinations.find(d=>'car-'+d.key===car.id);
-        return {...car,id:'parking/'+car.id,name:vehicleSpec(car.type).label+(stop?' · '+stop.label:'')};
+        return {...car,id:'parking/'+car.id,name:vehicleSpec(car.type).label+' · '+(stop?.label||streetAt(car.x,car.y))};
       });
       const venues=[...Object.values(careerPlaces),...airfields,...parking];
       const lots=node('optgroup','');lots.label='Stationnements habituels';
@@ -433,7 +433,7 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
     const mobile=node('section','mc-guide-section');
     mobile.append(node('h3','','Commandes tactiles'),node('p','','À pied, déplace légèrement le joystick pour marcher, puis pousse-le vers le bord pour courir. Glisse sur le décor pour tourner la caméra. Au volant, braque avec les flèches à gauche. À droite, utilise les pédales pour accélérer, freiner ou reculer.'));
     mobile.append(node('p','','Maintiens le bouton de tir pour accrocher une cible devant toi. Un réticule apparaît dessus. Glisse le pouce sur ce bouton pour ajuster la visée, puis relâche pour arrêter de tirer.'));
-    if(isEnfer)mobile.append(node('h3','','Piloter dans Enfer'),node('p','','Sur la carte, choisis le H de l’hélistation ou le A du mât d’amarrage, puis « Guider vers ce lieu ». Monte à bord avec E ou la commande de véhicule. Les touches de direction orientent l’appareil et le font avancer. Espace fait monter, Ctrl fait descendre. Sur écran tactile, maintiens Monter ou Descendre et utilise les flèches pour tourner. Pose-toi et ralentis avant de sortir.'));
+    if(isEnfer)mobile.append(node('h3','','Piloter dans Enfer'),node('p','','Sur la carte, choisis le H de l’hélistation ou le A du mât d’amarrage, puis « Guider vers ce lieu ». Monte à bord avec E ou la commande de véhicule. Les touches de direction orientent l’appareil et le font avancer. Espace fait monter, Ctrl fait descendre. Sur écran tactile, maintiens Monter ou Descendre et utilise les flèches pour tourner. En hélicoptère, E ou Sauter permet de quitter la cabine en vol. La hauteur et la vitesse comptent à la réception. Pour quitter le dirigeable, pose-toi et ralentis.'));
     const health=node('section','mc-guide-section');
     health.append(node('h3','','Vie et soins'),node('p','','Utilise une trousse avec H ou le bouton de soins. Un ambulancier peut te soigner et remplir ta trousse. À zéro point de vie, un compte à rebours indique quand tu reviens dans le jeu.'));
     const guide=node('a','mc-secondary','Guide du quartier et carnet de version');

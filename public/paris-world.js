@@ -1,3 +1,4 @@
+import {streetParking} from './street-parking.js';
 import {boundarySpans} from './residential-boundaries.js';
 import {containsPoint as inRing,edgeContact} from './collision-ring.js';
 import {teammate} from './partners.js';
@@ -826,6 +827,12 @@ function lanesNearStop(stop,radius){
   }
   return lanes;
 }
+// Reused by the offline street survey so a parked vehicle clears the full swept
+// path of the widest traffic allowed through its lane, including around bends.
+export function clearsTrafficAtRest(p,type,lanes=lanesNearStop(p,9)){
+  const {halfLength,halfWidth}=vehicleSpec(type);
+  return !lanes.some(b=>rectAgainstRect(p.x,p.y,p.angle,halfLength,halfWidth,b));
+}
 function parkedVehicleAtStop(stop,i){
   const preferred=sector?parkedFleet[hash(Math.round(midX)+':'+Math.round(midY))%parkedFleet.length]:(isEnfer&&enferParkedByStop[stop.key]||parkedFleet[i]||'compact');
   const lanes=lanesNearStop(stop,34);
@@ -834,7 +841,7 @@ function parkedVehicleAtStop(stop,i){
   function usable(p,type){
     const {halfLength,halfWidth}=vehicleSpec(type);
     const shape={x:p.x,y:p.y,angle:p.angle,halfLength,halfWidth};
-    if(testPose(p.x,p.y,shape)||lanes.some(b=>rectAgainstRect(p.x,p.y,p.angle,halfLength,halfWidth,b)))return false;
+    if(testPose(p.x,p.y,shape)||!clearsTrafficAtRest(p,type,lanes))return false;
     if(rectCircle(p.x,p.y,Math.cos(p.angle),Math.sin(p.angle),halfLength,halfWidth,stop.x,stop.y,.65))return false;
     return vehicleDoorways({...p,type},.75).some(d=>!testPose(d.x,d.y,{radius:.43}));
   }
@@ -854,6 +861,11 @@ function parkedVehicleAtStop(stop,i){
   return null;
 }
 export const parkedCars=destinations.map(parkedVehicleAtStop).filter(Boolean);
+if(isEnfer)for(const [id,x,y,angle,type,color,bay] of streetParking)
+  parkedCars.push({id,x,y,angle,type,color,bay,kind:'car',parked:true,moving:false,speed:0});
+const parkingGrid=new Grid(96);
+for(const car of parkedCars)parkingGrid.insert(car,bounds([[car.x,car.y]]));
+export function nearbyParkedCars(x,y,radius){return parkingGrid.area(x,y,radius);}
 // Keep both landings on pedestrian ground. Check the approach as well as the stones,
 // before generating walking circuits, so the furniture and the NPC routes agree.
 function placeTerrace(stop){
@@ -980,7 +992,7 @@ export function routeAgents(x,y,radius=140,epochMs=Date.now()){
     consider(actors,{...crossingWalker(arm,signal,epochMs),id:'n-cross-'+signal.id,
       type:'human',kind:'human',variant:n%8,color:tintedPeds[n%tintedPeds.length],walk:sec*5});
   }
-  for(const v of parkedCars)consider(cars,{...v});
+  for(const v of nearbyParkedCars(x,y,radius))consider(cars,{...v});
   if(isEnfer)for(const site of airfields)consider(cars,{...site,id:'air-'+site.id,kind:'car',parked:true,speed:0,moving:false});
   return {actors:actors.sort((a,b)=>a.distanceSq-b.distanceSq).slice(0,32),cars:cars.sort((a,b)=>a.distanceSq-b.distanceSq).slice(0,24)};
 }

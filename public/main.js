@@ -1,3 +1,4 @@
+import {chassisStage} from './vehicle-damage.js';
 import {isMuted} from './social-controls.js';
 import {weaponList,starterWeapons,inventoryWeapons} from './weapon-catalog.js';
 import {installHudEditor} from './hud-editor.js';
@@ -219,13 +220,20 @@ function onState(next){
   $('#vehicleName').textContent=state.vehicleName||'Au volant';
   const condition=$('#chassisStatus'),integrity=Math.round(state.vehicleHealth??100);
   condition.textContent=integrity===0?'En panne':'Carrosserie · '+integrity+' %';
-  condition.dataset.damaged=integrity<=32?'severe':integrity<=72?'worn':'';
+  const wear=chassisStage(integrity);
+  condition.dataset.damaged=wear>=2?'severe':wear===1?'worn':'';
   const ride=$('#ride');
   ride.classList.toggle('near',Boolean(state.inVehicle||state.nearVehicle));
   const vehicle=state.inVehicle?state.vehicleName:state.nearVehicleName;
-  const rideVerb=state.inVehicle?'Descendre':state.nearPassengerSeat?'Monter en passager':state.boarding?'Conducteur en sortie…':state.jackTarget?'Prendre le volant':state.nearVehicle?'Monter':'Véhicule';
+  const rideVerb=state.canBail?'Sauter en vol':state.inVehicle?'Descendre':state.nearPassengerSeat?'Monter en passager':state.boarding?'Conducteur en sortie…':state.jackTarget?'Prendre le volant':state.nearVehicle?'Monter':'Véhicule';
   const rideLabel=vehicle?rideVerb+' · '+vehicle:'Monter ou descendre du véhicule';
   ride.setAttribute('aria-label',rideLabel);
+  const passengerExit=$('#passengerExit');
+  passengerExit.hidden=!state.passenger;
+  if(state.passenger)passengerExit.textContent=state.canBail?'Sauter':'Sortir';
+  const exit=$('#driveExit');
+  exit.querySelector('span').textContent=state.canBail?'Sauter':'Sortir';
+  exit.setAttribute('aria-label',state.canBail?'Sauter de l’hélicoptère':'Sortir du véhicule');
   ride.title=$('#rideShortcut').title=rideLabel;
   $('#rideShortcut span').textContent=rideVerb;
   traversal.update(state);

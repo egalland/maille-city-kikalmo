@@ -545,6 +545,7 @@ async function sync(db,b,now,room) {
     const driver=member.seatedDriver?JSON.parse(member.seatedDriver):sampleAutorotation(gliding,now);
     for(const field of ['x','y','angle','vx','vy','speed','moving','lift','verticalSpeed'])
       if(driver[field]!==undefined)rawState[field]=driver[field];
+    if((driver.vehicle?.type==='helicopter'||gliding?.flightPath)&&driver.lift>.18)rawState.aircraftFallUntil=now+6000;
     rawState.vehicle=null;
   }
   const state=Number.isFinite(rawState.x) ? JSON.stringify(rawState) : member.state;
@@ -581,7 +582,6 @@ async function sync(db,b,now,room) {
       if(packet)recordFire(stmts,q,room,id,name,packet,fireHistories,actor,now);
       continue;
     }
-    if((driver.vehicle?.type==='helicopter'||gliding?.flightPath)&&driver.lift>.18)rawState.aircraftFallUntil=now+6000;
     if(type==='pickup'&&key(op)){
       const {id:item,weapon}=dict(input.data);
       if(key(item)&&recordPickup(stmts,q,{room,id,token,name,op,item,weapon,now,state:actor}))
