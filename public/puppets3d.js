@@ -18,15 +18,16 @@ const geo={
   littleBall:new THREE.SphereGeometry(1,8,6), box:new THREE.BoxGeometry(1,1,1),
   cylinder:new THREE.CylinderGeometry(1,1,1,16),cone:new THREE.ConeGeometry(1,1,12),
 };
+const crowdBall=new THREE.SphereGeometry(1,7,5);
 const TAU=Math.PI*2;
 const clamp=(n,lo,hi)=>Math.max(lo,Math.min(hi,n));
 const colors={ink:yarnPalette.ink,boot:'#543f45',sole:'#392f3b',glove:'#fbe3b5',trim:'#e9ba69',teal:'#378784',deepTeal:yarnPalette.petrol};
 
 const surfaces={
+  felt:new THREE.MeshLambertMaterial({color:0xffffff,vertexColors:true,map:puppetFelt()}),
   yarn:new THREE.MeshLambertMaterial({color:0xffffff,vertexColors:true,map:puppetKnit()}),
   glass:new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.17,depthWrite:false,side:THREE.DoubleSide}),
   plain:new THREE.MeshLambertMaterial({color:0xffffff,vertexColors:true}),
-  felt:new THREE.MeshLambertMaterial({color:0xffffff,vertexColors:true,map:puppetFelt()}),
   glow:new THREE.MeshBasicMaterial({color:0xffffff,vertexColors:true}),
 };
 const unpacked=new WeakMap();
@@ -182,7 +183,7 @@ function makeBody(look,high){
   const head=joint(core,'head',.025,.49,0);
   const fur=pal.fur;
   const small=(parent,x,y,z,sx,sy,sz,c,rx=0,ry=0,rz=0,style='yarn')=>
-    addPart(parent,geo.littleBall,x,y,z,sx,sy,sz,c,rx,ry,rz,style);
+    addPart(parent,high?geo.littleBall:crowdBall,x,y,z,sx,sy,sz,c,rx,ry,rz,style);
   const stitches={part:addPart,small,cord};
   // The yoke reaches the arm joints, closing the gap under each raised sleeve.
   addPart(torso,jacketPattern,0,0,0,1,1,1,out[0]);
@@ -219,19 +220,22 @@ function makeBody(look,high){
   }
   if(!high){
     for(const s of [-1,1]){
-      let y=.145;
       if(animal==='rabbit')small(head,-.025,.382,s*.170,.065,.183,.066,fur,.16*s);
       else if(animal==='bear')small(head,-.035,.319,s*.205,.067,.086,.08,fur);
       else if(animal!=='human')addPart(head,ears[s<0?0:1],-.025,.294,.158*s,.88,.91,.87,fur);
       if(animal!=='human')small(head,.155,.078,s*.119,.153,.104,.143,pal.cream);
-      small(head,.219,y+.024,s*.136,.038,.048,.031,colors.ink);
-      small(core,.039,-.522,s*.115,.128,.144,.075,colors.boot);
-      small(core,-.029,-.313,s*.236,.08,.126,.070,out[0]);
+      small(head,.216,.173,s*.127,.045,.057,.047,'#f4e5be');
+      small(head,.247,.173,s*.144,.029,.042,.031,colors.ink);
+      small(core,-.019,-.399,s*.112,.066,.181,.070,'#454052');
+      small(core,.043,-.584,s*.114,.135,.091,.086,colors.boot);
+      small(core,.008,.037,s*.242,.074,.177,.068,isFox?'#385561':out[0]);
+      small(core,.047,-.132,s*.266,.065,.063,.061,human?fur:isFox?pal.shade:colors.glove);
     }
     small(head,.265,.094,0,.057,.046,.07,animal==='human'?pal.inner:colors.ink);
     if(isFox){
       small(torso,-.076,.189,0,.217,.067,.235,'#d79b5a');
-      small(torso,-.095,-.046,0,.23,.187,.244,cloth);
+      addPart(torso,capeShape,-.015,.20,0,1,1,1,cloth);
+      addPart(head,foxCrown,0,0,0,1,1,1,pal.shade);
       small(core,-.254,-.096,.12,.23,.09,.095,fur,.1,.3,.32);small(core,-.44,-.016,.216,.123,.075,.07,pal.cream);}
     if(service){
       const tone=type==='firefighter'?'#deb05e':type==='medic'?'#efe3c6':cloth;
@@ -327,10 +331,10 @@ function makeBody(look,high){
   for(const s of [-1,1]){
     const side=s<0?'L':'R',arm=joint(core,'arm'+side,.001,.182,s*.224),leg=joint(core,'leg'+side,-.016,-.24,s*.112);
     const sleeve=isFox?'#385561':out[0];
+    small(arm,-.002,-.012,.002*s,.076,.08,.077,sleeve);
     const elbow=joint(arm,'elbow'+side,.008,-.162,.040*s);
     const knee=joint(leg,'knee'+side,-.012,-.141,0);
     addPart(arm,taper([[0,0,0],[.003,-.085,.031*s],[.008,-.17,.040*s]],[.071,.069,.058],8),0,0,0,1,1,1,sleeve);
-    small(arm,-.002,-.012,.002*s,.076,.08,.077,sleeve);
     addPart(elbow,taper([[0,.012,0],[.013,-.080,.014*s],[.04,-.15,.01*s]],[.059,.054,.047],8),0,0,0,1,1,1,sleeve);
     ball(elbow,.037,-.107,.010*s,.063,.043,.063,isFox?colors.trim:out[1]);
     const hand=human?fur:isFox?pal.shade:colors.glove;
