@@ -19,7 +19,7 @@ export function fleetHandling(type){
 }
 export function automaticGear(spec,speed){
   if(speed<-.45)return -1;
-  const ratio=Math.min(.999,Math.max(0,speed/spec.forward));
+  const ratio=Math.min(.999,Math.max(0,speed/(spec.powerBand??spec.forward)));
   return Math.min(spec.gears,1+Math.floor(ratio*spec.gears));
 }
 export function wheelForces(spec,speed,surfaceGrip,tyres,reverse=false){
@@ -42,7 +42,13 @@ export function stepRoadDrive(spec,{speed,pedal,grip,tyres,power,grounded,inclin
   const forces=wheelForces(spec,speed,grip,tyres,pedal<0);
   const rolling=.22,aero=.00017+.60*spec.halfWidth*spec.height/spec.mass;
   const roadLoad=rolling+aero*magnitude*magnitude;
-  const limit=(pedal<0?spec.reverse:spec.forward)*Math.sqrt(power);
+  const condition=Math.sqrt(power);
+  const rated=(pedal<0?spec.reverse:spec.forward)*condition;
+  const base=(pedal<0?spec.reverse:(spec.powerBand??spec.forward))*condition;
+  // Blend the taller gearing in above 60% of the normal power band. Short
+  // gearing, launch torque and the urban driving response stay the same.
+  const overdrive=Math.max(0,Math.min(1,(magnitude/Math.max(.01,base)-.6)/.4));
+  const limit=base+(rated-base)*overdrive;
   const ratio=magnitude/Math.max(.01,limit);
   const available=forces.accel*power;
   const fraction=Math.min(1,ratio),topGear=fraction**3;

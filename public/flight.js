@@ -37,7 +37,7 @@ export function stepAircraft(type,pose,input,dt,world){
   if(vertical<0&&altitude<=floor+.0001||vertical>0&&altitude>=oldGround+flightCeiling-.0001)vertical=0;
   const hovering=altitude>oldGround+.34;
   const throttle=constrain(input.throttle||0,-1,1);
-  const oldSpeed=pose.speed||0,cruise=Math.min(1,Math.abs(oldSpeed)/spec.forward);
+  const oldSpeed=pose.speed||0,cruise=Math.min(1,Math.abs(oldSpeed)/spec.powerBand);
   const decelerating=throttle&&throttle*oldSpeed<0;
   const rate=type==='helicopter'?(decelerating?spec.brake:throttle?spec.accel*(1-.48*cruise):4.6):tuning.horizontalAccel*(throttle?1:1.45);
   let speed=approach(oldSpeed,hovering?throttle*(throttle<0?spec.reverse:spec.forward)*power:0,rate*dt);

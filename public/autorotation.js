@@ -1,7 +1,10 @@
+import {vehicleSpec} from './vehicle-types.js';
+
 // A trajectory stays compact on the wire: half-second samples of distance along
 // the launch heading and height above the surveyed terrain, both in metres.
 export const flightSampleMs=500;
 const maxSamples=65;
+const distancePerSample=vehicleSpec('helicopter').forward*flightSampleMs/1000;
 const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
 
 export function planAutorotation(pose,world,obstructed){
@@ -11,9 +14,13 @@ export function planAutorotation(pose,world,obstructed){
     for(let k=0;k<10&&!done;k++){
       const step=.05;
       v*=Math.exp(-.56*step);
-      const next=run+v*step,nx=pose.x+c*next,ny=pose.y+s*next;
-      if(Math.abs(v)>.05&&world.ground(nx,ny)<z&&(world.water(nx,ny)??-Infinity)<z-.6&&!obstructed(nx,ny,z))run=next;
-      else v=0;
+      const movement=v*step,sweeps=Math.max(1,Math.ceil(Math.abs(movement)/.55));
+      if(Math.abs(v)<=.05)v=0;
+      for(let n=0;n<sweeps&&v;n++){
+        const next=run+movement/sweeps,nx=pose.x+c*next,ny=pose.y+s*next;
+        if(world.ground(nx,ny)>=z||(world.water(nx,ny)??-Infinity)>=z-.6||obstructed(nx,ny,z)){v=0;break;}
+        run=next;
+      }
       const x=pose.x+c*run,y=pose.y+s*run;
       const ground=world.ground(x,y),water=world.water(x,y),floor=water==null?ground:Math.max(ground,water+.75);
       vz=Math.max(-6.5,vz-3.8*step);
@@ -31,7 +38,7 @@ export function planAutorotation(pose,world,obstructed){
 export function validFlightPath(raw){
   if(!Array.isArray(raw)||raw.length<2||raw.length>maxSamples)return false;
   return raw.every((p,i)=>Array.isArray(p)&&p.length===2&&p.every(Number.isFinite)&&Math.abs(p[0])<200&&
-    p[1]>=0&&p[1]<=100&&(i?Math.abs(p[0]-raw[i-1][0])<=44:p[0]===0));
+    p[1]>=0&&p[1]<=100&&(i?Math.abs(p[0]-raw[i-1][0])<=distancePerSample+.01:p[0]===0));
 }
 
 export function sampleAutorotation(car,now){

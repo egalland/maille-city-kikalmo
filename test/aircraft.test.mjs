@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {airfields,flightCeiling,isAircraft} from '../public/airfield.js';
 import {stepAircraft,aircraftObstructed} from '../public/flight.js';
-import {vehicleDoorways} from '../public/vehicle-types.js';
+import {planAutorotation,validFlightPath} from '../public/autorotation.js';
+import {vehicleDoorways,vehicleSpec} from '../public/vehicle-types.js';
 import {createCar} from '../public/puppets3d.js';
 import {localDatabase} from '../scripts/local-db.mjs';
 import {handleApi} from '../worker/game-api.js';
@@ -147,9 +148,10 @@ test('a second client receives flight-height, heading and attitude and can only 
       assert.equal(body.players.find(p=>p.id===rider.id).lift,69);
       await post(rider,'sync',{state:{...pose,lift:0,motion:'land'}});
       await post(pilot,'sync',fly(0));await ask('ground-again');
-      const sky={...pose,lift:70,verticalSpeed:1,vx:300/3.6,vehicle:{...craft,speed:300/3.6},speed:300/3.6};
+      const cruise=vehicleSpec(craft.type).forward;
+      const sky={...pose,lift:70,verticalSpeed:1,vx:cruise,vehicle:{...craft,speed:cruise},speed:cruise};
       await post(pilot,'sync',{state:sky});body=await post(rider,'sync');
-      assert.equal(body.players.find(p=>p.id===pilot.id).vehicle.speed,300/3.6);
+      assert.equal(body.players.find(p=>p.id===pilot.id).vehicle.speed,cruise);
       const path=[[0,70],[35,68],[61,63],[82,59],[95,54],[105,49],[112,42],[118,35],[122,28],[126,21],[129,14],[132,7],[135,0]];
       const release={...craft,speed:sky.speed,lift:70,occupied:false,flightAt:stamp,flightPath:path};
       await post(pilot,'sync',{state:{...sky,vehicle:null,motion:'fall'},events:[{type:'vehicle',op:'jump',data:release}]});
@@ -179,18 +181,28 @@ test('a second client receives flight-height, heading and attitude and can only 
   }
 });
 
-test('a healthy Libellule covers 300 km/h over measured distance and banks through a wider circle at cruise',()=>{
+test('a healthy Libellule covers 360 km/h over measured distance and banks through a wider circle at cruise',()=>{
   const world={ground:()=>0,water:()=>null,contact:()=>false};
   let craft={x:0,y:0,lift:40,speed:0,angle:0};
   const fly=(seconds,input)=>{
     for(let i=0;i<seconds*60;i++)craft=stepAircraft('helicopter',craft,input,1/60,world);
   };
   fly(1,{throttle:1});assert.ok(craft.speed>6&&craft.speed<8);
-  fly(20,{throttle:1});
+  fly(190/60,{throttle:1});assert.ok(craft.speed<100/3.6);
+  fly(3/60,{throttle:1});assert.ok(craft.speed>=100/3.6);
+  fly(25,{throttle:1});
   const start=craft.x;fly(3,{throttle:1});
-  assert.ok(Math.abs((craft.x-start)/3*3.6-300)<.01);
+  assert.ok(Math.abs((craft.x-start)/3*3.6-360)<.01);
   fly(1,{throttle:1,steer:1});assert.ok(craft.angle>.10&&craft.angle<.20);
   const cruise=craft.speed;fly(1,{throttle:-1});assert.ok(cruise-craft.speed>9);
+  const setup={x:0,y:0,lift:40,speed:cruise,angle:0};
+  const complete=planAutorotation(setup,world,()=>false);
+  assert.ok(validFlightPath(complete)&&complete.at(-1)[1]===0);
+  const pier=(x,y,z)=>x>=1.5&&x<=2.1&&z>5;
+  const stopped=planAutorotation(setup,world,pier);
+  assert.ok(validFlightPath(stopped)&&stopped.at(-1)[0]<1.5);
+  const blocked=stepAircraft('helicopter',setup,{throttle:1},.075,{...world,contact:(x,y,opt)=>pier(x,y,opt.footWorldZ)});
+  assert.ok(blocked.speed===0&&blocked.impact>99&&blocked.x<1.5);
 });
 
 test('the mobile passenger action leaves a moving helicopter at cabin height and preserves its momentum',async t=>{

@@ -7,16 +7,17 @@ import {recordPeerMotion,readPeerMotion} from '../public/peer-motion-net.js';
 const dry={grip:1,tyres:0,power:1,grounded:true,incline:0,dt:1/60};
 function accelerate(type,dt){
   const spec=vehicleSpec(type);
-  let speed=0,hundred=Infinity;
+  let speed=0,hundred=Infinity,metresAtSpeed=0;
   for(let frame=1;frame<=150/dt;frame++){
     speed=stepRoadDrive(spec,{...dry,dt,speed,pedal:1}).speed;
+    if(frame>147/dt)metresAtSpeed+=speed*dt;
     if(speed>=100/3.6&&hundred===Infinity)hundred=frame*dt;
   }
-  return {top:speed*3.6,hundred};
+  return {top:metresAtSpeed/3*3.6,hundred};
 }
 
 test('full throttle reaches the tuned road speeds, with different launches at different frame rates',()=>{
-  const profiles=[['van',140,13,16],['compact',145,10,12],['sedan',203,6,7],['sport',240,3.9,4.3],['gt',276,3.2,3.6],['supercar',318,2.5,2.9]];
+  const profiles=[['van',140,13,16],['compact',145,10,12],['sedan',203,6,7],['sport',270,4.05,4.12],['gt',305,3.40,3.47],['supercar',355,2.67,2.73],['motorbike',255,4.41,4.49]];
   for(const [type,top,low,high] of profiles){
     for(const dt of [1/45,1/120]){
       const result=accelerate(type,dt);
@@ -36,15 +37,16 @@ test('high speed coasting, engine wear and deliberate braking preserve momentum'
 });
 
 test('vehicle prediction keeps full speed between snapshots while walking stays bounded',()=>{
-  const sample={id:'pilot',joinedAt:1,x:0,y:0,vx:84,vy:0,angle:0,moving:true};
-  for(const [extra,velocity] of [[{vehicle:{id:'fast',type:'supercar'}},84],[{lift:20,motion:'fall'},84],[{},8]]){
+  const speed=vehicleSpec('supercar').forward;
+  const sample={id:'pilot',joinedAt:1,x:0,y:0,vx:speed,vy:0,angle:0,moving:true};
+  for(const [extra,velocity] of [[{vehicle:{id:'fast',type:'supercar'}},speed],[{lift:20,motion:'fall'},speed],[{},8]]){
     const track={};
     recordPeerMotion(track,{...sample,...extra,updatedAt:1000},1000);
     assert.ok(Math.abs(readPeerMotion(track,1100).x-velocity*.1)<.001);
     if(extra.vehicle){
-      recordPeerMotion(track,{...sample,...extra,x:25.2,updatedAt:1300},1300);
+      recordPeerMotion(track,{...sample,...extra,x:speed*.3,updatedAt:1300},1300);
       assert.equal(track.samples.length,2);
-      assert.ok(Math.abs(readPeerMotion(track,1400).x-33.6)<.001);
+      assert.ok(Math.abs(readPeerMotion(track,1400).x-speed*.4)<.001);
     }
   }
 });

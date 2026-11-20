@@ -136,14 +136,15 @@ test('steady misses and targeted fan uploads use only two storage round trips on
 
 test('a fast vehicle retains its historical trajectory through interpolation and brief packet loss',async t=>{
   const w=world(t),shooter=await w.player(0,0);
-  const crossing=(y)=>({vy:84,vehicle:{id:'fast-gt',type:'supercar',x:10,y,angle:Math.PI/2,speed:84}});
-  const start=w.now,target=await w.player(10,-12.6,crossing(-12.6));
+  const speed=355/3.6,halfFrame=speed*.150;
+  const crossing=(y)=>({vy:speed,vehicle:{id:'fast-gt',type:'supercar',x:10,y,angle:Math.PI/2,speed}});
+  const start=w.now,target=await w.player(10,-halfFrame,crossing(-halfFrame));
   w.advance(300);
-  await w.api('sync',target,{state:w.state(10,12.6,crossing(12.6))});
+  await w.api('sync',target,{state:w.state(10,halfFrame,crossing(halfFrame))});
   const report=await w.fire(shooter,w.packet([w.hit(target,{viewedAt:start+150})]));
   assert.ok(report.events.some(e=>e.type==='hit'&&e.data.target===target.id));
   w.advance(700);
-  const y=-8.4;
+  const y=-speed*.1;
   await w.api('sync',target,{state:w.state(10,y,crossing(y))});
   const stamp=w.now;
   w.advance(200);
