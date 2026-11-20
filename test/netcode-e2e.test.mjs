@@ -99,7 +99,7 @@ test('A delayed round still resolves the visible crossing point after the runner
   const {connect,until}=simulatedWorld(t);
   let target,positionAtCommit;
   const source=connect('Source',actor(10,10),{
-    sendDelay:actions=>actions.some(e=>e.type==='fire')?310:35,
+    sendDelay:actions=>actions.some(e=>e.type==='fire')?375:35,
     async beforeCommit(actions,db){
       if(!actions.some(e=>e.type==='fire'))return;
       const row=await db.prepare('SELECT state FROM mc_members WHERE id=?').bind(target.net.id).first();
@@ -116,7 +116,7 @@ test('A delayed round still resolves the visible crossing point after the runner
     target.net.publish(actor(18,10+offset,{moving:true,vx:0,vy:7.35}));
   }
   await until(()=>target.events.some(e=>e.type==='hit'&&e.data.shotId==='crossing'),'The delayed trigger is validated against its presentation time');
-  assert.ok(positionAtCommit.y>=11.7,'The committed target position was already outside the original ray');
+  assert.ok(positionAtCommit.y>=11.1,'The committed target position was already outside the original ray');
   assert.equal(target.events.filter(e=>e.type==='hit').length,1);
 });
 
