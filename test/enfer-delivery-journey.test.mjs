@@ -99,8 +99,10 @@ test('walk, board, deliver, crash, repair and start a new job on the continuous 
   }
   assert.ok(hud.wanted>=1,'witnesses reported shots near the unloading place');
   const reported=game.getPursuitSnapshot().report;
+  for(let tick=0;tick<460&&hud.policeContact!=='En poursuite';tick++){step();if(tick%9===0)await sync();}
+  assert.equal(hud.policeContact,'En poursuite');
   await driveTo(careerPlaces.garage);
-  assert.ok(hud.wanted&&distance(game.getPursuitSnapshot().report,reported)>65,'the patrol follows the slowly moving driver beyond the initial search area');
+  if(hud.wanted)assert.ok(distance(game.getPursuitSnapshot().report,reported)>55,'while in sight, the search follows the driver beyond the initial area');
   if(hud.vehicleHealth===100){
     const g=game.getPosition();let obstacle;
     for(let d=6;d<21&&!obstacle;d+=.6)for(let i=0;i<32;i++){

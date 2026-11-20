@@ -6,7 +6,8 @@ import {drawBoundary} from './residential-boundaries.js';
 import {vehicleSpec} from './vehicle-types.js';
 import {nearbySignals,nearbyEnclosures,nearbyParkedCars} from './paris-world.js';
 import {pavementRuns} from './curb-clearance.js';
-import {frontageSigns,frontageStyle,careerFronts} from './enfer-frontage.js';
+import {frontageSigns,frontageStyle,namedFronts} from './enfer-frontage.js';
+import {parkingLots,lotPoint,parkingWidth,parkingDepth,parkingMarkings,parkingSign,parkingDriveways} from './enfer-parking-lots.js';
 import {workshopId,workshopEdge,bayDoor,headroom} from './workshop.js';
 import {drawStreetTree} from './street-trees.js';
 import {cityViewRange,streetViewRange} from './view-range.js';
@@ -364,16 +365,43 @@ function roofFront(b,a,d,len,outward,eaves,shape,index,seed,dormerFootprint){
 }
 function storefront(b,a,d,outward,height,index){
   const len=Math.hypot(d[0]-a[0],d[1]-a[1]),item=frontageSigns[index];
-  if(len<3.6||height<2.5)return;
+  if(!item||len<3.6||height<2.5)return;
   const dx=(d[0]-a[0])/len,dz=(d[1]-a[1])/len;
   const p=(k,off,h)=>[a[0]+dx*k+dz*outward*off,h,a[1]+dz*k-dx*outward*off];
-  const center=len*.5,bay=Math.min(4.1,len*.84),l=center-bay*.5,r=center+bay*.5,cap=Math.min(3.15,height-.10);
+  const center=len*.5,bay=Math.min(item.wares?5.4:4.1,len*.84),l=center-bay*.5,r=center+bay*.5,cap=Math.min(3.15,height-.10);
   b.face('felt',p(l,.026,.08),p(r,.026,.08),p(r,.026,cap+.05),p(l,.026,cap+.05),item.color);
   b.face('felt',p(l+.15,.048,.69),p(r-.15,.048,.69),p(r-.15,.048,cap-.55),p(l+.15,.048,cap-.55),'#47615d');
   for(const x of [l+.16,center-.36,center+.36,r-.16])
     b.face('felt',p(x-.034,.063,.52),p(x+.034,.063,.52),p(x+.034,.063,cap-.53),p(x-.034,.063,cap-.53),'#e4ccaa');
-  const low=p(l+.09,.074,cap-.49),right=p(r-.09,.074,cap-.49),upper=p(r-.09,.074,cap-.01),left=p(l+.09,.074,cap-.01);
+  const signDepth=item.wares?.205:.074;
+  const low=p(l+.09,signDepth,cap-.49),right=p(r-.09,signDepth,cap-.49);
+  const upper=p(r-.09,signDepth,cap-.01),left=p(l+.09,signDepth,cap-.01);
   b.face('sign'+index,low,right,upper,left,'#ffffff',outward<0?[[0,0],[1,0],[1,1],[0,1]]:[[1,0],[0,0],[0,1],[1,1]]);
+  if(item.wares){
+    const panel=(x,width,base,top,color,depth=.082)=>b.face('felt',p(x-width/2,depth,base),
+      p(x+width/2,depth,base),p(x+width/2,depth,top),p(x-width/2,depth,top),color);
+    panel(center,bay-.38,.82,.90,'#e0b58b');
+    panel(center,.63,.18,cap-.52,item.color);
+    panel(center+.10,.045,.97,1.15,'#e8c890',.118);
+    for(const side of [-1,1])for(let i=0;i<4;i++){
+      const x=center+side*(.52+i*(bay*.42-.52)/3);
+      if(item.wares==='books'){
+        const tint=['#c99d64','#abc6b0','#bc7880','#d3b3cb'][i];
+        panel(x,.13,.90,1.22+i*.075,tint);
+        panel(x,.08,1.55,1.83+(3-i)*.04,tint);
+      }else if(item.wares==='bread'){
+        for(const level of [.97,1.55]){
+          const [wx,wy,wz]=p(x,.112,level);
+          b.ball(wx,wy,wz,.125,.085+(i%2)*.045,.082,'#dba76e',8,5);
+        }
+      }else{
+        panel(x,.115,.91,1.14,'#b87761');panel(x,.075,1.14,1.47,'#93b08c');
+        const [wx,wy,wz]=p(x,.113,1.51+i%2*.13);
+        b.ball(wx,wy,wz,.125,.11,.071,['#e5a2ae','#dfbc74','#a7a0ce','#e4d0a4'][i],8,5);
+      }
+    }
+    if(item.wares!=='flowers')panel(center,bay-.39,1.49,1.55,'#d0ac81');
+  }
   if(index===2)return;
   const y=cap-.52,steps=10;
   for(let i=0;i<steps;i++){
@@ -423,14 +451,14 @@ function addEnferBuilding(b,building,poly,detail,skyline,h){
   const roofShape=!skyline?enferRoof(poly,h,index):null,eaves=roofShape?.wall??h;
   const mat=skyline?'plain':'enfer'+index;
   const vertex=([x,z],height)=>[x,height,z];
-  const business=detail?frontageStyle(building):null;
+  const venue=namedFronts.get(String(building.id)),garage=String(building.id)===workshopId;
+  const business=skyline?null:venue?.style??(detail?frontageStyle(building):null);
   let shopEdge=-1,bestFront=-Infinity;
-  if(business!=null)poly.forEach((p,i)=>{
+  if(venue&&business!=null)shopEdge=venue.edge;
+  else if(business!=null)poly.forEach((p,i)=>{
     const q=poly[(i+1)%poly.length],score=Math.hypot(p[0]-q[0],p[1]-q[1])-.024*Math.hypot((p[0]+q[0])*.5+3,(p[1]+q[1])*.5+282);
     if(score>bestFront){bestFront=score;shopEdge=i;}
   });
-  const venue=careerFronts.get(String(building.id)), garage=String(building.id)===workshopId;
-  if(venue&&detail)shopEdge=venue.edge;
   const outward=Math.sign(poly.reduce((sum,[x,z],i)=>{const d=poly[(i+1)%poly.length];return sum+x*d[1]-z*d[0];},0))||1;
   const seed=hash(building.id);
   // The dormer's back corners must stay inside a simple convex footprint.
@@ -621,9 +649,10 @@ function addRoad(b,seg,neighbours){
   const pavement=w+Math.min(6,w*.6);
   if(isEnfer){
     const yCurb=.185;
+    const drive=parkingDriveways.get(s.id),crossings=drive?[...neighbours,drive]:neighbours;
     for(const side of [-1,1]){
       const width=(pavement-w)*.5;
-      for(const [start,end] of pavementRuns(a,d,side*(pavement+w)*.25,width*.5,neighbours)){
+      for(const [start,end] of pavementRuns(a,d,side*(pavement+w)*.25,width*.5,crossings)){
         strip(b,'pave',start,end,width,yCurb,white,streetFabric.paving.meters,side*(pavement+w)*.25);
         const dx0=-dz/len*side*w*.5,dz0=dx/len*side*w*.5;
         b.wall('felt',[start[0]+dx0,start[1]+dz0],[end[0]+dx0,end[1]+dz0],y-.02,yCurb,'#a99788',len/2,.2);
@@ -958,8 +987,19 @@ export function createCity3D(scene,{software=false}={}){
     b.road=null;
     if(isEnfer && !target.skyline){
       b.base=0;b.foundation=false;b.drape=true;
+      for(const lot of parkingLots){
+        if(key(lot.x,lot.y)!==target.key)continue;
+        const at=(u,v)=>lotPoint(lot,u,v);
+        strip(b,'pave',at(-parkingWidth/2,0),at(parkingWidth/2,0),parkingDepth,.11,'#999ba0',streetFabric.paving.meters);
+        strip(b,'pave',at(0,-6.55),at(0,-4.6),6.4,.12,'#baa99b',streetFabric.paving.meters);
+        for(const [a,d] of parkingMarkings(lot))strip(b,'plain',a,d,.09,.133,'#e4d5b5',1);
+        const [sx,sz]=parkingSign(lot),c=Math.cos(lot.angle),s=Math.sin(lot.angle);
+        b.box(sx,.68,sz,.075,1.47,.075,'#46515e');
+        const sign=(along,h)=>[sx+along*c,h,sz+along*s];
+        b.face('parkingMarker',sign(-.38,1.37),sign(.38,1.37),sign(.38,2.13),sign(-.38,2.13),'#ffffff');
+      }
       for(const slot of nearbyParkedCars((ix+.5)*chunkSize,(iz+.5)*chunkSize,chunkSize/2+1)){
-        if(!slot.bay||key(slot.x,slot.y)!==target.key)continue;
+        if(!slot.bay||slot.bay==='lot'||key(slot.x,slot.y)!==target.key)continue;
         const spec=vehicleSpec(slot.type),l=spec.halfLength+.53,w=spec.halfWidth+.30;
         const c=Math.cos(slot.angle),s=Math.sin(slot.angle);
         const at=(u,v)=>[slot.x+c*u-s*v,slot.y+s*u+c*v];

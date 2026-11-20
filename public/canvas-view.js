@@ -1,3 +1,6 @@
+import {createWorldCamera} from './world-camera.js';
+import {frontageSigns,namedFronts,paintFrontageSign} from './enfer-frontage.js';
+import {parkingLots,lotPoint,parkingWidth,parkingDepth,parkingMarkings,parkingSign} from './enfer-parking-lots.js';
 import {heritageByFootprint,heritagePlinth} from './enfer-heritage.js';
 import {heritageModel} from './heritage-models.js';
 import {emotePatch} from './emote-art.js';
@@ -315,7 +318,9 @@ export function createCanvasView(canvas,spawn,onNotice){
   const spatial=getSpatial(),parks=green.map(a=>({a,bounds:loopBounds(a.poly)})),waters=water.map(a=>({a,level:waterLevel(a),bounds:loopBounds(a.poly)}));
   let projectionBase=null;const terraceFaces=[];
   let w=0,h=0,f=0,camX=spawn.x,camY=spawn.y,camH=2.3,fx=1,fy=0,sin=0,cos=1,horizon=.42,sideLimit=1;
-  let arm=5.25,followX=spawn.x,followY=spawn.y,cacheX=Infinity,cacheY=Infinity,nearBuildings=[],nearWays=[],enclosures=[],props=[],lastProps=-10;
+  const followCamera=createWorldCamera(spawn);
+  const facadeSigns=new Map();
+  let cacheX=Infinity,cacheY=Infinity,nearBuildings=[],nearWays=[],enclosures=[],props=[],lastProps=-10;
   let renderQuality=1,overBudget=0,fastFrames=0;
   let running=true,drawn=false,clock=0,last=-10;const effects=[],queue=[],occlusion=[];
   const blood=createBleedFibers();
@@ -661,6 +666,7 @@ export function createCanvasView(canvas,spawn,onNotice){
     const glass=!local&&(H>48||(bounds.x< -135&&bounds.y< -625&&H>24));
     const pitched=local&&enferRoof(poly,H,enferIndex);
     const eave=pitched?.wall??(glass?H-.7:H>7.5?H-Math.min(3.25,H*.15):H-.65);
+    const frontage=isEnfer&&namedFronts.get(String(o.id));
     const top=poly.map(q=>[q[0]+(bounds.x-q[0])*.032,q[1]+(bounds.y-q[1])*.032,H]);
     for(let j=0;j<poly.length;j++){
       const a=poly[j],b=poly[(j+1)%poly.length],dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy);
@@ -732,6 +738,34 @@ export function createCanvasView(canvas,spawn,onNotice){
           g.transform(width/pic.width,(p2.y-p1.y)/pic.width,(p4.x-p1.x)/pic.height,(stripHeight+(p3.y-p2.y))*.5/pic.height,p1.x,p1.y);
           if(wind>0){g.translate(pic.width,0);g.scale(-1,1);}
           g.drawImage(pic,0,0);g.restore();
+        }
+        if(frontage&&j===frontage.edge&&d<110){
+          const sign=frontageSigns[frontage.style],width=Math.min(sign.wares?5.4:4.1,length*.84),center=length/2;
+          const cap=Math.min(3.15,eave-.10),left=center-width/2,right=center+width/2;
+          const pt=(u,inset,h)=>[a[0]+dx*u/length+normalX*inset,a[1]+dy*u/length+normalY*inset,h];
+          const panel=(l,r,base,top,tint,inset=.07)=>poly3([pt(l,inset,base),pt(r,inset,base),pt(r,inset,top),pt(l,inset,top)],tint);
+          panel(left,right,.08,cap,sign.color);
+          panel(left+.13,right-.13,.71,cap-.55,'#688080');
+          panel(center-.33,center+.33,.10,cap-.54,sign.color,.09);
+          for(const u of [left+.16,right-.16])panel(u-.03,u+.03,.59,cap-.53,'#e9d6ad',.10);
+          if(sign.wares){
+            const tones=sign.wares==='bread'?['#daa16a','#e8b678','#ce8958']:sign.wares==='flowers'?
+              ['#e5a2ae','#a7a0ce','#dfbc74']:['#c99d64','#abc6b0','#bc7880'];
+            for(const side of [-1,1])for(let i=0;i<5;i++){
+              const u=center+side*(.46+i*(width*.39-.46)/4);
+              panel(u-.075,u+.075,.91,1.08+i%3*.11,tones[i%tones.length],.10);
+            }
+          }
+          let pic=facadeSigns.get(frontage.style);
+          if(!pic){pic=makeCanvas(256,64);paintFrontageSign(pic.getContext('2d'),256,64,sign);facadeSigns.set(frontage.style,pic);}
+          const u0=wind>0?256:0,u1=256-u0;
+          texturedFace(pic,[[...pt(left,.12,cap-.04),u0,0],[...pt(right,.12,cap-.04),u1,0],
+            [...pt(right,.12,cap-.51),u1,64],[...pt(left,.12,cap-.51),u0,64]]);
+          if(frontage.style!==2)for(let i=0;i<9;i++){
+            const l=left+width*i/9,r=left+width*(i+1)/9,tint=i%2?'#edceb1':sign.awning;
+            poly3([pt(l,.07,cap-.52),pt(r,.07,cap-.52),pt(r,.81,cap-.76),pt(l,.81,cap-.76)],tint);
+            poly3([pt(l,.81,cap-.76),pt(r,.81,cap-.76),pt(r,.81,cap-.90),pt(l,.81,cap-.90)],tint);
+          }
         }
       }});
     }
@@ -850,21 +884,10 @@ export function createCanvasView(canvas,spawn,onNotice){
       surface.width=Math.round(width*scale);surface.height=Math.round(height*scale);
     }
     w=surface.width;h=surface.height;f=.5*h/Math.tan((w<h?68:58)*Math.PI/360);
-    const {p,yaw,pitch=0,car,destroyed}=state,snap=state.snap||!Number.isFinite(followX)||Math.hypot(followX-p.x,followY-p.y)>25;
-    const heli=car?.type==='helicopter';
-    const blend=snap?1:1-Math.exp(-(heli?20:car?11:19)*frameDt);
-    followX+=(p.x-followX)*blend;followY+=(p.y-followY)*blend;
-    const model=car?vehicleSpec(car.type):null;
-    fx=Math.cos(yaw);fy=Math.sin(yaw);const goal=car?8.15+Math.max(0,model.halfLength-2)*1.24+Math.min(heli?5.5:2.25,Math.abs(state.speed||0)*.065):5.25;
-    const swimming=!car&&p.motion==='swim',aircraft=car&&isAircraft(car.type);
-    const airBase=aircraft?baseTerrainHeight(p.x,p.y):0;
-    const followGround=aircraft?()=>airBase:swimming?swimGround:(x,y)=>terrainHeight(x,y,p.angle);
-    const lift=(p.lift||0)-(swimming?.55:0),focus=lift+(car?Math.max(1.35,model.height*.77):1.17),wantedH=lift+(car?Math.max(2.92,model.height+1.05):2.18)+pitch*2.8;
-    const ground=followGround(followX,followY),backGround=followGround(followX-fx*goal,followY-fy*goal),look=car?6.3:4.15;
-    const dist=clamp(cameraDistance(followX,followY,focus,yaw+Math.PI,goal,wantedH,destroyed,.16,followGround),.3,goal);
-    arm=snap?dist:Math.min(dist,arm+(dist-arm)*(1-Math.exp(-6*frameDt)));
-    camX=followX-fx*arm;camY=followY-fy*arm;camH=ground+focus+(backGround-ground+wantedH-focus)*arm/goal+.12+(state.vehicleImpact||0)*Math.sin(time*35)*.19;
-    const tilt=Math.atan2(followGround(followX+fx*look,followY+fy*look)+focus+pitch*.95-camH,arm+look);
+    const {p,yaw,car,destroyed}=state,rig=followCamera(state,frameDt,time),snap=rig.reset;
+    fx=Math.cos(yaw);fy=Math.sin(yaw);
+    camX=rig.x;camY=rig.y;camH=rig.z;
+    const tilt=Math.atan2(rig.aimZ-camH,Math.hypot(rig.aimX-camX,rig.aimY-camY));
     sin=Math.sin(tilt);cos=Math.cos(tilt);horizon=h*.5+f*Math.tan(tilt);sideLimit=w/(2*f)+.1;
     if(Math.hypot(cacheX-p.x,cacheY-p.y)>35){
       cacheX=p.x;cacheY=p.y;
@@ -927,6 +950,26 @@ export function createCanvasView(canvas,spawn,onNotice){
       ellipseGround(arc.x,arc.y,35.2,.025,'#c4b5a6');
     }
     groundTexture();
+    if(isEnfer)for(const lot of parkingLots){
+      if(!seen({...lot,r:13},streetViewRange))continue;
+      const rect=(l,r,a,b,h,tint)=>poly3([[...lotPoint(lot,l,a),h],[...lotPoint(lot,r,a),h],
+        [...lotPoint(lot,r,b),h],[...lotPoint(lot,l,b),h]],tint);
+      rect(-parkingWidth/2,parkingWidth/2,-parkingDepth/2,parkingDepth/2,.11,'#96969a');
+      rect(-3.2,3.2,-6.55,-4.6,.20,'#a79889');
+      for(const [a,b] of parkingMarkings(lot)){
+        const dx=b[0]-a[0],dy=b[1]-a[1],n=Math.hypot(dx,dy),u=.049*dy/n,v=.049*dx/n;
+        poly3([[a[0]-u,a[1]+v,.14],[b[0]-u,b[1]+v,.14],[b[0]+u,b[1]-v,.14],[a[0]+u,a[1]-v,.14]],'#e4d5b5');
+      }
+      const [x,y]=parkingSign(lot),low=at(x,y,.85),center=at(x,y,1.72);
+      if(low&&center)queue.push({z:depth(x,y),draw:()=>{
+        const size=Math.max(3,f*.74/center.d);
+        g.strokeStyle='#46515e';g.lineWidth=Math.max(1,size*.083);g.beginPath();g.moveTo(low.x,low.y);g.lineTo(center.x,center.y);g.stroke();
+        g.fillStyle='#315779';g.fillRect(center.x-size/2,center.y-size/2,size,size);
+        g.strokeStyle='#d4e8e0';g.lineWidth=Math.max(.7,size*.045);g.strokeRect(center.x-size*.43,center.y-size*.43,size*.86,size*.86);
+        g.save();g.fillStyle='#fff1d3';g.font='bold '+Math.round(size*.71)+'px sans-serif';g.textAlign='center';g.textBaseline='middle';
+        g.fillText('P',center.x,center.y+size*.035);g.restore();
+      }});
+    }
     if(isEnfer)for(const s of visibleWays){
       if(!s.way.bridge)continue;
       roadRibbon(s,.95,'#c6ad92',0,s.a,s.b);

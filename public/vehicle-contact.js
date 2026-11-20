@@ -26,6 +26,13 @@ export function vehicleContact(a,b,nx,ny){
   return {closing,a:change(sa.mass,pa.inertia,armA,impulse),b:change(sb.mass,pb.inertia,armB,-impulse)};
 }
 
+export function slideVehicleVelocity(speed,lateral,angle,nx,ny,bounce=0){
+  const c=Math.cos(angle),s=Math.sin(angle),x=c*speed-s*lateral,y=s*speed+c*lateral;
+  const inward=Math.min(0,x*nx+y*ny);
+  const vx=x-nx*inward*(1+bounce),vy=y-ny*inward*(1+bounce);
+  return {speed:vx*c+vy*s,lateral:vy*c-vx*s};
+}
+
 // Route-following traffic regains its lane with a damped steering correction.
 // Unattended vehicles lose speed to rolling friction and retain their final pose.
 export function createVehicleDisplacements(){

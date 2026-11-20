@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {vehicleSpec,vehicleDoorways} from '../public/vehicle-types.js';
 import {careerPlaces} from '../public/career-catalog.js';
+import {parkingLots,lotPoint,lotSpaces} from '../public/enfer-parking-lots.js';
+import {neighborhoodShops,namedFronts} from '../public/enfer-frontage.js';
 
 test('street parking is sparse, clear of traffic, accessible and stationary between visits',async t=>{
   globalThis.location=new URL('https://maille.test/');
@@ -19,7 +21,7 @@ test('street parking is sparse, clear of traffic, accessible and stationary betw
     assert.equal(contactAt(car.x,car.y,{angle:car.angle,halfLength,halfWidth}),null,car.id);
     assert.ok(clearsTrafficAtRest(car,car.type),car.id);
     assert.ok(vehicleDoorways(car,.75).every(d=>!contactAt(d.x,d.y,{radius:.42})),car.id);
-    assert.ok(slots.every(other=>other===car||Math.hypot(car.x-other.x,car.y-other.y)>94),car.id);
+    if(car.bay!=='lot')assert.ok(slots.every(other=>other===car||other.bay==='lot'||Math.hypot(car.x-other.x,car.y-other.y)>94),car.id);
   }
   for(const [type,venue] of [['gt',careerPlaces.garage],['supercar',careerPlaces.quay]]){
     const spot=slots.find(c=>c.type===type);assert.ok(spot?.parked);
@@ -28,5 +30,16 @@ test('street parking is sparse, clear of traffic, accessible and stationary betw
       const seen=routeAgents(spot.x,spot.y,8,clock).cars.find(c=>c.id===spot.id);
       assert.ok(seen&&!seen.moving&&seen.speed===0);assert.equal(seen.x,spot.x);
     }
+  }
+  for(const lot of parkingLots){
+    for(const across of [-7,-6,-5,-4,-3,-2]){
+      const [x,y]=lotPoint(lot,0,across);
+      assert.equal(contactAt(x,y,{angle:lot.angle+Math.PI/2,halfLength:2.05,halfWidth:.9}),null,lot.id);
+    }
+    assert.equal(lotSpaces(lot).filter(space=>!slots.some(car=>car.id===space.id)).length,2);
+  }
+  for(const shop of neighborhoodShops){
+    assert.equal(namedFronts.get(shop.building),shop);
+    assert.equal(contactAt(shop.x,shop.y,{radius:.48}),null,shop.name);
   }
 });

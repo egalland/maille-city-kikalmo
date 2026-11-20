@@ -32,12 +32,17 @@ export function cameraSettingsControls(game){
     wrap.append(caption,output,control);group.append(wrap);
   }
   slider('sensitivity','Sensibilité',.4,1.8,.05,value=>Math.round(value*100)+' %');
-  if(game.graphicsMode!=='canvas'){
-    slider('fov','Angle de vue',65,100,1,value=>value+'°');
+  {
+    const cockpit=game.graphicsMode!=='canvas';
+    if(cockpit)slider('fov','Angle de vue',65,100,1,value=>value+'°');
     const label=document.createElement('label'),select=document.createElement('select');
     label.append('Caméra au volant');select.className='mc-input';
-    for(const [value,title] of Object.entries(cameraModes)){const option=document.createElement('option');option.value=value;option.textContent=title;select.append(option);}
-    select.value=settings.mode;select.addEventListener('change',()=>game.setCameraOptions({mode:select.value}));label.append(select);group.append(label);
+    for(const [value,title] of Object.entries(cameraModes)){
+      if(value==='driver'&&!cockpit)continue;
+      const option=document.createElement('option');option.value=value;option.textContent=title;select.append(option);
+    }
+    select.value=!cockpit&&settings.mode==='driver'?'chase':settings.mode;
+    select.addEventListener('change',()=>game.setCameraOptions({mode:select.value}));label.append(select);group.append(label);
   }
   return group;
 }

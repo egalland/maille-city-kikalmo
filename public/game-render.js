@@ -23,7 +23,8 @@ import { createCity3D } from './city3d.js';
 import { createPuppet, createCar } from './puppets3d.js';
 import { createCanvasView } from './canvas-view.js';
 import { createPickupDisplay } from './pickup-models.js';
-import { cameraDistance, nearbyProps, swimmingSurface } from './paris-world.js';
+import { nearbyProps, swimmingSurface } from './paris-world.js';
+import {createWorldCamera} from './world-camera.js';
 
 export function shotStrokeMesh(strokes,height){
   const positions=[],tints=[],color=new THREE.Color();
@@ -118,7 +119,8 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   const driverView=createDriverView(scene);
   const shadows=makeShadow();scene.add(shadows);
   const shadowTransform=new THREE.Object3D(), projection=new THREE.Vector3(), cameraAim=new THREE.Vector3();
-  let width=0,height=0, cameraArm=5.6, cameraFloor, camX=spawn.x,camY=spawn.y, lastPropTick=-100,props=[],inFrame=0,slowCount=0,scale=touch?.94:1, active=true;
+  let width=0,height=0, camX=spawn.x,camY=spawn.y, lastPropTick=-100,props=[],inFrame=0,slowCount=0,scale=touch?.94:1, active=true;
+  const followCamera=createWorldCamera(spawn);
   const models=new Map(), names=new Map(), effects=[];
   const blood=createBleedFibers(),bloodMesh=createBleedMesh(scene);
   const labels=document.createElement('div');
@@ -226,30 +228,12 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     if(renderer.software){dt=Math.min(.10,Math.max(dt,time-cpuFrame));cpuFrame=time;}
     resize(state.cameraConfig?.fov);inFrame++;
     const {p,car,yaw,pitch,destroyed}=state;
-    // Tighten the boom immediately at walls, extend it gently after clearing a corner.
     const model=car?vehicleSpec(car.type):null;
     const cockpit=!!car&&!isAircraft(car.type)&&!state.passengerView&&state.cameraConfig?.mode==='driver';
-    const chase=state.cameraConfig?.mode==='near'?5.1:8.15;
-    const follow=car?chase+Math.max(0,model.halfLength-2)*1.24+(isAircraft(car.type)?2.8:0):5.25;
-    const swimming=p.motion==='swim'&&!car;
-    cameraFloor=swimming?undefined:terrainHeight(p.x,p.y,p.angle,state.snap?undefined:cameraFloor);
-    const aircraft=car&&isAircraft(car.type),airBase=aircraft?baseTerrainHeight(p.x,p.y):0;
-    const followGround=aircraft?()=>airBase:swimming?swimGround:(x,y)=>terrainHeight(x,y,p.angle,cameraFloor);
-    const feet=(p.lift||0)-(swimming?.55:0);
-    const focusY=feet+(car?Math.max(1.35,model.height*.77):1.17),lift=feet+(car?Math.max(2.92,model.height+1.05):2.18);
-    const snap=state.snap || Math.hypot(camX-p.x,camY-p.y)>25 || inFrame===1;
-    const heli=car?.type==='helicopter';
-    const f=snap?1:blend(heli?20:car?11:19,dt);
-    camX+=(p.x-camX)*f;camY+=(p.y-camY)*f;
-    const goal=follow+(car?Math.min(heli?5.5:2.25,Math.abs(state.speed)*.065):0),wantedY=lift+pitch*2.8,back=yaw+Math.PI;
-    const ground=followGround(camX,camY),groundBehind=followGround(camX+Math.cos(back)*goal,camY+Math.sin(back)*goal);
-    const available=clamp(cameraDistance(camX,camY,focusY,back,goal,wantedY,destroyed,.31,followGround),.24,goal);
-    cameraArm=snap?available:Math.min(available,cameraArm+(available-cameraArm)*blend(6,dt));
-    const armHeight=ground+focusY+(groundBehind-ground+wantedY-focusY)*cameraArm/goal;
-    const jolt=(state.vehicleImpact||0)*Math.sin(time*35)*.19;
-    camera.position.set(camX+Math.cos(back)*cameraArm,armHeight+.12+jolt,camY+Math.sin(back)*cameraArm);
-    const aimForward=car?6.3:4.15;
-    cameraAim.set(camX+Math.cos(yaw)*aimForward,followGround(camX+Math.cos(yaw)*aimForward,camY+Math.sin(yaw)*aimForward)+focusY+pitch*.95,camY+Math.sin(yaw)*aimForward);
+    const rig=followCamera(state,dt,time),{ground,reset:snap}=rig;
+    camX=rig.x;camY=rig.y;
+    camera.position.set(rig.x,rig.z,rig.y);
+    cameraAim.set(rig.aimX,rig.aimZ,rig.aimY);
     driverView.set(cockpit,model,p,ground,state.steering,state.vehiclePitch);
     if(cockpit){
       camera.position.copy(driverView.eye);

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {vehicleContact,createVehicleDisplacements,sweptPedestrianContact} from '../public/vehicle-contact.js';
+import {vehicleContact,createVehicleDisplacements,sweptPedestrianContact,slideVehicleVelocity} from '../public/vehicle-contact.js';
+import {contactAt,moveBody,vehicleTurn} from '../public/paris-world.js';
 import {createTrafficFlow} from '../public/traffic-flow.js';
 import {vehicleSpec} from '../public/vehicle-types.js';
 import {createGame} from '../public/game.js';
@@ -8,6 +9,21 @@ import {localDatabase} from '../scripts/local-db.mjs';
 import {handleApi} from '../worker/game-api.js';
 
 const body=(type,x,y,vx,vy)=>({type,x,y,angle:0,vx,vy});
+test('a swept scrape keeps its tangent and a turning bumper cannot rotate into a wall',()=>{
+  const start={x:325,y:-744},angle=Math.atan2(120,244),c=Math.cos(angle),s=Math.sin(angle);
+  const wall={...start,x:start.x+2*c+1.55*s,y:start.y+2*s-1.55*c,
+    angle,halfLength:3.5,halfWidth:.2,h:2.4,id:'test-wall'};
+  const shape={angle,halfLength:1.82,halfWidth:.83,colliders:[wall],bodyHeight:1.5,precise:true};
+  const hit=moveBody(start.x,start.y,3.6*c+.9*s,3.6*s-.9*c,shape);
+  assert.equal(hit.touched,wall);
+  assert.equal(contactAt(hit.x,hit.y,shape),null);
+  assert.ok((hit.x-start.x)*c+(hit.y-start.y)*s>3.55);
+  const turn=vehicleTurn(hit.x,hit.y,angle,angle-.45,shape);
+  assert.ok(turn>angle-.35);
+  assert.ok(!contactAt(hit.x,hit.y,{...shape,angle:turn}));
+  const motion=slideVehicleVelocity(14,-3,angle,-s,c);
+  assert.ok(Math.abs(motion.speed-14)<.0001 && Math.abs(motion.lateral)<.0001);
+});
 test('a pedestrian in a fast swept path takes one hit without stopping the player vehicle',t=>{
   const saved=Object.fromEntries(['window','document','requestAnimationFrame','cancelAnimationFrame'].map(k=>[k,globalThis[k]]));
   globalThis.window=new EventTarget();globalThis.document=new EventTarget();

@@ -5,6 +5,8 @@ import {addSocialControls} from './social-controls.js';
 import {readRadio,storeRadio} from './car-radio.js';
 import {airfields} from './airfield.js';
 import {careerPlaces} from './career-catalog.js';
+import {parkingLots} from './enfer-parking-lots.js';
+import {neighborhoodShops} from './enfer-frontage.js';
 import {placeSymbols,heritageWaypoints} from './career-navigation.js';
 import {foxSkins} from './puppet-dyes.js';
 import {makeEmoteIcon} from './emote-art.js';
@@ -365,14 +367,18 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
         const stop=coreDestinations.find(d=>'car-'+d.key===car.id);
         return {...car,id:'parking/'+car.id,name:vehicleSpec(car.type).label+' · '+(stop?.label||streetAt(car.x,car.y))};
       });
-      const venues=[...Object.values(careerPlaces),...airfields,...parking,...heritageWaypoints];
+      const venues=[...Object.values(careerPlaces),...airfields,...parkingLots,...neighborhoodShops,...parking,...heritageWaypoints];
       const lots=node('optgroup','');lots.label='Stationnements habituels';
+      const shops=node('optgroup','');shops.label='Commerces';
+      const publicLots=node('optgroup','');publicLots.label='Parkings publics';
       const monuments=node('optgroup','');monuments.label='Églises et mairies';
       for(const place of venues){
         const mark=placeSymbols[place.id];
         const option=node('option','',mark?mark+' · '+place.name:place.name);
-        option.value=place.id;(place.symbol?monuments:mark?selector:lots).append(option);
+        const group=place.symbol?monuments:parkingLots.includes(place)?publicLots:neighborhoodShops.includes(place)?shops:mark?selector:lots;
+        option.value=place.id;group.append(option);
       }
+      selector.append(shops,publicLots);
       if(parking.length)selector.append(lots);
       if(monuments.children.length)selector.append(monuments);
       const focus=button('Voir le quartier des missions','mc-secondary',()=>{

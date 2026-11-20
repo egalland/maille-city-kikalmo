@@ -1,6 +1,7 @@
 import {heritageByFootprint,heritagePlinthHeight} from './enfer-heritage.js';
 import {heritageHeight} from './heritage-models.js';
 import {streetParking} from './street-parking.js';
+import {parkingLots,lotPoint,lotSpaces,parkingSign} from './enfer-parking-lots.js';
 import {corridorPlans} from './enfer-corridors.js';
 import {boundarySpans} from './residential-boundaries.js';
 import {containsPoint as inRing,edgeContact} from './collision-ring.js';
@@ -458,12 +459,22 @@ function leaveMultipleContacts(x,y,opt,nx,ny){
 }
 export function moveBody(x,y,dx,dy,opt={}) {
   let touched=null,firstNormalX=0,firstNormalY=0;
-  const length=Math.hypot(dx,dy),steps=Math.max(1,Math.ceil(length/(opt.halfLength ? .7 : .35)));
+  const length=Math.hypot(dx,dy),steps=Math.max(1,Math.ceil(length/(opt.precise?.46:opt.halfLength?.7:.35)));
   const sx=dx/steps,sy=dy/steps;
   for(let i=0;i<steps;i++){
-    const d=testPose(x+sx,y+sy,opt);
+    let mx=sx,my=sy,d=testPose(x+sx,y+sy,opt);
     if(!d){x+=sx;y+=sy;continue;}
-    const contact=contactNormal(x,y,opt,d,sx,sy);
+    if(opt.precise&&!testPose(x,y,opt)){
+      // Stop at the first swept contact, then slide only the unspent part of
+      // this step. Small diagonal bumps no longer consume the whole frame.
+      let clear=0,blocked=1;
+      for(let n=0;n<6;n++){
+        const mid=(clear+blocked)*.5,hit=testPose(x+sx*mid,y+sy*mid,opt);
+        if(hit){d=hit;blocked=mid;}else clear=mid;
+      }
+      x+=sx*clear;y+=sy*clear;mx*=1-clear;my*=1-clear;
+    }
+    const contact=contactNormal(x,y,opt,d,mx,my);
     const [nx,ny]=contact;
     if(!touched){touched=d;firstNormalX=nx;firstNormalY=ny;}
     // A newly received peer pose can start inside our body. Only separate dynamic
@@ -478,13 +489,24 @@ export function moveBody(x,y,dx,dy,opt={}) {
         if(clear){x=clear.x;y=clear.y;}
       }
     }
-    const along=sx*nx+sy*ny,tx=sx-nx*Math.min(along,0),ty=sy-ny*Math.min(along,0);
+    const along=mx*nx+my*ny,tx=mx-nx*Math.min(along,0),ty=my-ny*Math.min(along,0);
     if((Math.abs(tx)+Math.abs(ty))>.0001&&!testPose(x+tx,y+ty,opt)){x+=tx;y+=ty;}
-    else if(sx && !testPose(x+sx,y,opt))x+=sx;
-    else if(sy && !testPose(x,y+sy,opt))y+=sy;
+    else if(!opt.precise&&sx && !testPose(x+sx,y,opt))x+=sx;
+    else if(!opt.precise&&sy && !testPose(x,y+sy,opt))y+=sy;
     else break;
   }
   return {x,y,hit:!!touched,touched,normalX:firstNormalX,normalY:firstNormalY};
+}
+export function vehicleTurn(x,y,from,to,options){
+  if(from===to)return from;
+  const count=Math.max(1,Math.ceil(Math.abs(to-from)*options.halfLength/.16));
+  let angle=from;
+  for(let i=1;i<=count;i++){
+    const next=from+(to-from)*i/count;
+    if(testPose(x,y,{...options,angle:next}))break;
+    angle=next;
+  }
+  return angle;
 }
 export function cameraDistance(x,y,height,angle,distance,endHeight=height,destroyed=EMPTY,radius=.16,ground=terrainHeight) {
   const c=Math.cos(angle),s=Math.sin(angle), step=.35;
@@ -674,6 +696,12 @@ function putProp(path,side,index,type,p){
   const r=radii[type],offset=road.w*.5+(type==='tree'?1.9:1.16);
   const x=p.x-Math.sin(p.angle)*offset*side,y=p.y+Math.cos(p.angle)*offset*side;
   if(destinations.some(d=>Math.hypot(x-d.x,y-d.y)<8))return;
+  if(isEnfer&&parkingLots.some(lot=>{
+    const dx=x-lot.x,dy=y-lot.y;
+    if(dx*dx+dy*dy>14*14)return false;
+    const c=Math.cos(lot.angle),s=Math.sin(lot.angle),along=Math.abs(dx*c+dy*s),across=-dx*s+dy*c;
+    return along<7.3+r&&Math.abs(across)<5.05+r || along<3.4+r&&across<0&&across>-8.4-r;
+  }))return;
   const nearArc=Math.hypot(x-monuments.arc.x,y-monuments.arc.y);
   if(!isEnfer&&(nearArc<128||Math.hypot(x-monuments.arche.x,y-monuments.arche.y)<58))return;
   if(testPose(x,y,{radius:Math.max(r,.7)},false))return;
@@ -889,6 +917,16 @@ function parkedVehicleAtStop(stop,i){
 export const parkedCars=destinations.map(parkedVehicleAtStop).filter(Boolean);
 if(isEnfer)for(const [id,x,y,angle,type,color,bay] of streetParking)
   parkedCars.push({id,x,y,angle,type,color,bay,kind:'car',parked:true,moving:false,speed:0});
+if(isEnfer)for(const lot of parkingLots){
+  const spaces=lotSpaces(lot);
+  for(const [index,type] of [[0,'compact'],[3,'sedan']]){
+    parkedCars.push({...spaces[index],type,color:lot.colors[index?1:0],bay:'lot',kind:'car',parked:true,moving:false,speed:0});
+  }
+  for(const [index,[x,y]] of [parkingSign(lot),lotPoint(lot,6.9,-4.25),lotPoint(lot,-6.9,4.62),lotPoint(lot,6.9,4.62)].entries()){
+    const prop={id:lot.id+'-post-'+index,type:'bollard',x,y,angle:lot.angle,r:.16,h:.87};
+    props.push(prop);decor.insert(prop,bounds([[x,y]],.16));
+  }
+}
 const parkingGrid=new Grid(96);
 for(const car of parkedCars)parkingGrid.insert(car,bounds([[car.x,car.y]]));
 export function nearbyParkedCars(x,y,radius){return parkingGrid.area(x,y,radius);}
