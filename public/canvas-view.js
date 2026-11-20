@@ -16,7 +16,8 @@ import { vehicleSpec } from './vehicle-types.js';
 // It projects the same metre-space data, props, actors and camera boom as the GPU view.
 import {enferStyle,enferStyles,enferWall,enferRoof,roofPitch} from './enfer-architecture.js';
 import {buildings,streets,water,green,isEnfer} from './paris-data.js';
-import {monuments,cameraDistance,nearbyProps,swimmingSurface} from './paris-world.js';
+import {enclosureStrip} from './enclosure-textiles.js';
+import {monuments,cameraDistance,nearbyProps,nearbyEnclosures,swimmingSurface} from './paris-world.js';
 import {drawCanvasPuppet,drawCanvasCar} from './canvas-puppets.js';
 import {pickupPatch,pickupStyle,pickupLift,pickupPhase,pickupRange,pickupMarkerWidth} from './pickup-art.js';
 import {grandParisModels,skipLandmark} from './canvas-landmarks.js';
@@ -309,7 +310,7 @@ export function createCanvasView(canvas,spawn,onNotice){
   const spatial=getSpatial(),parks=green.map(a=>({a,bounds:loopBounds(a.poly)})),waters=water.map(a=>({a,level:waterLevel(a),bounds:loopBounds(a.poly)}));
   let projectionBase=null;const terraceFaces=[];
   let w=0,h=0,f=0,camX=spawn.x,camY=spawn.y,camH=2.3,fx=1,fy=0,sin=0,cos=1,horizon=.42,sideLimit=1;
-  let arm=5.25,followX=spawn.x,followY=spawn.y,cacheX=Infinity,cacheY=Infinity,nearBuildings=[],nearWays=[],props=[],lastProps=-10;
+  let arm=5.25,followX=spawn.x,followY=spawn.y,cacheX=Infinity,cacheY=Infinity,nearBuildings=[],nearWays=[],enclosures=[],props=[],lastProps=-10;
   let renderQuality=1,overBudget=0,fastFrames=0;
   let running=true,drawn=false,clock=0,last=-10;const effects=[],queue=[],occlusion=[];
   const blood=createBleedFibers();
@@ -822,6 +823,7 @@ export function createCanvasView(canvas,spawn,onNotice){
     if(Math.hypot(cacheX-p.x,cacheY-p.y)>35){
       cacheX=p.x;cacheY=p.y;
       const queryRange=canvasViewRange(false)+45;
+      enclosures=isEnfer?nearbyEnclosures(p.x,p.y,180):[];
       nearBuildings=spatial.blocks.around(p.x,p.y,queryRange);
       nearWays=spatial.ways.around(p.x,p.y,streetViewRange+45);
     }
@@ -911,6 +913,18 @@ export function createCanvasView(canvas,spawn,onNotice){
         }}
       if(obj.m.id==='arc')arcFront(obj.m);
       projectionBase=null;
+    }
+    for(const span of enclosures){
+      const {a,b,x,y,h:height,style,halfLength}=span;
+      if(!seen({x,y,r:halfLength},145))continue;
+      const points=[[...a,0],[...b,0],[...b,height],[...a,height]],plane=projectPoly(points);
+      if(!plane)continue;
+      const art=enclosureStrip(style),z=depth(x,y),tile=style==='mesh'?.90:1.36,repeat=96*(halfLength*2)/tile;
+      const uv=points.map((pt,i)=>[...pt,i===1||i===2?repeat:0,i<2?96*height/tile:0]);
+      queue.push({z,draw:()=>{
+        if(style!=='mesh')fillPath(plane,style==='board'?'#a47f68':'#b38170');
+        texturedFace(art,uv);
+      }});
     }
     terraceFaces.length=0;
     for(const o of props)if(!destroyed?.has(o.id))showProp(o,state.propHealth?.get(o.id));

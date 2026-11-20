@@ -1,3 +1,4 @@
+import {enclosureTextile} from './enclosure-textiles.js';
 import {frontageSigns} from './enfer-frontage.js';
 import {glassCloth, windowCloth, shopCloth, shopCloths, zincCloth} from './paris-applique.js';
 import {paintStreetFabric} from './street-fabric.js';
@@ -76,6 +77,12 @@ export function cityMaterials(enfer=false){
   };
   for(let i=0;i<shopCloths.length;i++)material['shop'+i]=lambert(shopTile(i));
   if(enfer){
+    for(const [key,style] of [['parcelMasonry','brick'],['parcelWood','board'],['parcelMesh','mesh']]){
+      const cloth=enclosureTextile(style);
+      material[key]=lambert(tile(cloth.width,cloth.height,c=>c.drawImage(cloth,0,0)));
+      material[key].name='enclosure-'+style;
+      if(style==='mesh')material[key].alphaTest=.32;
+    }
     material.lantern=lambert(null);material.lantern.emissive.setHex(0xffd28c);material.lantern.emissiveIntensity=0;material.lantern.userData.streetLamp=true;
     frontageSigns.forEach((item,index)=>{
       material['sign'+index]=lambert(tile(256,64,(c,w,h)=>{

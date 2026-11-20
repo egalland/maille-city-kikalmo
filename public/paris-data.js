@@ -45,4 +45,5 @@ const data=await selectData();
 selectSectorTerrain(data.relief);
 export const {buildings,streets,water,green,metadata}=data;
 export const isEnfer=metadata.world==='enfer';
+export const enclosureRows=isEnfer?(await import('./enfer-enclosures.js')).enclosureRows:[];
 if(isEnfer)selectBridgeDecks(streets,water,baseTerrainHeight);

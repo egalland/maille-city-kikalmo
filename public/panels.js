@@ -342,6 +342,11 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
     const credit=node('p','mc-map-credit');
     const source=node('a','','IGN · BD TOPO®');source.href='https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_BD-TOPO';source.target='_blank';source.rel='noopener';
     credit.append(source,document.createTextNode(' · Licence Ouverte 2.0. Emprises et voirie réelles. Relief interpolé entre les altitudes routières. Façades en laine.'));
+    if(isEnfer){
+      const osm=node('a','','© les contributeurs OpenStreetMap');osm.href='https://www.openstreetmap.org/copyright';osm.target='_blank';osm.rel='noopener';
+      const layer=node('a','','Tracés des clôtures (ODbL)');layer.href='/enfer-enclosures.js';layer.target='_blank';layer.rel='noopener';
+      credit.append(document.createTextNode(' Murs et clôtures · '),osm,document.createTextNode(' · '),layer);
+    }
     detail.append(legends,finder,travel,credit);pad.append(detail,regional);sheet.append(pad);
     let built=false,region=false,zoom=false;
     if(career){

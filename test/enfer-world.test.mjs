@@ -96,6 +96,37 @@ test('the bundled Noyonnais map opens on usable streets and includes water, terr
   assert.ok(meshes.some(mesh=>mesh.castShadow&&mesh.receiveShadow&&mesh.geometry.attributes.position.count>50));
   assert.ok(meshes.some(mesh=>mesh.material.isMeshStandardMaterial&&mesh.material.bumpMap));
 
+  await t.test('a surveyed brick garden wall stops a car and a pedestrian at the mesh, while its gate stays open',async()=>{
+    const {nearbyEnclosures,moveBody}=await import('../public/paris-world.js');
+    const walls=nearbyEnclosures(-115.15,-292.7,1);
+    const wall=[...walls].find(s=>s.way===1276069241);
+    assert.ok(wall);
+    const sn=Math.sin(wall.angle),c=Math.cos(wall.angle);
+    for(const size of [{radius:.35},{angle:wall.angle+Math.PI/2,halfLength:1.7,halfWidth:.78}]){
+      const result=moveBody(wall.x-3*sn,wall.y+3*c,6*sn,-6*c,size);
+      assert.equal(result.touched?.id,wall.id);
+      assert.ok((result.x-wall.x)*-sn+(result.y-wall.y)*c>0);
+    }
+    assert.equal(contactAt(wall.x,wall.y,{radius:.2,height:wall.h+.1,camera:true}),null);
+    // OSM gate 11847156328 opens onto the street at the end of this wall.
+    assert.equal(contactAt(-116.1,-271.1,{radius:.55}),null);
+    for(const [x,y,r] of [[-12,-236,8],[20,-68,9]])assert.equal(nearbyEnclosures(x,y,r).size,0);
+    const visited={x:wall.x,y:wall.y};
+    for(let i=0;i<5;i++)city.update(visited,i,{props:[],destroyed:new Set()});
+    let material;
+    scene.traverse(m=>{if(m.material?.name==='enclosure-brick')material=m.material;});
+    assert.ok(material?.map?.image);
+    const mesh=[...nearbyEnclosures(visited.x,visited.y,600)].find(s=>s.style==='mesh');
+    assert.ok(mesh);
+    for(let i=0;i<5;i++)city.update(mesh,10+i,{props:[],destroyed:new Set()});
+    let lattice;
+    scene.traverse(m=>{if(m.material?.name==='enclosure-mesh')lattice=m.material;});
+    assert.equal(lattice?.alphaTest,.32);
+    const pixels=lattice.map.image.getContext('2d').getImageData(0,0,96,96).data;
+    const clear=pixels.filter((v,i)=>i%4===3&&v===0).length;
+    assert.ok(clear>96*96*.35&&clear<96*96*.92);
+  });
+
   await t.test('shoreline, swim strokes, surfacing under a bridge and returning to dry land',async()=>{
     const {swimmingSurface}=await import('../public/paris-world.js');
     const {createParkour}=await import('../public/parkour.js');

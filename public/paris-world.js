@@ -1,3 +1,4 @@
+import {boundarySpans} from './residential-boundaries.js';
 import {containsPoint as inRing,edgeContact} from './collision-ring.js';
 import {teammate} from './partners.js';
 import {careerPlaces} from './career-catalog.js';
@@ -6,7 +7,7 @@ import {cityClimate} from './city-climate.js';
 import {junctionSignals,crossingWalker,sidewalkRoutine} from './street-signals.js';
 import {yarnPalette} from './wool-art.js';
 // Local coordinates are metres, east and south. All map layers share the IGN projection in paris-data.
-import { buildings, streets, water, green, metadata } from './paris-data.js';
+import { buildings, streets, water, green, metadata, enclosureRows } from './paris-data.js';
 
 import {enferStops,enferDistrict,enferStreet} from './enfer-places.js';
 import { terrainHeight, buildingGround, waterLevel } from './terrain-height.js';
@@ -179,6 +180,9 @@ for(const road of streetList){
     roadGrid.insert({road,a,b},bounds([a,b],road.w*.5+3));
   }
 }
+const boundaryGrid=new Grid(40);
+for(const span of boundarySpans(enclosureRows))boundaryGrid.insert(span,bounds([span.a,span.b],span.halfWidth+.06));
+export function nearbyEnclosures(x,y,radius){return boundaryGrid.area(x,y,radius);}
 function prefix(text){return String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
 export const pontDeNeuilly = {start:[203,-804],end:[447,-684],halfWidth:20.5};
 function isBridge(x,y,r=0){
@@ -236,8 +240,9 @@ function withinBoundary(x,y,r=0) {
   if(x<landBounds.minX+r||x>landBounds.maxX-r||y<landBounds.minY+r||y>landBounds.maxY-r)return false;
   return inRing(x,y,boundary) && (r<=0 || !ringTouchesCircle(x,y,r,boundary));
 }
-export const vaultableProp = item => ['bench','bollard','hydrant','bin','postbox','crate'].includes(item.type);
+export const vaultableProp = item => (item.type==='enclosure'&&item.h<=1.34)||['bench','bollard','hydrant','bin','postbox','crate'].includes(item.type);
 export function surfaceTop(item,x,y) {
+  if(item.type==='enclosure')return item.h;
   const base=item.poly?buildingGround(item.poly):terrainHeight(item.x,item.y);
   const relativeBase=base-terrainHeight(x,y)+(item.lift||0);
   const height=item.h??(item.type==='building'?11:item.fallen ? .50 : 1.63);
@@ -269,6 +274,7 @@ export function supportAt(x,y,ceiling,opt={},margin=0){
   }
   for(const b of terrain.area(x,y,margin))consider(b);
   for(const d of decor.area(x,y,margin))consider(d);
+  if(isEnfer)for(const d of boundaryGrid.area(x,y,margin))consider(d);
   for(const d of opt.colliders||[])consider(d);
   return {top,id:best?.id??null};
 }
@@ -309,6 +315,7 @@ function testPose(x,y,opt={},propsEnabled=true) {
     }
     return true;
   };
+  if(isEnfer)for(const span of boundaryGrid.area(x,y,reach))if(touchDynamic(span))return span;
   if(propsEnabled){
     for(const d of decor.area(x,y,reach)){
       if(opt.destroyed?.has(d.id) || !touchDynamic(d))continue;
@@ -694,23 +701,6 @@ if(isEnfer){
       const r=.38,tree={id:'wood-'+gx+'-'+gy,type:'tree',wooded:true,x,y,r,h:6.5,angle:seed%628/100};
       props.push(tree);decor.insert(tree,bounds([[x,y]],r));
     }
-}
-if(isEnfer){
-  for(const building of buildings){
-    if(building.kind!=='residential'||hash(building.id)%15)continue;
-    const [px,py]=building.poly[0],front=closestRoad(px,py,15,r=>!r.bridge&&r.kind!=='path'&&r.kind!=='motorway');
-    if(!front)continue;
-    const {angle,road}=front,c=Math.cos(angle),s=Math.sin(angle);
-    const offset=Math.sign((py-front.y)*c-(px-front.x)*s)*(road.w*.5+2.4);
-    const x=front.x-s*offset,y=front.y+c*offset;
-    if(destinations.some(d=>Math.hypot(d.x-x,d.y-y)<10))continue;
-    const halfLength=1.65,halfWidth=.16;
-    if(testPose(x,y,{angle,halfLength,halfWidth:.31}))continue;
-    if([...roadGrid.area(x,y,7)].some(seg=>lineDist2(x,y,seg.a,seg.b)<sq(seg.road.w*.5+1.18)))continue;
-    const type=['yard-wall','yard-fence','yard-gate'][hash(building.id+'yard')%3];
-    const item={id:'yard-'+building.id,type,x,y,angle,h:type==='yard-wall'?.9:1.55,r:1.7,halfLength,halfWidth};
-    props.push(item);decor.insert(item,bounds([[x,y]],item.r));
-  }
 }
 export function nearbyProps(x,y,radius){
   return [...decor.area(x,y,radius)].filter(o=>sq(x-o.x)+sq(y-o.y)<=sq(radius));

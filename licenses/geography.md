@@ -29,3 +29,9 @@ La carte couvre environ 143 km², dont l’intégralité des communes de Noyon e
 Les maisons de brique et leurs toits s’inspirent des [Maisons de la reconstruction à Noyon](https://vpah-hauts-de-france.fr/ressources/les-maisons-de-la-reconstruction/) et de [l’Inventaire des maisons et fermes du canton de Noyon](https://inventaire.hautsdefrance.fr/dossier/IA00049486).
 
 Relancer `/usr/bin/python3 scripts/geo-enfer.py` avec GDAL, NumPy et SciPy pour extraire la version courante de ce périmètre.
+
+## Clôtures et murs d’Enfer
+
+La couche séparée [enfer-enclosures.js](../public/enfer-enclosures.js) provient des tracés de **© les contributeurs OpenStreetMap**, distribués sous [Open Database Licence 1.0](https://www.openstreetmap.org/copyright). L’extrait est daté dans l’en-tête du fichier et conserve l’identifiant OSM de chaque chemin. Il est également téléchargeable dans les crédits de la carte en jeu. Les murs, clôtures et murs de soutènement suivent leur axe cartographié. Les matériaux et hauteurs manquants sont interprétés dans le style textile du jeu. Une parcelle sans clôture renseignée reste ouverte.
+
+Le script `/usr/bin/python3 scripts/geo-enclosures.py` interroge Overpass (Python 3, GDAL avec GEOS). Les coordonnées sont projetées puis arrondies au décimètre. Les portails, accès de service et chemins OSM, chaussées et empreintes IGN découpent le linéaire pour conserver des passages jouables. Le rendu et la collision utilisent le même ensemble d’intervalles. Aucun service de cartographie n’est interrogé pendant la partie pour ces clôtures.

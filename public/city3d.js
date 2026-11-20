@@ -1,5 +1,6 @@
 import {lampState,pedestrianGreen} from './street-signals.js';
-import {nearbySignals} from './paris-world.js';
+import {drawBoundary} from './residential-boundaries.js';
+import {nearbySignals,nearbyEnclosures} from './paris-world.js';
 import {pavementRuns} from './curb-clearance.js';
 import {frontageSigns,frontageStyle,careerFronts} from './enfer-frontage.js';
 import {workshopId,workshopEdge,bayDoor,headroom} from './workshop.js';
@@ -661,24 +662,6 @@ function decoration(kind,variant,stage,distant=false) {
     b.ball(-.24,4.55,1.03,.93,.88,.70,colors[2],lon,lat);
     if(!distant)b.ball(.45,4.72,-.99,.87,.87,.69,colors[1],lon,lat);
     b.tube([0,.04,0],[0,.12,0],.68,.65,'#716369',10);
-  }else if(kind==='yard-wall'||kind==='yard-fence'||kind==='yard-gate'){
-    const masonry=kind==='yard-wall',iron=kind==='yard-gate';
-    b.box(0,0,0,3.25,masonry?.78:.29,.22,masonry?'#9b6557':'#bd9e86');
-    if(masonry)b.box(0,.78,0,3.31,.075,.27,'#d2b69c');
-    else{
-      const height=iron?1.55:1.34,dye=iron?'#485657':'#5e7468';
-      b.tube([-1.60,height,0],[1.60,height,0],.043,.043,dye,4,'plain');
-      b.tube([-1.60,.44,0],[1.60,.44,0],.025,.025,dye,4,'plain');
-      for(let run=0;run<=16;run++){
-        const x=-1.6+run*.2;
-        if(iron)b.tube([x,.29,0],[x,height+.075,0],.018,.018,dye,4,'plain');
-        else if(run<16){
-          b.tube([x,.42,0],[x+.2,height,0],.013,.013,dye,4,'plain');
-          b.tube([x,height,0],[x+.2,.42,0],.013,.013,dye,4,'plain');
-        }
-      }
-    }
-    for(const x of [-1.55,1.55])b.box(x,0,0,.23,masonry?.92:iron?1.64:1.45,.28,masonry?'#aa7561':'#80786a');
   }else if(kind==='signal'){
     b.tube([0,.04,0],[0,3.14,0],.115,.074,metal,7);
     b.tube([0,.06,0],[0,.37,0],.185,.15,edge,7);
@@ -938,6 +921,9 @@ export function createCity3D(scene,{software=false}={}){
     }
     if(isEnfer && !target.skyline){
       b.base=0;b.foundation=false;b.drape=true;
+      for(const span of nearbyEnclosures((ix+.5)*chunkSize,(iz+.5)*chunkSize,chunkSize/2+1)){
+        if(key(span.x,span.y)===target.key)drawBoundary(b,span,target.detail&&!software);
+      }
       for(const signal of nearbySignals((ix+.5)*chunkSize,(iz+.5)*chunkSize,chunkSize*.56)){
         if(key(signal.x,signal.y)!==target.key)continue;
         for(const arm of signal.arms){
