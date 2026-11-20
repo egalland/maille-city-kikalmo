@@ -24,7 +24,7 @@ export function createDriverView(scene){
     set(active,spec,player,terrain,steer,pitch){
       root.visible=active;if(!active)return;
       const a=player.angle||0,c=Math.cos(a),s=Math.sin(a);
-      const lateral=spec.openSeat?0:-spec.halfWidth*.35,forward=spec.halfLength*.16;
+      const lateral=spec.openSeat?0:-spec.halfWidth*.35,forward=spec.seatOffset??spec.halfLength*.16;
       const x=player.x+c*forward-s*lateral,z=player.y+s*forward+c*lateral;
       root.position.set(x,terrain+(player.lift||0)+spec.height*.80,z);
       root.rotation.set(0,-Math.PI/2-a,0,'YXZ');root.rotateX(pitch||0);

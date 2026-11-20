@@ -13,7 +13,7 @@ export function behindCar(observer,target,vehicles,contains){
   const dx=observer.x-target.x,dy=observer.y-target.y,range=Math.hypot(dx,dy);
   if(range<1)return false;
   return vehicles.some(v=>{
-    if((v.id&&v.id===observer.id)||v.type==='scooter'||Math.hypot(v.x-target.x,v.y-target.y)>6)return false;
+    if((v.id&&v.id===observer.id)||(v.type==='scooter'||v.type==='motorbike')||Math.hypot(v.x-target.x,v.y-target.y)>6)return false;
     for(let d=.35;d<Math.min(range,3.6);d+=.60){
       if(contains(v,{x:target.x+dx*d/range,y:target.y+dy*d/range},0))return true;
     }
