@@ -1,3 +1,4 @@
+import {recordFailure} from './runtime-errors.js';
 import {worldURL,selectedWorld,renderModeURL} from './world-link.js';
 import {readSectorTransfer,retreatFromSector} from './sector-transfer.js';
 
@@ -37,6 +38,7 @@ if(crossing?.target){
 try {
   await import('./main.js');
 } catch(error) {
+  recordFailure(error,'entry.js');
   console.error('Maille City startup:',error);
   const text=document.getElementById('loadingText');
   const isGPU=/webgl|context|graphic|gpu/i.test(String(error));

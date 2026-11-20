@@ -76,6 +76,7 @@ export function cityMaterials(enfer=false){
   };
   for(let i=0;i<shopCloths.length;i++)material['shop'+i]=lambert(shopTile(i));
   if(enfer){
+    material.lantern=lambert(null);material.lantern.emissive.setHex(0xffd28c);material.lantern.emissiveIntensity=0;material.lantern.userData.streetLamp=true;
     frontageSigns.forEach((item,index)=>{
       material['sign'+index]=lambert(tile(256,64,(c,w,h)=>{
         rect(c,0,0,w,h,item.color);c.strokeStyle='#ebc991';c.lineWidth=2;c.strokeRect(3,3,w-6,h-6);

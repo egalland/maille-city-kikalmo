@@ -1,6 +1,8 @@
+import {broadcastBeat,readRadio} from './car-radio.js';
 const floor=.001;
 export function createStreetAudio(){
   let context,master,bed,noise,roll,engine,siren,enabled=false,footAt=0;
+  let beat=-1,lastChirp=0,radio=readRadio();
   function toggle(on){
     enabled=on;
     if(master)master.gain.setTargetAtTime(on?.68:floor,context.currentTime,.08);
@@ -46,15 +48,23 @@ export function createStreetAudio(){
     gain.gain.setValueAtTime(volume,t);gain.gain.exponentialRampToValueAtTime(floor,t+seconds);
     node.connect(filter).connect(gain).connect(master);node.start(t,Math.random());node.stop(t+seconds);
   }
-  function update({speed,driving,walking,city,sirenDistance,time}){
+  function update({speed,driving,walking,city,sirenDistance,time,epoch,weather}){
     if(!enabled||context?.state!=='running')return;
     const t=context.currentTime;
     engine.oscillator.frequency.setTargetAtTime(32+Math.abs(speed)*2.3,t,.08);
     engine.gain.gain.setTargetAtTime(driving?.035+Math.min(.045,Math.abs(speed)*.002):floor,t,.15);
     siren.oscillator.frequency.setTargetAtTime(680+215*Math.sin(time*5.6),t,.07);
     siren.gain.gain.setTargetAtTime(Math.max(floor,.10*(1-sirenDistance/145)),t,.11);
-    roll.gain.setTargetAtTime(city?.027:.018,t,.5);
+    roll.gain.setTargetAtTime((city?.027:.018)+(weather?.rain||0)*.044,t,.5);
+    const step=Math.floor(epoch / 155);
+    if(driving&&radio&&beat!==step){
+      beat=step;
+      for(const note of broadcastBeat(step))tone(note.hz,note.length,note.wave,note.volume);
+    }
+    if(!city&&!driving&&weather?.daylight>.65&&weather.rain<.15&&time>lastChirp+8){
+      lastChirp=time;tone(1820,.085,'sine',.016,2490);
+    }
     if(walking&&time>footAt){footAt=time+Math.max(.23,.60-speed*.061);grit(.085,.035,500);}
   }
-  return {toggle,unlock,tone,grit,update,dispose:()=>context?.close().catch(()=>{})};
+  return {toggle,unlock,tone,grit,update,setRadio(value){radio=Boolean(value);},horn(volume=1){tone(185,.38,'sawtooth',.044*volume);tone(233,.34,'triangle',.062*volume);},dispose:()=>context?.close().catch(()=>{})};
 }

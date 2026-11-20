@@ -1,4 +1,5 @@
 import * as T from './three.js';
+import {cityClimate} from './city-climate.js';
 import {sunBearing} from './textile-sky.js';
 
 export function enferLighting(scene,renderer,touch){
@@ -21,10 +22,14 @@ export function enferLighting(scene,renderer,touch){
   const offset=new T.Vector3(Math.cos(sunBearing)*83,83,Math.sin(sunBearing)*83);
   let x=Infinity,y=Infinity,tick=-1;
   return {
-    update(p,height,time,snap,scale=1){
+    update(p,height,time,snap,scale=1,epoch=Date.now()){
       const sx=Math.round(p.x/6)*6,sy=Math.round(p.y/6)*6;
       const refresh=Math.floor(time*(scale<.84?9:touch?15:24));
       if(!snap&&sx===x&&sy===y&&refresh===tick)return;
+      const {daylight,rain}=cityClimate(epoch);
+      sky.intensity=.92+daylight*.56;
+      sun.intensity=.42+daylight*1.94-rain*.32;
+      sun.shadow.intensity=.38+.42*daylight-.22*rain;
       if(sx!==x||sy!==y||snap){
         x=sx;y=sy;
         sun.target.position.set(x,height+2,y);
