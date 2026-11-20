@@ -6,7 +6,8 @@ import {appearanceKey} from './kikalmo-avatar.js';
 import {yarnPalette} from './wool-art.js';
 import {puppetAppearance} from './puppet-dyes.js';
 import {puppetKnit,puppetFelt} from './puppet-material.js';
-import {jacketPattern,headPattern,dressCivilian,travelerScarf,foxBib,foxCrown,outerFoxEar} from './figure-tailoring.js';
+import {jacketPattern,dressCivilian,travelerScarf,outerFoxEar} from './figure-tailoring.js';
+import {foxFaces,humanHead,humanNose,distantHead,distantNose,haircuts,distantSleeve,distantThigh,upperSleeve,foreSleeve,turnedCuff,trouserThigh,trouserCalf,boots} from './character-patterns.js';
 import {motionSeed,sampleLocomotion} from './locomotion-pose.js';
 import * as THREE from './three.js';
 import { createStreetVehicle, isStreetVehicle } from './street-vehicles.js';
@@ -124,32 +125,44 @@ function earModel(head,side,animal,pal){
   }
   return e;
 }
+function cloakPoint(u, drop) {
+  // The opening widens towards the hem and exposes the jacket. Six pressed
+  // folds run from the collar and deepen toward the back of the travelling cape.
+  const gap=.16+drop*.49, angle=gap+u*(TAU-2*gap);
+  const c=Math.cos(angle),s=Math.sin(angle),rear=(1-c)*.5;
+  const pleat=.022*drop*(.44+rear)*Math.cos(6*angle+.38*drop);
+  const depth=.15+.195*drop, halfWidth=.235+.105*drop;
+  return [(depth+pleat)*c-.047-.071*drop*rear,
+    .042-.451*drop+.107*drop*(1-rear)-.014*drop*Math.cos(6*angle),
+    (halfWidth+pleat)*s];
+}
 function cloakGeometry(){
-  const steps=18,positions=[],uv=[],idx=[];
-  const rings=[[.04,.24,.14],[-.125,.29,.19],[-.30,.335,.30],[-.41,.34,.36]];
-  rings.forEach(([y,wide,depth],i)=>{
+  const steps=32,drops=[0,.13,.39,.72,.955,1],positions=[],uv=[],indices=[];
+  for(const [row,drop] of drops.entries()){
     for(let j=0;j<=steps;j++){
-      const u=j/steps,theta=TAU*u,c=Math.cos(theta),s=Math.sin(theta);
-      const rear=(1-c)*.5,frac=i/(rings.length-1);
-      const x=depth*c-.05-.07*rear*frac, yy=y+(.11*(1-rear)-.022*Math.cos(theta*7))*frac;
-      positions.push(x,yy,s*wide);uv.push(u,frac);
-      if(i<rings.length-1 && j<steps){const q=i*(steps+1)+j;idx.push(q,q+1,q+steps+1,q+1,q+steps+2,q+steps+1);}
+      const u=j/steps;
+      positions.push(...cloakPoint(u,drop));uv.push(u*2,drop);
+      if(row===drops.length-1||j===steps)continue;
+      const a=row*(steps+1)+j,b=a+steps+1;
+      indices.push(a,a+1,b,a+1,b+1,b);
     }
-  });
-  const g=new THREE.BufferGeometry();g.setIndex(idx);g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.computeVertexNormals();return g;
+  }
+  const g=new THREE.BufferGeometry();
+  g.setIndex(indices);
+  g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+  g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+  g.computeVertexNormals();
+  return g;
 }
 const capeShape=cloakGeometry();
 function addFoxCape(torso,cloth){
   const cape=joint(torso,'cape',-.015,.20,0);
   addPart(cape,capeShape,0,0,0,1,1,1,cloth);
-  for(const y of [-.326,-.352]){
-    const points=[];
-    for(let j=0;j<=24;j++){
-      const theta=j/24*TAU,c=Math.cos(theta),s=Math.sin(theta),rear=(1-c)*.5;
-      points.push([(.319+.018*(y<-.34))*c-.051-.073*rear,y+(.09*(1-rear)-.017*Math.cos(theta*7)),s*(y<-.34?.342:.333)]);
-    }
-    cord(cape,points,y<-.34?.010:.006,y<-.34?colors.trim:'#80c9a5');
+  for(const [drop,radius,color] of [[.855,.006,'#80c9a5'],[.94,.010,colors.trim]]){
+    const points=Array.from({length:25},(_,j)=>cloakPoint(j/24,drop));
+    cord(cape,points,radius,color);
   }
+  for(const u of [0,1])cord(cape,[0,.13,.39,.72,1].map(drop=>cloakPoint(u,drop)),.008,colors.trim);
   return cape;
 }
 function serviceUniform(torso,head,type,cloth,edge){
@@ -193,24 +206,19 @@ function makeBody(look,high){
   small(torso,.006,.252,0,.119,.135,.13,isFox?colors.deepTeal:out[0]);
   ball(torso,.01,-.224,0,.156,.089,.182,'#4d5262');
   const human=animal==='human', faceSurface=high?'felt':'yarn';
-  if(human)addPart(head,headPattern,0,0,0,1,1,1,fur,0,0,0,faceSurface);
+  const detail=high?'near':'far';
+  if(human)addPart(head,high?humanHead:distantHead,0,0,0,1,1,1,fur,0,0,0,faceSurface);
+  else if(animal==='fox'){
+    const panelTints=[fur,pal.cream,pal.shade];
+    foxFaces[detail].forEach((panel,i)=>addPart(head,panel,0,0,0,1,1,1,panelTints[i],0,0,0,faceSurface));
+  }
   else addPart(head,high?geo.detailBall:geo.littleBall,-.006,.120,0,.269,.245,.284,fur,0,0,0,faceSurface);
   if(animal==='human'){
     const kind=look.pick%6;
     if(kind!==4){
-      small(head,-.053,.259,0,.255,kind===1?.176:.141,.277,pal.shade,0,0,-.17);
-      small(head,-.160,.177,0,.140,kind===2?.2:.153,.261,pal.shade);
-      if(high && kind<4){
-        // Finger waves are broad pieces of felt with a subtle parting sewn over the crown.
-        for(let strand=0;strand<3;strand++){
-          const z=-.135+strand*.098;
-          cord(head,[[-.237,.23,z*.94],[-.207,.345,z],[.009,.39-.018*Math.abs(strand-1),z+.027],[.169,.308,z+.065]],.019,pal.shade);
-        }
-        small(head,.115,.277,-.078,.128,.066,.151,pal.shade,-.24,0,-.26);
-      }
+      addPart(head,haircuts[kind][detail],0,0,0,1,1,1,pal.shade,0,0,0,faceSurface);
     }
-    if(kind===2)small(head,-.252,.13,.040,.116,.103,.110,pal.shade);
-    if(kind===3)for(const side of [-1,1])small(head,-.064,.035,side*.22,.12,.164,.064,pal.shade,0,0,.08);
+    if(kind===2)small(head,-.239,.092,.016,.091,.082,.119,pal.shade,0,0,-.20);
     if(kind===1||kind===5){
       small(head,-.025,.324,0,.278,.092,.285,cloth);
       small(head,.134,.294,-.006,.192,.031,.220,edge,0,0,-.075);
@@ -226,19 +234,19 @@ function makeBody(look,high){
       if(animal==='rabbit')small(head,-.025,.382,s*.170,.065,.183,.066,fur,.16*s);
       else if(animal==='bear')small(head,-.035,.319,s*.205,.067,.086,.08,fur);
       else if(animal!=='human')addPart(head,ears[s<0?0:1],-.025,.294,.158*s,.88,.91,.87,fur);
-      if(animal!=='human')small(head,.155,.078,s*.119,.153,.104,.143,pal.cream);
+      if(animal!=='human'&&animal!=='fox')small(head,.155,.078,s*.119,.153,.104,.143,pal.cream);
       small(head,.216,.173,s*.127,.045,.057,.047,'#f4e5be');
       small(head,.247,.173,s*.144,.029,.042,.031,colors.ink);
-      small(core,-.019,-.399,s*.112,.066,.181,.070,'#454052');
-      small(core,.043,-.584,s*.114,.135,.091,.086,colors.boot);
-      small(core,.008,.037,s*.242,.074,.177,.068,isFox?'#385561':out[0]);
+      addPart(core,distantThigh,-.016,-.24,s*.112,.98,1.8,.98,'#454052');
+      addPart(core,boots.far[0],-.028,-.381,s*.112,1,1,1,colors.boot);
+      addPart(core,distantSleeve,.001,.182,s*.224,1,1.8,1,isFox?'#385561':out[0],-.13*s);
       small(core,.047,-.132,s*.266,.065,.063,.061,human?fur:isFox?pal.shade:colors.glove);
     }
-    small(head,.265,.094,0,.057,.046,.07,animal==='human'?pal.inner:colors.ink);
+    if(human)addPart(head,distantNose,0,0,0,1,1,1,pal.inner);
+    else small(head,animal==='fox'?.387:.265,.094,0,.045,.038,.051,colors.ink);
     if(isFox){
       small(torso,-.076,.189,0,.217,.067,.235,'#d79b5a');
       addPart(torso,capeShape,-.015,.20,0,1,1,1,cloth);
-      addPart(head,foxCrown,0,0,0,1,1,1,pal.shade);
       small(core,-.254,-.096,.12,.23,.09,.095,fur,.1,.3,.32);small(core,-.44,-.016,.216,.123,.075,.07,pal.cream);}
     if(service){
       const tone=type==='firefighter'?'#deb05e':type==='medic'?'#efe3c6':cloth;
@@ -256,10 +264,10 @@ function makeBody(look,high){
   }
   for(const sign of [-1,1]){
     if(!human) {
-      // Lower the cheek pads under the eyes; a tapered tip gives the fox's
-      // profile a continuous sweep from the cream bib into its ears.
-      addPart(head,geo.ball,.096,.051,sign*.146,.149,.100,.134,pal.cream,.20*sign,0,-.09,faceSurface);
-      if(animal==='fox'||animal==='cat'){
+      if(animal!=='fox'){
+        addPart(head,geo.ball,.096,.051,sign*.146,.149,.100,.134,pal.cream,.20*sign,0,-.09,faceSurface);
+      }
+      if(animal==='cat'){
         const tuft=taper([[.113,.036,sign*.212],[.073,.049,sign*.266],[.017,.111,sign*.327]],[.066,.047,.002],8);
         addPart(head,tuft,0,0,0,1,1,1,pal.cream,0,0,0,faceSurface);
       }
@@ -268,18 +276,16 @@ function makeBody(look,high){
     }
     cord(head,[[.158,.248,.156*sign],[.192,.259,.131*sign],[.217,.25,.099*sign]],.014,pal.shade);
   }
-  if(animal==='fox'){
-    addPart(head,foxBib,0,0,0,1,1,1,pal.cream,0,0,0,faceSurface);
-    addPart(head,foxCrown,0,0,0,1,1,1,pal.shade,0,0,0,faceSurface);
-  }
   if(human){
-    small(head,.254,.110,0,.055,.057,.053,pal.inner,0,0,-.18,faceSurface);
+    addPart(head,humanNose,0,0,0,1,1,1,pal.inner,0,0,0,faceSurface);
     cord(head,[[.234,.012,-.052],[.246,.007,-.011],[.248,.012,.023],[.24,.022,.057]],.007,pal.shade);
   }else{
-    ball(head,.213,.075,0,.142,.073,.102,pal.cream,0,0,0,faceSurface);
-    small(head,.323,.106,0,.054,.039,.058,colors.ink,0,0,.13,faceSurface);
-    small(head,.365,.117,.012,.009,.008,.012,'#b09a97',0,0,0,'plain');
-    cord(head,[[.336,.080,0],[.327,.054,0],[.306,.046,.041],[.298,.054,.062]],.006,'#69434b');
+    if(animal!=='fox')ball(head,.213,.075,0,.142,.073,.102,pal.cream,0,0,0,faceSurface);
+    small(head,animal==='fox'?.386:.323,.106,0,.045,.037,.053,colors.ink,0,0,.13,faceSurface);
+    small(head,animal==='fox'?.426:.365,.117,.012,.009,.008,.012,'#b09a97',0,0,0,'plain');
+    const lip=animal==='fox'?[[.390,.083,0],[.377,.066,0],[.338,.061,.042],[.305,.068,.068]]:
+      [[.336,.080,0],[.327,.054,0],[.306,.046,.041],[.298,.054,.062]];
+    cord(head,lip,.006,'#69434b');
     for(const side of [-1,1])for(let i=0;i<2;i++)
       small(head,.22+.020*i,.072+.013*i,side*(.116-.016*i),.009,.008,.010,pal.shade,0,0,0,faceSurface);
   }
@@ -287,10 +293,11 @@ function makeBody(look,high){
   // pupil and the human nose highlight hung clear of the face in profile.
   const eyes=joint(head,'eyes',0,.174,0);
   for(const side of [-1,1]){
-    const skinX=human?.215:.221,skinZ=human?.128:.117;
-    ball(eyes,skinX,.001,side*skinZ,.044,.067,.053,'#f5e7c9',0,-.56*side,0,'plain');
-    small(eyes,skinX+.031,.001,side*(skinZ+.017),.026,.049,.034,colors.ink,0,-.56*side,0,'plain');
-    small(eyes,skinX+.049,.017,side*(skinZ+.030),.009,.013,.012,'#fff2d8',0,0,0,'plain');
+    const skinX=human?.213:.215,skinZ=human?.128:.120;
+    ball(eyes,skinX,.001,side*skinZ,human?.021:.038,human?.047:.059,human?.044:.049,'#f5e7c9',0,-.56*side,0,'plain');
+    const inset=human?.015:.026;
+    small(eyes,skinX+inset,.001,side*(skinZ+inset*.56),human?.012:.018,human?.035:.043,human?.025:.031,colors.ink,0,-.56*side,0,'plain');
+    small(eyes,skinX+inset*1.6,.014,side*(skinZ+inset*.86),.006,.009,.009,'#fff2d8',0,0,0,'plain');
   }
   // Wrap raised strand seams behind the head. They read from the follow camera when the face is hidden.
   for(const s of [-1,1])for(let i=0;i<3;i++){
@@ -317,7 +324,7 @@ function makeBody(look,high){
   }
   if(service)serviceUniform(torso,head,type,out[0],out[1]);
   if(isFox){
-    travelerScarf(addFoxCape(torso,cloth),head,look,stitches);
+    travelerScarf(addFoxCape(torso,cloth),head,look,stitches,cloakPoint);
     const clasp=look.skinId==='braise'?'#e29b70':look.skinId==='bruyere'?'#a68eaf':look.skinId==='foret'?'#afbc78':'#6fe0c9';
     for(const side of [-1,1]){
       cord(torso,[[.007,.172,.213*side],[-.097,.165,.184*side],[-.173,.114,.156*side]],.014,clasp);
@@ -334,21 +341,19 @@ function makeBody(look,high){
   for(const s of [-1,1]){
     const side=s<0?'L':'R',arm=joint(core,'arm'+side,.001,.182,s*.224),leg=joint(core,'leg'+side,-.016,-.24,s*.112);
     const sleeve=isFox?'#385561':out[0];
-    small(arm,-.002,-.012,.002*s,.076,.08,.077,sleeve);
     const elbow=joint(arm,'elbow'+side,.008,-.162,.040*s);
     const knee=joint(leg,'knee'+side,-.012,-.141,0);
-    addPart(arm,taper([[0,0,0],[.003,-.085,.031*s],[.008,-.17,.040*s]],[.071,.069,.058],8),0,0,0,1,1,1,sleeve);
-    addPart(elbow,taper([[0,.012,0],[.013,-.080,.014*s],[.04,-.15,.01*s]],[.059,.054,.047],8),0,0,0,1,1,1,sleeve);
-    ball(elbow,.037,-.107,.010*s,.063,.043,.063,isFox?colors.trim:out[1]);
+    addPart(arm,upperSleeve,0,0,0,1,1,1,sleeve,-.21*s);
+    addPart(elbow,foreSleeve,0,0,0,1,1,1,sleeve,-.07*s);
+    addPart(elbow,turnedCuff,0,0,0,1,1,1,isFox?colors.trim:out[1],-.07*s);
     const hand=human?fur:isFox?pal.shade:colors.glove;
     small(elbow,.054,-.17,.011*s,.069,.083,.062,hand,.1*s,0,.05,faceSurface);
     small(elbow,.091,-.151,-.021*s,.039,.051,.036,hand,0,0,0,faceSurface);
-    addPart(leg,taper([[0,0,0],[-.009,-.074,0],[-.012,-.147,0]],[.075,.071,.06],8),0,0,0,1,1,1,'#454052');
-    addPart(knee,taper([[0,.009,0],[.007,-.054,0],[.016,-.114,0]],[.061,.057,.051],8),0,0,0,1,1,1,'#454052');
-    small(knee,.017,-.13,0,.083,.088,.075,isFox?'#a77650':'#736269');
-    small(knee,.067,-.203,.002*s,.146,.09,.095,colors.boot,0,0,-.09);
-    small(knee,.072,-.250,.002*s,.151,.037,.097,colors.sole);
-    cord(knee,[[.093,-.154,-.046],[.111,-.150,0],[.094,-.156,.046]],.006,'#c69a75');
+    addPart(leg,trouserThigh,0,0,0,1,1,1,'#454052');
+    addPart(knee,trouserCalf,0,0,0,1,1,1,'#454052');
+    addPart(knee,boots.near[0],0,0,0,1,1,1,isFox?'#815a43':colors.boot,0,0,0,'felt');
+    addPart(knee,boots.near[1],0,0,0,1,1,1,colors.sole);
+    for(const offset of [0,.028])cord(knee,[[.068+offset,-.139-offset*.55,-.046],[.073+offset,-.127-offset*.55,0],[.083+offset,-.145-offset*.55,.046]],.005,'#c69a75');
   }
   if(animal==='fox'||animal==='raccoon'||animal==='cat'){
     const tail=joint(core,'tail',-.108,-.158,.095);
@@ -463,7 +468,13 @@ export function createPuppet(type='fox',color,seed=0){
 }
 // A section runs across the body from its front to the back. A broad top and
 // rounded shoulders give the knitted car one continuous, upholstered silhouette.
+import {coachBody,enamel} from './coachwork.js';
+surfaces.enamel=enamel;
 const carShapeCache = new Map();
+function wheelArchBody(key,stations,axles,radius){
+  if(!carShapeCache.has(key))carShapeCache.set(key,coachBody(stations,axles,radius));
+  return carShapeCache.get(key);
+}
 function carLoft(key, sections, exponent = .55) {
   if (carShapeCache.has(key)) return carShapeCache.get(key);
   const slices = 16, positions = [], uvs = [], indices = [];
@@ -561,11 +572,11 @@ function carBumpers(g,xfront,xrear,width){
   }
 }
 function carChassis(g,paint,service,variant){
-  const body=carLoft('sport-body',[
-    [-1.92,.50,.80,.60],[-1.82,.42,.92,.78],[-1.52,.41,1.04,.85],[-.8,.41,1.01,.84],
-    [.20,.41,1.02,.85],[.85,.42,.99,.83],[1.58,.43,.96,.76],[1.84,.49,.90,.67],[1.96,.56,.81,.49]
-  ]);
-  carPart(g,body,0,0,0,1,1,1,paint);
+  const body=wheelArchBody('saloon',[
+    [-1.94,.49,.855,.60],[-1.85,.38,.924,.79],[-1.55,.32,1.012,.849],[-.89,.31,1.026,.855],
+    [.03,.31,1.013,.849],[.84,.32,1.009,.83],[1.50,.34,.961,.817],[1.84,.39,.905,.737],[1.96,.51,.837,.59]
+  ],[-1.22,1.25],.372);
+  carPart(g,body,0,0,0,1,1,1,paint,0,0,0,'enamel');
   const capColor=service==='police'?'#e8dfc8':service==='taxi'||variant%3===0?carCloth:paint;
   carPart(g,carLoft('hollow-cabin-roof',[[-.86,1.555,1.59,.57],[-.66,1.595,1.68,.63],
     [.18,1.61,1.72,.64],[.48,1.56,1.63,.58]],.42),0,0,0,1,1,1,capColor);
@@ -580,7 +591,7 @@ function carChassis(g,paint,service,variant){
     for(const front of [true,false])trimmedGlass(g,carSideWindow(front,s),front?carYarn.pane:carYarn.shadePane);
     // Contrast piping at the rocker, waist and skirt.
     lacedSeam(g,[-1.06,.74,s*.85],[.85,.74,s*.85],9);
-    carBox(g,-.11,.50,s*.829,2.59,.06,.07,'#2e3445');
+    carBox(g,.014,.42,s*.841,1.55,.054,.057,'#343846');
     carTrim(g,[-1.57,.87,s*.831],[1.51,.86,s*.794],.024,'#e8c9a3');
     carBox(g,.23,.97,s*.823,.18,.034,.04,carCloth);
     carBox(g,-.73,.97,s*.823,.16,.034,.04,carCloth);
@@ -589,7 +600,13 @@ function carChassis(g,paint,service,variant){
     carBall(g,-1.74,.83,s*.677,.104,.11,.12,'#8a3c48');
     carBall(g,-1.81,.85,s*.686,.064,.074,.08,carYarn.stop,'glow');
     lensThread(g,1.909,.855,s*.635,.033);lensThread(g,-1.871,.85,s*.686,.022);
-    for(const xx of [-1.22,1.27])carBall(g,xx,.63,s*.72,.555,.25,.188,paint);
+    // The cut through each wing is part of the body profile. Cabinet seams and
+    // hood flutes follow the pressed panels without filling the wheel opening.
+    for(const [a,b] of [
+      [[-.15,.98,.841],[-.14,.58,.847]],[[-.14,.58,.847],[.54,.55,.844]],
+      [[.54,.55,.844],[.66,.91,.841]],[[-.86,.89,.842],[-.76,.62,.850]],
+      [[1.00,1.022,.48],[1.61,.97,.46]],[[1.61,.97,.46],[1.81,.935,.415]]
+    ])carTrim(g,[a[0],a[1],s*a[2]],[b[0],b[1],s*b[2]],.008,carYarn.welt);
     carBox(g,.686,1.08,s*.80,.13,.07,.11,capColor);
     if(service==='police'){
       carBox(g,-.10,.81,s*.849,1.98,.16,.028,'#ede1c8');
@@ -656,17 +673,21 @@ function townCar(g,type,paint){
   const belt=sport?.70:.91,roof=sport?1.20:1.58;
   const rear=sport?-1.57:-1.45,front=sport?1.04:.86;
   const rearTop=sport?-.58:-1.02,frontTop=sport?.17:.23,glass=w*.87,top=w*.72;
-  const shell=carLoft(type+'-shell',[
-    [-l+.09,.38,belt*.87,w*.72],[-l+.20,.30,belt*.99,w*.93],[-l*.65,.30,belt+.03,w],
-    [0,.31,belt+.015,w],[l*.64,.30,belt-.06,w*.96],[l-.18,.34,belt-.12,w*.89],[l-.09,.39,belt-.17,w*.70]
-  ],.46);
-  carPart(g,shell,0,0,0,1,1,1,paint);
+  const shell=wheelArchBody(type+'-wing',[
+    [-l+.06,.40,belt*.86,w*.73],[-l+.17,.30,belt*.99,w*.94],[-l*.65,.285,belt+.035,w],
+    [0,.295,belt+.013,w*.987],[l*.64,.29,belt-.042,w*.977],[l-.17,.34,belt-.10,w*.915],[l-.06,.39,belt-.15,w*.75]
+  ],sport?[-1.31,1.36]:[-1.06,1.03],sport?.34:.304);
+  carPart(g,shell,0,0,0,1,1,1,paint,0,0,0,'enamel');
   // A tall, short greenhouse on the hatch and a swept, low canopy on the coupé.
   const lower=belt-.014;
   const wind=(bottom,end,sign)=>carPanel(g,[[bottom+sign*.017,lower+.036,-glass*.84],[bottom+sign*.017,lower+.036,glass*.84],
     [end+sign*.016,roof-.046,top*.83],[end+sign*.016,roof-.046,-top*.83]],sign>0?'#98c3c6':'#6b949e');
   wind(front,frontTop,1);wind(rear,rearTop,-1);
-  carBox(g,(rearTop+frontTop)/2,roof-.005,0,frontTop-rearTop+.08,.080,top*1.94,sport?paint:'#efe3c2');
+  const roofPanel=carLoft(type+'-roof',[
+    [rearTop-.046,roof-.072,roof-.031,top*.89],[rearTop+.076,roof-.047,roof+.034,top],
+    [(rearTop+frontTop)/2,roof-.037,roof+.055,top*1.022],[frontTop-.055,roof-.048,roof+.025,top],
+    [frontTop+.057,roof-.075,roof-.022,top*.90]],.48);
+  carPart(g,roofPanel,0,0,0,1,1,1,sport?paint:'#eadbbb',0,0,0,'enamel');
   for(const s of [-1,1]){
     carPanel(g,[[rear+.10,belt+.072,s*glass],[front-.10,belt+.072,s*glass],
       [frontTop-.03,roof-.078,s*top],[rearTop+.05,roof-.078,s*top]],'#81aab3');
@@ -675,7 +696,13 @@ function townCar(g,type,paint){
     carTrim(g,[rear+.005,belt+.05,s*glass],[front-.005,belt+.05,s*glass],.022,'#ecd8a2');
     lacedSeam(g,[-.86,belt-.13,s*(w+.008)],[.49,belt-.13,s*(w+.008)],7);
     carBox(g,-.28,belt-.055,s*w,.20,.028,.027,'#d3c4a1');
-    carBox(g,0,.41,s*w*.99,2*l*.70,.05,.045,sport?'#344350':'#dbceb5');
+    const sillFrom=sport?-.88:-.70,sillTo=sport?.93:.66;
+    carBox(g,(sillFrom+sillTo)/2,.355,s*w*.99,sillTo-sillFrom,.048,.042,sport?'#344350':'#c7bab1');
+    const sideZ=(w-.008)*s;
+    for(const [a,b] of [[[front-.17,belt-.03],[sillTo-.025,.455]],[[sillTo-.025,.455],[sillFrom+.08,.437]],
+      [[sillFrom+.08,.437],[sillFrom-.045,belt-.06]]]){
+      carTrim(g,[a[0],a[1],sideZ],[b[0],b[1],sideZ],.009,carYarn.welt);
+    }
     carBall(g,l-.12,belt-.16,s*w*.68,.09,sport?.047:.10,sport?.17:.114,'#ffeba0','glow');
     carBall(g,-l+.08,belt-.12,s*w*.68,.045,sport?.047:.10,.121,carYarn.stop,'glow');
     lensThread(g,l-.035,belt-.16,s*w*.68,.033);lensThread(g,-l+.036,belt-.12,s*w*.68,.028);
@@ -776,6 +803,11 @@ function carVan(g,type,paint){
   if(type==='swat')for(let j=0;j<3;j++)carBox(g,-1.89+j*.48,2.00,0,.29,.13,1.1,'#3b424d');
 }
 const spoolWelt=new THREE.TorusGeometry(1,.045,4,24);
+// A rolled shoulder and recessed bead remain visible against the open wheel arch.
+const roadTyre=new THREE.LatheGeometry([
+  [.61,-.40],[.71,-.49],[.86,-.52],[.96,-.455],[1,-.315],
+  [1,.315],[.96,.455],[.86,.52],[.71,.49],[.61,.40]
+].map(([r,z])=>new THREE.Vector2(r,z)),32).rotateX(Math.PI/2);
 function buttonWheel(g,r,side){
   carPart(g,spoolWelt,0,0,side*.121,r*.86,r*.86,.23,carYarn.welt);
   for(let i=0;i<8;i++){
@@ -785,10 +817,17 @@ function buttonWheel(g,r,side){
 }
 function carWheel(radius,side,service) {
   const wheel=new THREE.Group();
-  carButton(wheel,0,0,0,radius,.205,'#2e2d3a');
-  carButton(wheel,0,0,side*.098,radius*.77,.034,service==='swat'?'#6f7480':carCream);
-  carButton(wheel,0,0,side*.125,radius*.56,.034,'#777780');
-  carButton(wheel,0,0,side*.148,radius*.38,.032,'#b5ac9a');
+  carPart(wheel,roadTyre,0,0,0,radius,radius,.219,'#34343d');
+  carButton(wheel,0,0,0,radius*.69,.144,'#46434a');
+  carPart(wheel,spoolWelt,0,0,side*.095,radius*.68,radius*.68,.24,carYarn.silver);
+  const spokeColor=service==='swat'?'#72767b':'#b9b2a4';
+  for(let k=0;k<5;k++){
+    const a=Math.PI*2*k/5+.20;
+    const r=radius*.43;
+    const spoke=carBox(wheel,r*Math.cos(a),r*Math.sin(a),side*.101,radius*.49,radius*.14,.033,spokeColor);
+    spoke.rotation.z=a+.11*side;
+  }
+  carButton(wheel,0,0,side*.118,radius*.28,.034,'#a5a098');
   carButton(wheel,0,0,side*.168,radius*.12,.025,'#e5cfb2');
   for(let k=0;k<3;k++){
     const angle=k*Math.PI*2/3;

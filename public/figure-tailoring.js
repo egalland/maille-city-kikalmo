@@ -28,12 +28,6 @@ export const jacketPattern = pattern([
   [-.259, .118, .159], [-.238, .18, .213], [-.189, .184, .22], [-.12, .178, .207],
   [.014, .196, .219], [.128, .179, .25], [.16, .153, .252], [.202, .12, .174], [.212, .091, .118]
 ]);
-export const headPattern = pattern([
-  [-.107,.08,.086,.006],[-.079,.167,.162,.022],[-.014,.218,.230,.007],
-  [.072,.263,.275], [.172,.267,.275,-.006], [.254,.243,.25,-.014],
-  [.322,.188,.201,-.026], [.365,.109,.119,-.036], [.382,.010,.012,-.038]
-],20);
-
 // A patch is cut from a planar silhouette and padded away from its stitching.
 // It reads on the back as well as the front; one material batch holds all panels.
 function patch(outline, rise) {
@@ -51,8 +45,6 @@ const patchShapes={
   pocket:patch([[-.064,.037],[.064,.037],[.058,-.025],[.012,-.045],[-.057,-.027]],.009),
   flap:patch([[-.11,.075],[.11,.075],[.117,-.050],[.079,-.075],[-.09,-.075],[-.118,-.052]],.015),
   lapel:patch([[-.035,.12],[.085,.153],[.092,.095],[.056,.068],[.084,.051],[-.03,-.109]],.010),
-  shield:patch([[0,.102],[.081,.070],[.074,-.039],[0,-.108],[-.074,-.039],[-.081,.070]],.008),
-  scarf:patch([[-.054,.082],[.059,.083],[.052,-.11],[.025,-.146],[0,-.116],[-.045,-.157],[-.069,-.12]],.014)
 };
 const sailorBand=pattern([[-1,.982,.982],[0,1,1],[1,.982,.982]],16);
 const streetCuts=['atelier','poste','marche','manteau','marin','poste'];
@@ -99,46 +91,49 @@ export function dressCivilian(torso,head,look,high,tools) {
   }
 }
 
-export function travelerScarf(cape,head,look,tools){
+export function travelerScarf(cape,head,look,tools,cloakPoint){
   const {part,small,cord}=tools;
   const accent=({lagon:'#db9852',foret:'#c78a54',braise:'#6d9c92',bruyere:'#b9a0ca'})[look.skinId]||'#db9852';
   const dark='#524257',cream='#f5d59c';
   small(cape,-.032,.053,0,.204,.07,.217,accent);
   small(cape,-.054,.029,0,.218,.044,.230,accent);
-  // The scarf is tied behind the wearer's left shoulder; two padded ends
-  // hang on the outside of the travelling cape, visible from the chase camera.
-  small(cape,-.171,.029,-.157,.069,.054,.066,accent);
-  part(cape,patchShapes.scarf,-.286,-.058,-.145,1,1.16,1,accent,-.20,Math.PI,-.59);
-  part(cape,patchShapes.scarf,-.236,-.034,-.192,.83,.78,.83,cream,-.29,Math.PI,-.68);
-  // Contrast panel sits against the sloping centre back. The needle points
-  // up and the yarn trails off to the lower left.
-  const badge=part(cape,patchShapes.shield,-.408,-.263,.018,1,1,1,dark,0,Math.PI,-.625);
-  const custom=[[-.015,-.046,-.04],[-.023,-.016,.011],[-.026,.067,.037]];
-  badge.updateMatrix();
-  const follow=points=>points.map(([x,y,z])=>new THREE.Vector3(-x,y,-z).applyMatrix4(badge.matrix).toArray());
-  cord(cape,follow(custom),.009,cream);
-  cord(cape,follow([[-.02,.034,.025],[-.025,.046,-.014],[-.025,.015,-.043],[-.02,-.014,-.028],[-.02,-.006,.010]]),.007,accent);
-  for(const s of [-1,1]){
-    cord(head,[[.088,.055,.259*s],[.065,.038,.276*s],[.044,.062,.282*s]],.007,look.pelt.shade);
+  function surface(u,drop,rise){
+    const [x,y,z]=cloakPoint(u,drop);
+    const length=Math.hypot(x+.055,z);
+    return [x+(x+.055)*rise/length,y,z+z*rise/length];
   }
+  // The folded hood follows the moving back panel, with two padded sides
+  // meeting at the tip. Its light edging stays on the actual fabric surface.
+  const rows=6,columns=8,positions=[],uv=[],indices=[];
+  function hood(u,v){
+    const span=.151*(1-.96*v);
+    const height=.085+v*.58+.036*(1-v)*Math.cos(Math.PI*u);
+    const fold=.010+.042*Math.sin(Math.PI*v)**.7*(.38+.62*Math.cos(Math.PI*u/2)**2);
+    return surface(.5+u*span,height,fold);
+  }
+  for(let row=0;row<=rows;row++)for(let col=0;col<=columns;col++){
+    const v=row/rows,u=col/columns;
+    positions.push(...hood(2*u-1,v));uv.push(u*1.2,v);
+    if(row<rows&&col<columns){
+      const a=row*(columns+1)+col,b=a+columns+1;
+      indices.push(a,a+1,b,a+1,b+1,b);
+    }
+  }
+  const hoodShape=new THREE.BufferGeometry();
+  hoodShape.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+  hoodShape.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+  hoodShape.setIndex(indices);hoodShape.computeVertexNormals();
+  part(cape,hoodShape,0,0,0,1,1,1,dark);
+  for(const side of [-1,1]){
+    cord(cape,Array.from({length:7},(_,i)=>hood(side,i/6)),.007,accent);
+  }
+  const mark=(u,v)=>{
+    const [x,y,z]=hood(u,v);
+    return [x-.006,y,z];
+  };
+  cord(cape,[mark(-.29,.22),mark(-.09,.30),mark(.28,.44)],.009,cream);
+  cord(cape,[mark(-.29,.22),mark(-.20,.17),mark(-.035,.20),mark(-.09,.28),mark(-.29,.22)],.006,accent);
+  for(const s of [-1,1])cord(head,[[.088,.055,.259*s],[.065,.038,.276*s],[.044,.062,.282*s]],.007,look.pelt.shade);
 }
 
-// A needle-felted colour panel follows the skull so the cheek and nape meet in profile.
-function peltPanel(toAngle, from, to, xRadius, zRadius) {
-  const positions=[],uvs=[],indices=[],segments=26,rows=3;
-  for(let row=0;row<=rows;row++)for(let i=0;i<=segments;i++){
-    const u=i/segments,angle=toAngle(u),pitch=from(u)+(to(u)-from(u))*row/rows;
-    const radius=Math.cos(pitch);
-    positions.push(-.006+xRadius*radius*Math.cos(angle),.12+.249*Math.sin(pitch),zRadius*radius*Math.sin(angle));
-    uvs.push(u*2,row/rows);
-    if(row&&i){const d=row*(segments+1)+i,c=d-1,b=d-segments-1,a=b-1;indices.push(a,c,b,b,c,d);}
-  }
-  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
-  g.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));g.setIndex(indices);g.computeVertexNormals();return g;
-}
-export const foxBib=peltPanel(u=>(u-.5)*4.85,u=>-.89-.33*(1-Math.abs(2*u-1)),u=>{
-  const f=Math.abs(2*u-1);
-  return -.18 + .33*Math.sin(Math.PI*f) - .43*f*f + .07*Math.cos(f*Math.PI*4);
-},.274,.291);
-export const foxCrown=peltPanel(u=>u*Math.PI*2,u=>.63+.13*Math.cos(2*Math.PI*u)+.065*Math.cos(8*Math.PI*u),()=>1.56,.272,.288);
 export const outerFoxEar=pattern([[-.046,.053,.068],[.015,.072,.102],[.088,.067,.077,-.014],[.15,.047,.050,-.026],[.209,.023,.023,-.035],[.238,.004,.003,-.037]],10);

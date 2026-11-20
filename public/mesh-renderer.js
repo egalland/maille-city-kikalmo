@@ -1,6 +1,6 @@
 // CPU depth buffer for the same 3D scene and camera when WebGL cannot start.
 import {verticesPerBlock,triangleBlocks,blockVisible} from './software-geometry.js';
-import {Color, Frustum, Matrix4, Sphere, Vector3, DoubleSide, BackSide} from './three.js';
+import {Color, Frustum, Matrix3, Matrix4, Sphere, Vector3, DoubleSide, BackSide} from './three.js';
 
 const near=.12,far=380;
 const srgb=Array.from({length:1025},(_,i)=>{
@@ -10,6 +10,25 @@ const srgb=Array.from({length:1025},(_,i)=>{
 const channel=v=>srgb[Math.max(0,Math.min(1024,Math.round(v*1024)))];
 const mix=(a,b,t)=>a+(b-a)*t;
 const linear=Array.from({length:256},(_,i)=>i*i/65025);
+
+// Prefilter repeated cloth and brick so a distant pixel represents a patch of
+// fabric instead of sampling an arbitrary stitch as the camera moves.
+function mipChain(texels,size){
+  const levels=[{pixels:texels,size}];
+  while(size>1){
+    const half=size>>1,small=new Uint8ClampedArray(half*half*4);
+    for(let y=0;y<half;y++)for(let x=0;x<half;x++){
+      const source=(2*y*size+2*x)*4,target=(y*half+x)*4;
+      for(let channel=0;channel<4;channel++){
+        const i=source+channel;
+        small[target+channel]=(texels[i]+texels[i+4]+texels[i+4*size]+texels[i+4*size+4])*.25;
+      }
+    }
+    levels.push({pixels:small,size:half});
+    texels=small;size=half;
+  }
+  return levels;
+}
 
 const shadeRows = new Map();
 // Texture lighting changes once per face. Cache the 256 possible channel results.
@@ -37,6 +56,7 @@ export function createMeshRenderer(canvas,{adaptive=true}={}){
   if(!context){if(surface!==canvas)surface.remove();throw Error('Canvas 2D indisponible');}
   let width=0,height=0,image,pixels,depth,frame=-Infinity;
   const projection=new Matrix4(),matrix=new Matrix4(),model=new Matrix4(),instance=new Matrix4();
+  const normalMatrix=new Matrix3();
   const viewSphere=new Sphere(),frustum=new Frustum(),eye=new Vector3(),normal=new Vector3(),vertex=new Vector3();
   const geometries=new WeakMap(),textures=new WeakMap(),sky=new Color();
   let background=null,cachedCity=null,revision=-1,shade=-1,backdrop=-1;
@@ -44,18 +64,24 @@ export function createMeshRenderer(canvas,{adaptive=true}={}){
   let fog=[.2,.28,.3],quality=1,ambient=1,workScale=1,viewportWidth=0,viewportHeight=0;
   let expensive=0,headroom=0,focalPixels=1;
   function adjustBudget(elapsed,cacheHit){
-    if(!adaptive||cacheHit)return;
+    if(!adaptive)return;
     expensive=elapsed>37?expensive+1:Math.max(0,expensive-1);
     headroom=elapsed<21?headroom+1:0;
-    const next=expensive>=5?Math.max(.63,workScale-.10):headroom>=85?Math.min(1,workScale+.06):workScale;
+    // A cached street is inexpensive to redraw when the player looks around
+    // at rest. Recover detail there, then shed it if moving frames get costly.
+    const ceiling=cacheHit?1.40:1;
+    let next=workScale;
+    if(expensive>=5)next=Math.max(.63,workScale-.10);
+    else if(headroom>=(cacheHit?18:85)&&workScale<ceiling)next=Math.min(ceiling,workScale+.08);
     if(next!==workScale){
       workScale=next;expensive=headroom=0;
     }
   }
   const renderer={software:true,shadowMap:{},setPixelRatio(ratio){quality=Math.min(1,ratio);},setSize,render,dispose};
+  function renderScale(w,h){return Math.min(1,Math.min(.82,720/Math.max(w,h))*quality*workScale);}
   function setSize(w,h){
     viewportWidth=w;viewportHeight=h;
-    const factor=Math.min(.72,630/Math.max(w,h))*quality*workScale;
+    const factor=renderScale(w,h);
     width=Math.max(1,Math.round(w*factor));height=Math.max(1,Math.round(h*factor));
     surface.width=width;surface.height=height;
     image=context.createImageData(width,height);
@@ -84,14 +110,14 @@ export function createMeshRenderer(canvas,{adaptive=true}={}){
       ctx.drawImage(source,0,0,size,size);
       tex=ctx.getImageData(0,0,size,size).data;
     }
-    const sample={pixels:tex,size,version:map.version};textures.set(map,sample);return sample;
+    const sample={levels:mipChain(tex,size),size,version:map.version};textures.set(map,sample);return sample;
   }
   function render(scene,camera,force=false){
     if(!image)return false;
     const now=performance.now();
     if(!force&&now-frame<1000/23)return false;
     frame=now;
-    const desiredWidth=Math.round(Math.min(.72,630/Math.max(viewportWidth,viewportHeight))*quality*workScale*viewportWidth);
+    const desiredWidth=Math.max(1,Math.round(renderScale(viewportWidth,viewportHeight)*viewportWidth));
     if(desiredWidth!==width){setSize(viewportWidth,viewportHeight);frame=now;}
     scene.updateMatrixWorld();camera.updateMatrixWorld();cameraEye.setFromMatrixPosition(camera.matrixWorld);
     projection.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
@@ -134,13 +160,15 @@ export function createMeshRenderer(canvas,{adaptive=true}={}){
     return true;
   }
 
-  function visit(object){
+  function visit(object,followed=false){
     if(!object.visible)return;
+    followed=followed||object.userData.followedByCamera;
     if(object.isLOD){
       const distance=eye.setFromMatrixPosition(object.matrixWorld).distanceTo(eyeFromCamera());
       const levels=object.levels;
-      const level=levels.length>1&&distance>Math.min(6,levels[1].distance)?levels[1]:levels[0];
-      if(level){const visible=level.object.visible;level.object.visible=true;visit(level.object);level.object.visible=visible;}
+      const threshold=followed?18:7;
+      const level=levels.length>1&&distance>Math.min(threshold,levels[1].distance)?levels[1]:levels[0];
+      if(level){const visible=level.object.visible;level.object.visible=true;visit(level.object,followed);level.object.visible=visible;}
       return;
     }
     if(object.isMesh&&object.geometry.attributes.position&&(Array.isArray(object.material)||visibleMaterial(object.material))){
@@ -152,7 +180,7 @@ export function createMeshRenderer(canvas,{adaptive=true}={}){
         }
       }else mesh(object,object.matrixWorld);
     }
-    for(const child of object.children)visit(child);
+    for(const child of object.children)visit(child,followed);
   }
   const cameraEye=new Vector3();
   function eyeFromCamera(){return cameraEye;}
@@ -170,6 +198,7 @@ export function createMeshRenderer(canvas,{adaptive=true}={}){
     if(distance>viewSphere.radius && 2*focalPixels*viewSphere.radius<.8*(distance-viewSphere.radius))return;
     const p=geometry.attributes.position,uv=geometry.attributes.uv,col=geometry.attributes.color,normals=geometry.attributes.normal,index=geometry.index?.array;
     const positions=p.array,m=matrix.multiplyMatrices(projection,world).elements;
+    if(normals)normalMatrix.getNormalMatrix(world);
     let cache=geometries.get(geometry);
     if(!cache){
       const blocks=!index&&!object.isSkinnedMesh&&!Array.isArray(material)&&p.count>=verticesPerBlock*2?triangleBlocks(positions):null;
@@ -204,7 +233,9 @@ export function createMeshRenderer(canvas,{adaptive=true}={}){
 
     function draw(material,start,count){
       if(!visibleMaterial(material))return;
-      const tex=texture(material.map,material.map?.userData.cpuSize||(material.alphaTest>.1?128:64)),base=material.color||{r:1,g:1,b:1};
+      const map=material.map;
+      const resolution=map?.userData.cpuSize||(map?.image?.width>=96||material.alphaTest>.1?128:64);
+      const tex=texture(map,resolution),base=material.color||{r:1,g:1,b:1};
       for(let i=start;i+2<start+count;i+=3){
         const a=index?index[i]:i,b=index?index[i+1]:i+1,c=index?index[i+2]:i+2;
         if(codes[a]&codes[b]&codes[c])continue;
@@ -212,9 +243,14 @@ export function createMeshRenderer(canvas,{adaptive=true}={}){
         if(Math.max(za,zb,zc)<near||Math.min(za,zb,zc)>far)continue;
         let light=1;
         if(normals&&!material.isMeshBasicMaterial){
-          normal.fromBufferAttribute(normals,a).transformDirection(world);
-          const n=normal.x*.42+normal.y*.78+normal.z*.46;
-          light=(.62+.51*(material.side===DoubleSide?Math.abs(n):Math.max(0,n)))*ambient;
+          normal.fromBufferAttribute(normals,a).applyNormalMatrix(normalMatrix);
+          if(material.side===DoubleSide){
+            const winding=(projected[bx]*za-projected[ax]*zb)*(projected[cx+1]*za-projected[ax+1]*zc)
+              -(projected[bx+1]*za-projected[ax+1]*zb)*(projected[cx]*za-projected[ax]*zc);
+            if(winding<0)normal.negate();
+          }
+          const sunlight=Math.max(0,normal.x*.39+normal.y*.71+normal.z*.58);
+          light=(.61+.12*normal.y+.62*sunlight)*ambient;
           if(material.userData.streetLamp)light+=material.emissiveIntensity*.45;
         }
         const tinted=col&&material.vertexColors;
@@ -253,7 +289,17 @@ export function createMeshRenderer(canvas,{adaptive=true}={}){
     const ox=offset?.x||0,oy=offset?.y||0;
     const textured=tex && Math.abs(side)>120;
     const red=textured?shadeRow(rr,fr):null,green=textured?shadeRow(gg,fg):null,blue=textured?shadeRow(bb,fb):null;
-    const alpha=Math.max(84,(material.alphaTest||0)*255),size=tex?.size,texels=tex?.pixels;
+    const contactShadow=material.userData.contactShadow;
+    // Choose a mip from the triangle's projected area. Keep cutout coverage
+    // intact for fences and costume accessories.
+    let mip=0;
+    if(tex&&material.alphaTest===0){
+      const uvArea=Math.abs((bu-au)*(cv-av)-(bv-av)*(cu-au));
+      const footprint=tex.size*tex.size*uvArea/Math.abs(side);
+      if(footprint>2)mip=Math.min(tex.levels.length-1,Math.floor(.5*Math.log2(footprint)));
+    }
+    const level=tex?.levels[mip],size=level?.size,texels=level?.pixels;
+    const alpha=contactShadow?1:Math.max(84,(material.alphaTest||0)*255);
     const dz=ux*(a-c)+vx*(d-c),du=ux*(a*au-c*cu)+vx*(d*bu-c*cu),dv=ux*(a*av-c*cv)+vx*(d*bv-c*cv);
     const ww=-ux-vx;
     // Clip each scanline once. In particular a diagonal yarn or a near-plane
@@ -276,6 +322,14 @@ export function createMeshRenderer(canvas,{adaptive=true}={}){
         const ty=wrap?Math.floor(t*size)&(size-1):Math.min(size-1,Math.max(0,Math.floor(t*size)));
         const j=(ty*size+tx)*4;
         if(texels[j+3]<alpha)continue;
+        if(contactShadow){
+          const opacity=material.opacity*texels[j+3]/255,base=pixels[at];
+          const sr=mix(base&255,red?red[texels[j]]:channel(rr*linear[texels[j]]+fr),opacity);
+          const sg=mix((base>>>8)&255,green?green[texels[j+1]]:channel(gg*linear[texels[j+1]]+fg),opacity);
+          const sb=mix((base>>>16)&255,blue?blue[texels[j+2]]:channel(bb*linear[texels[j+2]]+fb),opacity);
+          pixels[at]=0xff000000|(sb<<16)|(sg<<8)|sr;
+          continue;
+        }
         pixels[at]=textured?0xff000000|(blue[texels[j+2]]<<16)|(green[texels[j+1]]<<8)|red[texels[j]]:
           0xff000000|(channel(bb*linear[texels[j+2]]+fb)<<16)|(channel(gg*linear[texels[j+1]]+fg)<<8)|channel(rr*linear[texels[j]]+fr);
         depth[at]=z+bias;

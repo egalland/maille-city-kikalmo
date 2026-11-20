@@ -1,3 +1,5 @@
+import {marketPickup} from './market-pickup.js';
+import {ringGeometry} from './coachwork.js';
 import {roadsterRecipe} from './roadster-model.js';
 import {Vector3,TorusGeometry} from './three.js';
 import {saddles,gripOnFork,riderIdentity} from './saddle-rider.js';
@@ -161,41 +163,7 @@ function makeCargo(paint){
   return {chassis,fork,mount:saddles.cargo,wheels:[makeWheel(-1.01,0,.315,.081,false,true),...[-.472,.472].map(z=>makeWheel(.878,z,.288,.089,true,true))]};
 }
 function makePickup(paint){
-  const chassis=section('carrosserie'),p=chassis.parts;
-  box(p,[0,.531,0],[4.55,.26,1.68],ink);
-  box(p,[.035,.725,0],[4.61,.343,1.80],paint);
-  box(p,[-1.24,.888,0],[2.13,.10,1.653],wood);
-  for(const s of [-1,1]){
-    box(p,[-1.24,1.05,s*.856],[2.16,.36,.105],paint);
-    box(p,[-1.24,1.245,s*.857],[2.19,.05,.12],cream);
-    box(p,[.51,1.081,s*.803],[1.30,.43,.117],paint);
-    box(p,[.265,1.19,s*.878],[.158,.034,.024],cream);
-    box(p,[.525,1.488,s*.781],[1.05,.398,.045],'#57727c');
-    for(const x of [-.111,.49,1.12])rod(p,[x,1.242,s*.809],[x-.04,1.702,s*.753],.039,paint);
-    for(const x of [-1.511,1.561])egg(p,[x,.724,s*.873],[.602,.213,.118],paint);
-    egg(p,[2.258,.868,s*.649],[.082,.108,.124],'#fce4aa');
-    box(p,[-2.294,.951,s*.712],[.042,.097,.136],'#c65b59');
-    rod(p,[.831,1.309,s*.813],[.948,1.404,s*.945],.016,iron);
-    egg(p,[.949,1.41,s*.943],[.056,.047,.037],cream);
-  }
-  box(p,[-2.273,1.058,0],[.124,.45,1.71],paint);
-  box(p,[-2.337,1.205,0],[.02,.032,1.54],cream);
-  for(let i=-3;i<=3;i++)box(p,[-2.34,1.11,.174*i],[.019,.021,.095],cream);
-  for(const s of [-1,1])box(p,[-2.341,.974,s*.64],[.015,.087,.071],brass);
-  box(p,[-.16,1.29,0],[.117,.75,1.61],paint);
-  box(p,[-.224,1.465,0],[.024,.29,1.11],'#536f77');
-  box(p,[1.108,1.474,0],[.075,.408,1.457],fleetFabric.frontPane);
-  rod(p,[1.151,1.312,-.525],[1.151,1.637,-.273],.024,fleetFabric.gleam);
-  rod(p,[1.151,1.32,-.418],[1.151,1.637,-.17],.011,fleetFabric.gleam);
-  egg(p,[.484,1.706,0],[.79,.153,.903],paint);
-  box(p,[1.672,.996,0],[1.047,.414,1.58],paint);
-  egg(p,[1.718,1.164,0],[.605,.108,.843],paint);
-  box(p,[2.243,.898,0],[.083,.31,.89],ink);
-  for(let i=0;i<4;i++)box(p,[2.294,.788+i*.069,0],[.028,.025,.80],cream);
-  for(const x of [-2.342,2.344])box(p,[x,.565,0],[.134,.101,1.869],cream);
-  parcel(p,-1.561,.945,-.207,.625,.39,.54,'#ac8d50');
-  parcel(p,-.785,.945,.185,.563,.30,.459,'#899678');
-  return {chassis,wheels:[-1.507,1.561].flatMap(x=>[-.814,.814].map(z=>makeWheel(x,z,.388,.204,x>0,false)))};
+  return marketPickup(paint,{section,box,rod,parcel,makeWheel});
 }
 
 const models=new Map();
@@ -230,7 +198,11 @@ export function createStreetVehicle(THREE,art,type,color,seed=0){
     const panelGeometry=[];
     for(const v of section.parts){
       const col=v.c;
-      if(v.kind==='panel'){
+      if(v.kind==='shell'){
+        const shape=ringGeometry(v.rings);
+        art.addPart(node,shape,0,0,0,1,1,1,col,0,0,0,v.surface);
+        panelGeometry.push(shape);
+      }else if(v.kind==='panel'){
         const positions=[],uv=[];
         for(let i=1;i+1<v.points.length;i++)for(const point of [v.points[0],v.points[i],v.points[i+1]]){
           positions.push(...point);uv.push((point[0]+point[2])*.58,point[1]*.8);
@@ -353,7 +325,18 @@ export function drawStreetVehicle(c,e,x,y,height,time=0,viewAngle=0,weave=null){
     for(const v of section.parts){
       if(height<22&&((v.kind==='rod'&&v.r*size<.33)||(v.kind==='egg'&&v.size[0]*size<.7)))continue;
       const fill=v.c;
-      if(v.kind==='panel'){
+      if(v.kind==='shell'){
+        const rings=v.rings.map(r=>r.map(p=>point(...p))),cols=rings[0].length;
+        for(let i=1;i<rings.length;i++)for(let j=0;j<cols;j++){
+          const k=(j+1)%cols;
+          const a=rings[i-1][j],b=rings[i-1][k],c=rings[i][k],d=rings[i][j];
+          const area=(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+          if(area<0)face([a,b,c,d],shade(fill,Math.round((.82+.23*Math.sin(j*Math.PI/(cols-1)))*16)/16));
+        }
+        const centreDepth=r=>r.reduce((sum,p)=>sum+p[2],0)/cols;
+        const near=centreDepth(rings[0])<centreDepth(rings.at(-1))?rings[0]:rings.at(-1);
+        face(near,shade(fill,.91));
+      }else if(v.kind==='panel'){
         if(v.glass&&(e.parts&1))continue;
         const points=v.points.map(([x,y,z])=>point(x,y,z));
         const ax=v.points[1][0]-v.points[0][0],ay=v.points[1][1]-v.points[0][1],az=v.points[1][2]-v.points[0][2];

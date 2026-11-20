@@ -2,6 +2,7 @@ import {emotePatch} from './emote-art.js';
 import {canvasViewRange,detailedCanvasRange,streetViewRange} from './view-range.js';
 import {paintSkyView} from './textile-sky.js';
 import {paintStreetProp} from './street-props-art.js';
+import {furnitureSprite} from './street-furniture-sprite.js';
 import {paintStreetFabric,streetFabric} from './street-fabric.js';
 import {feltStone as stone,feltSlate as roofs,windowCloth,glassCloth,shopCloth,zincCloth,marbleCloth} from './paris-applique.js';
 import {paintKnit as knitArchitecture} from './wool-art.js';
@@ -731,9 +732,18 @@ export function createCanvasView(canvas,spawn,onNotice){
     const base=at(o.x,o.y,0),height=o.type==='tree'?Math.max(4.7,o.h):o.h||1;
     if(!base||base.d>295)return;const top=at(o.x,o.y,height);if(!top)return;
     const ph=base.y-top.y;if(ph<2||base.x<-ph||base.x>w+ph)return;
-    const s=Math.abs(Math.floor(o.x*7+o.y*3)),pic=propImage(o.type,s,propWearStage(health));
+    const stage=propWearStage(health),pixelsPerMetre=f/base.d;
+    const heading=Math.atan2(o.y-camY,o.x-camX)-(o.angle||0);
+    const furniture=furnitureSprite(o.type,stage,heading);
+    if(furniture){
+      queue.push({z:base.d,draw:()=>g.drawImage(furniture.image,
+        base.x+furniture.left*pixelsPerMetre,base.y+furniture.top*pixelsPerMetre,
+        furniture.width*pixelsPerMetre,furniture.height*pixelsPerMetre)});
+      return;
+    }
+    const s=Math.abs(Math.floor(o.x*7+o.y*3)),pic=propImage(o.type,s,stage);
     queue.push({z:base.d,draw:()=>{
-      const width=(o.type==='bench'?1.8:height*.745)*f/base.d;
+      const width=height*.745*pixelsPerMetre;
       g.drawImage(pic,base.x-width/2,base.y-ph,width,ph);
     }});
   }

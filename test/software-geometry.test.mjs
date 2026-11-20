@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {triangleBlocks,verticesPerBlock,blockVisible} from '../public/software-geometry.js';
 import {createMeshRenderer} from '../public/mesh-renderer.js';
-import {BoxGeometry,Group,Mesh,MeshBasicMaterial,PerspectiveCamera,Scene} from '../public/three.js';
+import {BoxGeometry,DataTexture,Group,Mesh,MeshBasicMaterial,PerspectiveCamera,PlaneGeometry,RepeatWrapping,Scene} from '../public/three.js';
 
 test('triangle blocks cull offscreen runs while retaining partly visible and near-clipped faces',()=>{
   const positions=new Float32Array(3*(verticesPerBlock+3));
@@ -42,4 +42,39 @@ test('stationary camera retains street depth behind moving citizens and updates 
   street.remove(wall);street.userData.cpuRevision++;
   assert.deepEqual(draw(),[255,0,0]);
   renderer.dispose();
+});
+
+
+test('software street textures average distant stitches and contact shadows blend with the ground',()=>{
+  let rendered;
+  const canvas={getContext:()=>({
+    createImageData:(w,h)=>({data:new Uint8ClampedArray(w*h*4)}),
+    putImageData:image=>{rendered=image.data;}
+  })};
+  const view=createMeshRenderer(canvas,{adaptive:false}),scene=new Scene(),camera=new PerspectiveCamera(45,1,.12,100);
+  const checker=new Uint8Array(64*64*4);
+  for(let y=0;y<64;y++)for(let x=0;x<64;x++){
+    const i=4*(y*64+x),tone=((x+y)%2)*255;
+    checker.set([tone,tone,tone,255],i);
+  }
+  const weave=new DataTexture(checker,64,64);weave.wrapS=weave.wrapT=RepeatWrapping;
+  const plane=new PlaneGeometry(3,3),uv=plane.attributes.uv;
+  for(let i=0;i<uv.count;i++)uv.setXY(i,uv.getX(i)*128,uv.getY(i)*128);
+  const wall=new Mesh(plane,new MeshBasicMaterial({map:weave}));
+  wall.position.z=-4;scene.add(wall);view.setSize(120,120);
+  function sample(){
+    view.render(scene,camera,true);
+    return rendered[4*(Math.floor(canvas.height/2)*canvas.width+Math.floor(canvas.width/2)+2)];
+  }
+  const grey=sample();
+  assert.ok(grey>90&&grey<165,`distant checker resolves to grey: ${grey}`);
+  const map=new DataTexture(new Uint8Array([0,0,0,128]),1,1);
+  const material=new MeshBasicMaterial({map,transparent:true,depthWrite:false});
+  material.userData.contactShadow=true;
+  const shadow=new Mesh(new PlaneGeometry(2,2),material);shadow.position.z=-3;scene.add(shadow);
+  assert.ok(Math.abs(sample()-grey/2)<3,'half-opacity contact shadow leaves the pavement visible');
+  const walker=new Mesh(new PlaneGeometry(1,1),new MeshBasicMaterial({color:0xffffff}));
+  walker.position.z=-3.25;scene.add(walker);
+  assert.equal(sample(),255,'shadow never becomes an opaque depth occluder');
+  view.dispose();weave.dispose();map.dispose();
 });

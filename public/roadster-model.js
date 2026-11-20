@@ -1,4 +1,5 @@
 import {saddles} from './saddle-rider.js';
+import {pressedShell,mudguard} from './coachwork.js';
 import {fleetFabric} from './vehicle-fabric.js';
 
 const {ink,thread:cream,brass,silver:iron,tyre:rubber}=fleetFabric;
@@ -23,15 +24,31 @@ export function roadsterRecipe(paint,{section,egg,disc,box,rod,makeWheel}){
     rod(p,[-.056,.419,0],[x,.655,0],.111,'#635b61');
     for(let n=0;n<4;n++)box(p,[x-dir*(3-n)*.016,.549+n*.027,0],[.193,.014,.283],n%2?iron:ink);
   }
-  egg(p,[.136,.832,0],[.296,.164,.190],paint);
-  egg(p,[.134,.852,0],[.245,.093,.198],cream);
-  egg(p,[.126,.859,0],[.240,.11,.202],paint);
-  egg(p,[.10,.987,0],[.048,.019,.05],brass);
-  egg(p,[-.325,.771,0],[.25,.069,.149],cream);
-  egg(p,[-.33,.796,0],[.25,.055,.155],seat);
-  for(let i=0;i<5;i++)rod(p,[-.47+i*.062,.836,-.100],[-.47+i*.062,.836,.100],.006,cream);
-  egg(p,[-.77,.696,0],[.30,.050,.115],paint);
-  egg(p,[-.997,.654,0],[.050,.040,.066],fleetFabric.stop);
+  // The steel tank has a narrow knee pocket at the back and broad shoulders
+  // over the frame. The saddle drops towards the rider at the front.
+  pressedShell(p,[[-.185,.784,.846,.068],[-.107,.741,.932,.118],
+    [.042,.714,.998,.196],[.194,.738,1.024,.212],[.311,.779,.993,.174],[.396,.826,.913,.077]],paint);
+  for(const side of [-1,1]){
+    const stripe=[[-.083,.829,.134],[.041,.889,.198],[.195,.931,.209],[.305,.911,.174]];
+    for(let i=1;i<stripe.length;i++){
+      const [a,b]=[stripe[i-1],stripe[i]].map(([x,y,z])=>[x,y,side*(z+.004)]);
+      rod(p,a,b,.009,cream);
+    }
+    const badge=[[-.23,.71,side*.104],[-.094,.735,side*.139],[-.035,.706,side*.15],[-.20,.558,side*.112]];
+    p.push({kind:'panel',points:side>0?badge.slice().reverse():badge,c:ink});
+  }
+  pressedShell(p,[[.070,1.002,1.022,.026],[.088,1.009,1.037,.044],[.130,1.011,1.037,.043],[.146,1.005,1.021,.028]],iron);
+  const saddle=[[-.64,.778,.832,.071],[-.57,.762,.859,.143],[-.43,.745,.859,.152],
+    [-.31,.739,.825,.146],[-.21,.753,.816,.118],[-.127,.784,.824,.076]];
+  pressedShell(p,saddle,seat,'yarn');
+  for(const side of [-1,1]){
+    for(let i=1;i<saddle.length;i++){
+      const at=([x,lo,hi,w])=>[x,lo+(hi-lo)*.65,side*w];
+      rod(p,at(saddle[i-1]),at(saddle[i]),.007,cream);
+    }
+  }
+  mudguard(p,-.745,.35,.375,.106,157,63,paint);
+  pressedShell(p,[[-1.073,.507,.548,.048],[-1.058,.504,.565,.061],[-1.018,.510,.564,.061]],fleetFabric.stop);
   for(const side of [-1,1]){
     rod(f,[.052,.346,side*.098],[-.29,.88,side*.102],.036,iron);
     rod(f,[-.169,.681,side*.10],[-.35,.967,side*.106],.041,paint);
@@ -41,9 +58,12 @@ export function roadsterRecipe(paint,{section,egg,disc,box,rod,makeWheel}){
     egg(f,[-.380,1.210,side*.346],[.028,.042,.052],iron);
     egg(f,[-.237,.838,side*.154],[.035,.033,.036],brass);
   }
-  egg(f,[.026,.685,0],[.305,.061,.115],paint);
-  egg(f,[-.225,.943,0],[.129,.119,.129],ink);
-  egg(f,[-.120,.949,0],[.070,.097,.106],brass);
-  egg(f,[-.081,.949,0],[.044,.080,.089],fleetFabric.lamp);
+  mudguard(f,.066,.345,.376,.091,143,39,paint);
+  pressedShell(f,[[-.367,.91,1.005,.045],[-.307,.863,1.032,.098],
+    [-.211,.843,1.055,.12],[-.133,.853,1.042,.117]],ink);
+  pressedShell(f,[[-.137,.859,1.037,.114],[-.120,.862,1.034,.111],
+    [-.100,.874,1.023,.098]],iron);
+  pressedShell(f,[[-.102,.873,1.023,.099],[-.086,.880,1.015,.093],
+    [-.073,.901,.996,.074]],fleetFabric.lamp,'glow');
   return {chassis,fork,mount:saddles.motorbike,wheels:[makeWheel(-.745,0,.35,.133,false,true),makeWheel(.756,0,.345,.120,true,true)]};
 }

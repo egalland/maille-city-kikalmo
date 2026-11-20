@@ -31,9 +31,9 @@ export function enferWall(index,floors=1,entry=false){
     }else{
       const height=index<2?7:13,width=index<2?19:37;
       for(let row=0;row<96;row+=height){
-        rect(0,y+row,96,1.4,stitch);
+        rect(0,y+row,96,index<2?.78:1,stitch);
         for(let x=(row/height%2)*width/2;x<96;x+=width){
-          rect(x,y+row,1.15,height,stitch);
+          rect(x,y+row,.85,height,stitch);
           if(index<2&&Math.round(x+row)%4===0)rect(x+2,y+row+2,width-3,height-3,index===0?'#b45e4e':'#9d5849');
         }
       }
@@ -48,17 +48,28 @@ export function enferWall(index,floors=1,entry=false){
       for(let x=30;x<70;x+=8)rect(x,y+30,1,65,'#54434a');
       rect(28,y+76,41,3,'#a48877');
     }else{
-      rect(28,y+24,40,50,'#e1c5a5');rect(34,y+29,28,39,'#43575c');
-      rect(21,y+29,12,39,shutter);rect(63,y+29,12,39,shutter);
-      for(let row=33;row<67;row+=6){rect(22,y+row,10,1,'#ad9c8b');rect(64,y+row,10,1,'#ad9c8b');}
-      if(index<2){
-        c.beginPath();c.ellipse(48,y+29,20,8,0,Math.PI,2*Math.PI);c.lineWidth=3.3;c.strokeStyle='#e0b49a';c.stroke();
-        rect(0,y+88,96,3,'#c39881');
+      // Jambs, shadowed returns and reflected sky also read in the distant wall tile.
+      rect(25,y+15,46,62,'#6c5855');
+      rect(24,y+14,48,4,'#d5b498');rect(25,y+18,3,57,'#e0c7a8');
+      rect(68,y+18,3,57,'#b19a87');
+      const sky=c.createLinearGradient(0,y+19,0,y+72);
+      sky.addColorStop(0,'#728b98');sky.addColorStop(.49,'#506f79');sky.addColorStop(.50,'#465c5c');sky.addColorStop(1,'#394849');
+      c.fillStyle=sky;c.fillRect(30,y+20,36,51);
+      c.fillStyle='#c6b598';c.beginPath();c.moveTo(31,y+21);c.lineTo(38+index*2,y+21);
+      c.quadraticCurveTo(38,y+43,32,y+52);c.lineTo(32,y+69);c.lineTo(31,y+69);c.fill();
+      rect(47,y+19,2.5,54,'#cfbda4');rect(29,y+40,38,2.7,'#c4ae96');
+      for(const x of [14,70]){
+        rect(x,y+19,12,54,'#554e50');rect(x+1,y+19,10,52,shutter);
+        for(let row=23;row<69;row+=6){rect(x+2,y+row,8,1.2,'#9d9f8d');rect(x+2,y+row+1.3,8,1,'#48595b');}
       }
-      rect(47,y+29,3,39,'#bca68e');rect(35,y+46,27,3,'#bca68e');rect(26,y+69,44,5,'#ebd2b0');
+      if(index<2){
+        c.beginPath();c.ellipse(48,y+17,21,6.5,0,Math.PI,2*Math.PI);c.lineWidth=2.8;c.strokeStyle='#d3aa8e';c.stroke();
+        rect(0,y+89,96,1.7,'#ba8f7c');
+      }
+      rect(23,y+73,50,4,'#ead3b5');rect(25,y+77,46,2,'#846e64');
     }
     if(entry&&index<3&&floor===floors-1){
-      rect(18,y+16,60,72,wall);rect(34,y+27,28,65,'#c39c80');rect(37,y+29,22,64,shutter);
+      rect(13,y+10,70,71,wall);rect(34,y+27,28,65,'#c39c80');rect(37,y+29,22,64,shutter);
       rect(40,y+33,16,15,'#45565a');rect(46,y+34,2,14,'#cfaa8d');rect(40,y+57,16,23,stitch);
       rect(52,y+61,3,4,'#e7c29e');rect(30,y+88,37,6,'#a3968a');rect(28,y+94,41,2,'#685b58');
     }

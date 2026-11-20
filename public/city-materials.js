@@ -1,3 +1,4 @@
+import {paintLeafTwig} from './street-trees.js';
 import {enclosureTextile} from './enclosure-textiles.js';
 import {frontageSigns} from './enfer-frontage.js';
 import {glassCloth, windowCloth, shopCloth, shopCloths, zincCloth} from './paris-applique.js';
@@ -75,6 +76,8 @@ export function cityMaterials(enfer=false){
     park:lambert(tile(128,128,(c,w,h)=>paintStreetFabric(c,w,h,'park'))),
     water:lambert(tile(128,128,(c,w,h)=>paintStreetFabric(c,w,h,'water'))),
   };
+  material.foliage=lambert(tile(256,256,paintLeafTwig));
+  material.foliage.alphaTest=.34;
   for(let i=0;i<shopCloths.length;i++)material['shop'+i]=lambert(shopTile(i));
   if(enfer){
     for(const [key,style] of [['parcelMasonry','brick'],['parcelWood','board'],['parcelMesh','mesh']]){

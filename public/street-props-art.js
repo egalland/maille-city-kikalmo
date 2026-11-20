@@ -1,14 +1,10 @@
 import {paintKnit,yarnPalette as dye} from './wool-art.js';
 
-export const canopyDyes=[
-  ['#3f675f','#588474','#82a28a','#adc19a'],
-  ['#616a50','#819168','#a9ab78','#c5bf8b'],
-  ['#3e6268','#577d78','#77a297','#b1c2a4']
-];
+import {paintStreetTree} from './street-trees.js';
 
 // Paint once per kind, dye lot and damage stage. Sized in sprite units, not screen pixels.
 export function paintStreetProp(g,type,seed,stage){
-  const tau=Math.PI*2,ink=dye.ink,brass=dye.ochre,stem='#785b55',iron=dye.petrol;
+  const tau=Math.PI*2,ink=dye.ink,brass=dye.ochre,iron=dye.petrol;
   g.lineCap='round';g.lineJoin='round';
   function oval(x,y,a,b,fill,edge=null,width=1.1){
     g.beginPath();g.ellipse(x,y,a,b,0,0,tau);g.fillStyle=fill;g.fill();
@@ -31,42 +27,7 @@ export function paintStreetProp(g,type,seed,stage){
     g.setLineDash([2,3]);cord([[x1,y],[x2,y]],tint,1.2);g.setLineDash([]);
   }
   if(type==='tree'){
-    const colors=canopyDyes[seed%3];
-    tube([[51,142],[46,108,53,69]],stem,7.5);
-    for(const s of [-1,1])tube([[50,112],[52+s*13,96,50+s*26,75]],stem,3.8);
-    for(let i=0;i<10;i++){
-      const y=99+i*4,x=48+Math.max(0,i-5)*.38;
-      cord([[x-1.5,y+2],[x+1.3,y+1,x+3.3,y-1]],i%2?'#aa856a':'#b28d74',1.05);
-    }
-    function pom(x,y,r,tone,rotation){
-      g.save();g.translate(x,y);g.rotate(rotation);g.scale(1,.98);
-      g.beginPath();
-      // Ruffled perimeter like a wound pompom, with a continuous shadow between lobes.
-      for(let i=0;i<=80;i++){
-        const a=i*tau/80,rad=r*(1+.038*Math.sin(a*8+.45)+.022*Math.cos(a*5-.9));
-        g[i?'lineTo':'moveTo'](Math.cos(a)*rad,Math.sin(a)*rad);
-      }
-      g.closePath();const grad=g.createRadialGradient(-r*.36,-r*.45,1,r*.12,r*.15,r*1.18);
-      grad.addColorStop(0,colors[Math.min(tone+1,3)]);grad.addColorStop(.58,colors[tone]);grad.addColorStop(1,colors[0]);
-      g.fillStyle=grad;g.fill();g.lineWidth=1.6;g.strokeStyle=colors[0];g.stroke();g.clip();
-      // Winding threads curve around the globe; vary phase to avoid a flat repeating fill.
-      for(let row=-3;row<=3;row++){
-        const yc=row*r*.255;
-        for(let col=-3;col<=3;col++){
-          const xc=(col+(row&1)*.43)*r*.33,k=1-(xc/r)**2-(yc/r)**2;
-          if(k<.055)continue;
-          const size=r*(.09+.065*Math.sqrt(k));
-          const cy=yc-r*.17*(1-(xc/r)**2);
-          const slant=xc/r*.25;
-          cord([[xc-size,cy-size*(.38+slant)],[xc-size*.82,cy+size*.68,xc,cy+size*.86],
-            [xc+size*.8,cy+size*.3,xc+size*.82,cy-size*(.2-slant)]],colors[0],Math.max(1.5,r*.084));
-          cord([[xc-size*.82,cy-size*.33],[xc-size*.5,cy+size*.43,xc-.4,cy+size*.48]],colors[Math.min(tone+1,3)],Math.max(1,r*.056));
-        }
-      }
-      g.restore();
-    }
-    pom(52,62,33,1,.23);if(stage!==2)pom(25,58,20,1,-.56);pom(73,59,22,1,.43);
-    pom(60,38,24,2,.39);pom(43,32,22,2,-.27);pom(40,63,19,2,-.37);
+    paintStreetTree(g,seed%3,stage);
     return;
   }
   if(type==='bench'){

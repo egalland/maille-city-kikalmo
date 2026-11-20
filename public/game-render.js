@@ -42,6 +42,7 @@ function makeShadow() {
   g.addColorStop(0,'rgba(55,36,52,.7)');g.addColorStop(.55,'rgba(62,38,55,.42)');g.addColorStop(1,'rgba(62,38,55,0)');
   c.fillStyle=g;c.fillRect(0,0,64,64);
   const material=new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(canvas),transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-4,toneMapped:false});
+  material.userData.contactShadow=true;
   const geometry=new THREE.PlaneGeometry(1,1);geometry.rotateX(-Math.PI/2);
   const shadows=new THREE.InstancedMesh(geometry,material,65);shadows.frustumCulled=false;shadows.count=0;return shadows;
 }
@@ -114,6 +115,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     if(item && item.kind!==id){scene.remove(item.object.group);item.object.dispose?.();models.delete(key);item=null;}
     if(!item){const seed=hash(String(e.id))%65535;const object=(vehicle?createCar:createPuppet)(e.type,e.color,seed);item={kind:id,object};models.set(key,item);scene.add(object.group);}
     item.used=inFrame;const g=item.object.group;
+    g.userData.followedByCamera=!!e.self;
     const angle=e.angle||0;
     const ground=terrainHeight(e.x,e.y),swim=e.motion==='swim' && !vehicle;
     const offset=swim?swimGround(e.x,e.y)-ground-.67:0;

@@ -1,10 +1,11 @@
 import {lampState,pedestrianGreen} from './street-signals.js';
+import {streetFurniture} from './street-furniture.js';
 import {drawBoundary} from './residential-boundaries.js';
 import {nearbySignals,nearbyEnclosures} from './paris-world.js';
 import {pavementRuns} from './curb-clearance.js';
 import {frontageSigns,frontageStyle,careerFronts} from './enfer-frontage.js';
 import {workshopId,workshopEdge,bayDoor,headroom} from './workshop.js';
-import {canopyDyes} from './street-props-art.js';
+import {drawStreetTree} from './street-trees.js';
 import {cityViewRange,streetViewRange} from './view-range.js';
 import {streetFabric} from './street-fabric.js';
 import {feltSlate as slates,shopCloths as stripMaterials} from './paris-applique.js';
@@ -271,26 +272,90 @@ function flatWithHoles(batch,mat,poly,holes,height,col,scale=1){
   const pts=ring.concat(...hh),uv=pts.map(p=>[p[0]/scale,p[1]/scale]);
   for(const [a,b,c] of idx){const ids=[c,b,a];batch.tri(mat,...ids.map(i=>[pts[i][0],height,pts[i][1]]),col,ids.map(i=>uv[i]));}
 }
-// Small projecting pieces keep the masonry readable as the camera moves across a façade.
-function facadeRelief(b,a,d,len,outward,bays,floors,eaves,index,entry){
+// Architectural trim follows the local wall plane on surveyed, often skewed footprints.
+function facadeRelief(b,a,d,len,outward,bays,floors,eaves,index,entry,shop){
   if(len<2.3)return;
   const dx=(d[0]-a[0])/len,dz=(d[1]-a[1])/len,nx=dz*outward,nz=-dx*outward;
-  const plank=(u,v,h,top,depth,tint)=>{
-    const at=(t,off,y)=>[a[0]+dx*t+nx*off,y,a[1]+dz*t+nz*off];
-    b.face('felt',at(u,depth,h),at(v,depth,h),at(v,depth,top),at(u,depth,top),tint);
+  const at=(t,off,y)=>[a[0]+dx*t+nx*off,y,a[1]+dz*t+nz*off];
+  function ledge(u,v,bottom,top,depth,tint){
+    b.face('felt',at(u,depth,bottom),at(v,depth,bottom),at(v,depth,top),at(u,depth,top),tint);
     b.face('felt',at(u,0,top),at(v,0,top),at(v,depth,top),at(u,depth,top),tint);
-  };
+  }
   const stone=index===4?'#d0bba1':index<2?'#c99779':'#d2b799';
-  plank(0,len,eaves-.16,eaves+.01,.17,stone);
-  const bayWidth=len/bays,storey=eaves/floors;
-  if(bayWidth<2.2)return;
+  ledge(0,len,eaves-.18,eaves+.01,.20,stone);
+  const width=len/bays,storey=eaves/floors,mat='enfer'+index;
+  if(width<2.2)return;
   for(let i=0;i<bays;i++){
-    const mid=(i+.5)*bayWidth,sill=bayWidth*(index===4?.20:.235);
+    const origin=i*width,mid=origin+.5*width;
     for(let j=0;j<floors;j++){
-      if(entry&&i===0&&j===0)continue;
-      const level=(j+.25)*storey;
-      plank(mid-sill,mid+sill,level-.065,level+.07,index===4?.24:.13,stone);
+      if(shop&&j===0&&Math.abs(mid-len*.5)<2.1+.35*width)continue;
+      if(entry&&i===0&&j===0){
+        const half=width*.15,top=storey*.73;
+        ledge(mid-half-.10,mid+half+.10,.03,.14,.32,'#b9a48b');
+        ledge(mid-half-.08,mid+half+.08,top,top+.12,.18,stone);
+        for(const side of [-1,1]){
+          const x=mid+half*side;
+          b.face('felt',at(x,.013,.13),at(x+.062*side,.105,.13),at(x+.062*side,.105,top),at(x,.013,top),stone);
+        }
+        continue;
+      }
+      const y=j*storey;
+      if(index===4){
+        ledge(mid-width*.20,mid+width*.20,y+storey*.2-.07,y+storey*.2+.07,.23,stone);
+        continue;
+      }
+      const low=y+storey*23/96,high=y+storey*77/96;
+      ledge(mid-width*.264,mid+width*.264,low-.12,low-.015,.21,'#d7bea1');
+      for(const side of [-1,1]){
+        // Draw the shutter with the same louvre pattern at both levels of detail.
+        const hinge=mid+side*width*22/96,edge=mid+side*width*34/96;
+        const depth=.16+.07*((i+j+index+(side>0?1:0))%3);
+        const uv1=side<0?26/96:70/96,uv2=side<0?14/96:82/96;
+        b.face(mat,at(hinge,.046,low),at(edge,depth,low),at(edge,depth,high),at(hinge,.046,high),white,
+          [[uv1,23/96],[uv2,23/96],[uv2,77/96],[uv1,77/96]]);
+        const frame=mid+side*width*20/96,inside=mid+side*width*18/96;
+        b.face('felt',at(frame,.122,low),at(inside,.018,low),at(inside,.018,high),at(frame,.122,high),stone);
+      }
+      b.face('felt',at(mid-width*20/96,.122,high),at(mid+width*20/96,.122,high),
+        at(mid+width*18/96,.018,high-.05),at(mid-width*18/96,.018,high-.05),'#997e6c');
     }
+  }
+}
+
+function roofFront(b,a,d,len,outward,eaves,shape,index,seed,dormerFootprint){
+  const dx=(d[0]-a[0])/len,dz=(d[1]-a[1])/len;
+  const at=(x,off,y)=>[a[0]+dx*x+outward*dz*off,y,a[1]+dz*x-outward*dx*off];
+  // A thin fascia and folded zinc gutter at the low edge, flush with the roof.
+  b.face('plain',at(0,.02,eaves+.07),at(len,.02,eaves+.07),at(len,.26,eaves-.04),at(0,.26,eaves-.04),'#695f60');
+  b.face('plain',at(0,.26,eaves-.04),at(len,.26,eaves-.04),at(len,.26,eaves-.14),at(0,.26,eaves-.14),'#938c82');
+  if(seed%3===0&&len>3.8){
+    const x=.42;
+    b.tube(at(x,.22,eaves-.095),at(x,.095,eaves-.40),.062,.055,'#858781',5,'plain');
+    b.tube(at(x,.095,eaves-.40),at(x,.095,.30),.055,.055,'#858781',5,'plain');
+  }
+  if(!dormerFootprint||len<6.2)return;
+  const x=len*(seed%2?.40:.60),half=.71;
+  const heightAt=(u,off)=>{const [px,,pz]=at(u,off,0);return shape.top([px,pz]);};
+  const front=-.65,back=-2.05,bottom=heightAt(x,front)-.05,shoulder=bottom+.91,peak=shoulder+.44;
+  const backHeight=heightAt(x,back);
+  // The two rear corners can otherwise protrude from a narrow or bevelled roof.
+  for(const u of [x-half-.09,x+half+.09]){
+    const [px,,pz]=at(u,back,0);
+    if(dormerFootprint.some((p,i)=>{
+      const q=dormerFootprint[(i+1)%dormerFootprint.length];
+      return ((q[0]-p[0])*(pz-p[1])-(q[1]-p[1])*(px-p[0]))*outward<0;
+    }))return;
+  }
+  if(backHeight<=bottom+.32||backHeight>=peak-.06)return;
+  const l=x-half,r=x+half;
+  const bl=at(l,front,bottom),br=at(r,front,bottom),tl=at(l,front,shoulder),tr=at(r,front,shoulder);
+  const ridge=at(x,front,peak);
+  b.face('enfer'+index,bl,br,tr,tl,white,[[.234,.20],[.766,.20],[.766,.87],[.234,.87]]);
+  b.tri('felt',tl,tr,ridge,'#c5ae92');
+  for(const side of [-1,1]){
+    const u=x+side*half,foot=heightAt(u,back)-.035,edge=Math.max(foot+.025,shoulder);
+    b.face('felt',at(u,front,bottom),at(u,back,foot),at(u,back,edge),at(u,front,shoulder),'#988879');
+    b.face('plain',at(u+side*.09,front+.10,shoulder),at(u+side*.09,back,edge),at(x,back,peak),at(x,front+.10,peak),'#5b5b65');
   }
 }
 function storefront(b,a,d,outward,height,index){
@@ -344,6 +409,10 @@ function addEnferBuilding(b,building,poly,detail,skyline,h){
   const venue=careerFronts.get(String(building.id)), garage=String(building.id)===workshopId;
   if(venue&&detail)shopEdge=venue.edge;
   const outward=Math.sign(poly.reduce((sum,[x,z],i)=>{const d=poly[(i+1)%poly.length];return sum+x*d[1]-z*d[0];},0))||1;
+  const seed=hash(building.id);
+  // The dormer's back corners must stay inside a simple convex footprint.
+  const acceptsDormer=detail&&roofShape&&index<3&&h>4.9&&seed%3!==1&&sections.length===1&&poly.length===4&&
+    poly.every((p,i)=>{const q=poly[(i+1)%4],r=poly[(i+2)%4];return ((q[0]-p[0])*(r[1]-q[1])-(q[1]-p[1])*(r[0]-q[0]))*outward>0;});
   for(const ring of sections){
     for(let i=0;i<ring.length;i++){
       const a=ring[i],d=ring[(i+1)%ring.length],len=Math.hypot(a[0]-d[0],a[1]-d[1]);
@@ -368,8 +437,10 @@ function addEnferBuilding(b,building,poly,detail,skyline,h){
       }else b.wall(mat,a,d,0,eaves,skyline?wall:white,bays,floors);
       if(ring===poly&&i===shopEdge)storefront(b,a,d,outward,eaves,business);
       if(detail&&ring===poly&&len>3.7&&(entry||i===shopEdge))frontageDetails(b,a,d,outward,hash(building.id+i),i===shopEdge);
-      if(detail&&ring===poly&&index!==3)facadeRelief(b,a,d,len,outward,bays,floors,eaves,index,entry);
+      if(detail&&ring===poly&&index!==3)facadeRelief(b,a,d,len,outward,bays,floors,eaves,index,entry,i===shopEdge);
       if(!roofShape)continue;
+      if(detail&&ring===poly&&len>1.8&&Math.max(roofShape.top(a),roofShape.top(d))-eaves<.11)
+        roofFront(b,a,d,len,outward,eaves,roofShape,index,seed+i,acceptsDormer?poly:null);
       const splits=[a,d],left=roofShape.ridge(a),right=roofShape.ridge(d);
       if(left*right<0){const t=left/(left-right);splits.splice(1,0,[a[0]+(d[0]-a[0])*t,a[1]+(d[1]-a[1])*t]);}
       for(let j=1;j<splits.length;j++){
@@ -636,32 +707,12 @@ function frayDecoration(batch,kind,stage){
     pos[i]+=upper*spec.lean;pos[i+2]+=upper*spec.lean*.31;pos[i+1]-=upper*spec.drop;
   }
 }
-function decoration(kind,variant,stage,distant=false) {
-  const b=new Batch(),metal='#3c4e54',edge='#596967',brass='#ca9972';
+export function decoration(kind,variant,stage,distant=false) {
+  const b=new Batch(),metal='#3c4e54',edge='#596967';
   if(terracePanels[kind]){
     for(const panel of terracePanels[kind])b.face('felt',...panel.points,panel.color);
   }else if(kind==='tree'){
-    const colors=canopyDyes[variant%3];
-    b.tube([0,.03,0],[.14,3.73,0],.24,.14,'#806457',9);
-    b.tube([.09,2.25,0],[-.83,3.9,.15],.13,.07,'#806659',6);
-    b.tube([.11,2.63,0],[.74,3.98,-.3],.115,.07,'#806659',6);
-    // Twist the two plies up the trunk without adding a separate mesh or material.
-    let prev=null;
-    for(let i=0;!distant&&i<=21;i++){
-      const t=i/21,h=.16+2.83*t,r=.228-.076*t,a=t*4.3*tau;
-      const point=[.11*t+Math.cos(a)*r,h,Math.sin(a)*r];
-      if(prev)b.tube(prev,point,.022,.022,'#b49579',4);
-      prev=point;
-    }
-    const lon=distant?7:10,lat=distant?4:6;
-    b.ball(.05,4.6,0,1.60,1.60,1.45,colors[1],lon,lat);
-    if(stage!==2)b.ball(-1.04,4.27,.32,.99,1.15,1.05,colors[1],lon,lat);
-    b.ball(1.01,4.64,.08,1.09,1.16,1.05,colors[1],lon,lat);
-    b.ball(-.38,5.73,-.18,1.08,1.09,1.13,colors[2],lon,lat);
-    if(!distant)b.ball(.51,5.47,-.39,.93,1.09,1.02,colors[2],lon,lat);
-    b.ball(-.24,4.55,1.03,.93,.88,.70,colors[2],lon,lat);
-    if(!distant)b.ball(.45,4.72,-.99,.87,.87,.69,colors[1],lon,lat);
-    b.tube([0,.04,0],[0,.12,0],.68,.65,'#716369',10);
+    drawStreetTree(b,variant,stage,distant);
   }else if(kind==='signal'){
     b.tube([0,.04,0],[0,3.14,0],.115,.074,metal,7);
     b.tube([0,.06,0],[0,.37,0],.185,.15,edge,7);
@@ -673,68 +724,8 @@ function decoration(kind,variant,stage,distant=false) {
     }
     b.box(0,1.64,0,.28,.46,.31,'#344749');
     b.ball(0,1.89,.165,.088,.106,.033,variant>=4?'#56f7b2':'#ef7669',7,4,'signalLight');
-  }else if(kind==='lamp'){
-    b.tube([0,0,0],[0,.34,0],.32,.23,metal,9);
-    b.tube([0,.3,0],[0,1.21,0],.17,.115,edge,9);
-    b.tube([0,1.15,0],[0,4.0,0],.1,.065,metal,7);
-    for(const y of [.39,.96,3.58,3.93])b.tube([0,y,0],[0,y+.09,0],.145,.135,brass,8);
-    const yy=4.0;
-    b.tube([0,yy,0],[0,yy+.18,0],.13,.24,metal,4);
-    b.tube([0,yy+.18,0],[0,yy+.72,0],.245,.362,stage===2?'#958b81':'#ffdc98',4,isEnfer&&stage<2?'lantern':'felt');
-    for(let i=0;i<4;i++){const a=i*tau/4;b.tube([.245*Math.cos(a),yy+.17,.245*Math.sin(a)],[.362*Math.cos(a),yy+.72,.362*Math.sin(a)],.027,.025,metal,5);}
-    b.tube([0,yy+.72,0],[0,yy+.97,0],.43,.066,metal,4);
-    b.ball(0,yy+1.03,0,.075,.12,.075,brass,6,3);
-  }else if(kind==='crate'){
-    b.box(0,.02,0,.89,.77,.78,'#ad886b');
-    for(const side of [-1,1]){
-      for(const y of [.09,.68])b.box(0,y,side*.396,.93,.08,.04,'#826953');
-      b.tube([-.36,.16,side*.414],[stage===2?-.01:.36,stage===2?.38:.7,side*.414],.05,.05,'#cea77f',4);
-    }
-  }else if(kind==='bench'){
-    // Padded slats with rounded welts and contrasting fastening buttons.
-    for(const z of [-.17,0,.17]){
-      b.box(0,.45,z,1.68,.102,.153,'#b58365');
-      b.tube([-.835,.535,z-.070],[.835,.535,z-.070],.018,.018,'#d4a982',5);
-    }
-    for(const h of [.81,1.035]){
-      const runs=stage===2?[[-.84,-.13],[.10,.84]]:[[-.84,.84]];
-      for(const [start,end] of runs){
-        const sag=stage===2&&start>0?.045:0;
-        b.box((start+end)*.5,h+sag,.20,end-start,.124,.101,'#bb8969');
-        for(const side of [-1,1])b.tube([start,h+.094+sag,.20+side*.047],
-          [end,h+.094+sag,.20+side*.047],.024,.024,'#d3a782',5);
-      }
-      for(const x of [-.62,.62])b.ball(x,h+.057,.142,.024,.025,.014,'#765d54',6,3);
-    }
-    for(const x of [-.62,.62]){
-      b.box(x,.015,.01,.095,.49,.48,metal);
-      b.tube([x,.46,.13],[x,1.12,.24],.04,.037,metal,6);
-      b.tube([x,.50,-.20],[x,.68,-.17],.031,.031,metal,6);
-      b.tube([x,.68,-.17],[x,.68,.18],.032,.032,edge,6);
-    }
-  }else if(kind==='hydrant'){
-    b.tube([0,0,0],[0,.72,0],.21,.2,'#ad5c67',8);b.ball(0,.71,0,.235,.23,.235,'#c66c6b');
-    b.tube([stage===2?-.19:-.3,.45,0],[.3,.45,0],.11,.11,'#b77569',8);
-    b.tube([0,.06,0],[0,.12,0],.23,.22,'#925a5f',9);
-    b.tube([0,.58,0],[0,.62,0],.22,.22,'#d79a79',10);
-    b.tube([0,.46,-.25],[0,.46,.25],.103,.103,'#975b61',8);
-  }else if(kind==='postbox'){
-    b.tube([0,0,0],[0,.79,0],.085,.068,metal,6);b.box(0,.77,0,.59,.62,.39,'#cc9b5a');
-    b.box(0,1.30,0,.63,.07,.42,'#d7ae70');
-    for(const z of [-.20,.20]){b.box(0,1.18,z,.36,.043,.02,'#4c4a55');b.box(0,1,z,.13,.073,.024,'#f2d5a0');}
-  }else if(kind==='bin'){
-    b.tube([0,.03,0],[0,.88,0],.27,.34,'#557570',12);
-    for(let i=0;i<9;i++){
-      const a=i*tau/9,c=Math.cos(a),s=Math.sin(a);
-      b.tube([.27*c,.11,.27*s],[.337*c,.79,.337*s],.013,.014,'#839884',4);
-    }
-    const lid=stage===2?.14:0;
-    b.tube([lid,.89,0],[lid,.96,0],.36,.31,metal,12);
-    b.tube([lid,.955,0],[lid,.969,0],.26,.26,'#333e49',12);
   }else{
-    b.tube([0,0,0],[0,.71,0],.13,.11,metal,8);b.ball(0,.74,0,.135,.14,.135,'#788e85',8,4);
-    b.tube([0,.60,0],[0,.65,0],.124,.124,'#efd096',8);
-    b.tube([0,.024,0],[0,.067,0],.146,.143,edge,8);
+    streetFurniture(b,kind,stage,isEnfer);
   }
   frayDecoration(b,kind,stage);
   return b;
