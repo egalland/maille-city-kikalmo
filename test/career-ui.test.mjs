@@ -85,4 +85,20 @@ test('career controls start and replay a delivery, validate arrivals, credit cas
   assert.equal(vest.disabled,false);await vest.onclick();
   assert.equal(fields.get('careerArmor').textContent,'Protection · 40');
   assert.equal(fields.get('careerBalance').textContent,(45+careerContracts.delivery.reward-55)+' ₣');
+  sheet.find('Contrats').onclick();
+  await sheet.find('Quitter le contrat').onclick();
+  const {lostWool,woolCounter,woolReward}=await import('../public/lost-wool.js');
+  clock=(Math.floor(clock/720000)+1)*720000+1500;
+  pos=lostWool(clock).point;await join();tickUI();
+  await settle(()=>sheet.find('Chercher à pied')&&!fields.get('careerAction').disabled);
+  sheet.find('Chercher à pied').onclick();tickUI();
+  assert.equal(fields.get('careerAction').textContent,'Ramasser (G)');
+  await fields.get('careerAction').onclick();
+  assert.equal(fields.get('careerInstruction').textContent,'Rapporter la pelote');
+  clock+=60000;pos=woolCounter;await join();tickUI();
+  await settle(()=>!fields.get('careerAction').disabled);
+  assert.equal(fields.get('careerAction').textContent,'Remettre (G)');
+  await fields.get('careerAction').onclick();
+  assert.equal(fields.get('careerBalance').textContent,(45+careerContracts.delivery.reward-55+woolReward)+' ₣');
+
 });

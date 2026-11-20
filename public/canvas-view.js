@@ -920,6 +920,20 @@ export function createCanvasView(canvas,spawn,onNotice){
     g=oldG;
     }
     g.drawImage(background,0,0);queue.length=0;
+    if(state.lostWool){
+      const wool=state.lostWool,distance=Math.hypot(wool.x-camX,wool.y-camY),point=at(wool.x,wool.y,.48);
+      if(point&&distance<84&&point.d>.4&&pickupClear(wool.id,wool.x,wool.y,.5,distance,time,destroyed)){
+        const r=Math.max(1,.30*f/point.d);
+        queue.push({z:depth(wool.x,wool.y),draw:()=>{
+          g.save();g.beginPath();g.ellipse(point.x,point.y,r,r*.94,0,0,tau);g.fillStyle='#ad4164';g.fill();g.clip();
+          g.lineWidth=Math.max(.6,r*.10);g.strokeStyle='#ffa7b0';
+          for(const tilt of [-.55,-.35,.32,.62,.87]){
+            g.beginPath();g.ellipse(point.x,point.y,r*.45,r*1.07,tilt,0,tau);g.stroke();
+          }
+          g.restore();
+        }});
+      }
+    }
     for(const pickup of state.pickups||[])queuePickup(pickup,time,destroyed);
     blood.begin(time,state.epoch??Date.now());
     const playerBody=uprightBody(state.entities.find(e=>e.self));

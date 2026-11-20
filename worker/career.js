@@ -1,9 +1,11 @@
+import {woolSchema,woolProgress,woolAction} from './lost-wool.js';
 import {careerContracts,careerPlaces,careerRadius,careerGarage} from '../public/career-catalog.js';
 import {outfitShop} from '../public/outfit-shop.js';
 import {abandonedFor,wreckFor} from '../public/vehicle-lifecycle.js';
 import {isVehicleType,vehicleSpec} from '../public/vehicle-types.js';
 
 export const careerSchema=[
+  woolSchema,
   `CREATE TABLE IF NOT EXISTS mc_careers (
     profile TEXT PRIMARY KEY, revision INTEGER NOT NULL DEFAULT 0, cash INTEGER NOT NULL DEFAULT 45,
     reputation INTEGER NOT NULL DEFAULT 0, completed INTEGER NOT NULL DEFAULT 0,
@@ -22,15 +24,16 @@ export const careerSchema=[
 ];
 const profileId=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const maxPoseAge=25000;
-const readCareer=`SELECT c.*,e.bank,e.licensed,e.revenue,l.best,l.public,o.armor,o.layer,o.wearer,o.dyes,o.dye,
+const readCareer=`SELECT c.*,w.slot AS woolSlot,w.picked AS woolPicked,w.paid AS woolPaid,e.bank,e.licensed,e.revenue,l.best,l.public,o.armor,o.layer,o.wearer,o.dyes,o.dye,
     (SELECT json_group_array(json_object('name',alias,'ms',public)) FROM
       (SELECT alias,public FROM mc_laps WHERE public IS NOT NULL ORDER BY public,alias,profile LIMIT 5)) AS leaders
     FROM mc_careers c JOIN mc_enterprises e ON c.profile=e.profile
+    LEFT JOIN mc_lost_wool w ON w.profile=c.profile
     LEFT JOIN mc_laps l ON c.profile=l.profile LEFT JOIN mc_outfits o ON o.profile=c.profile WHERE c.profile=?`;
 const parse=data=>data?JSON.parse(data):null;
 function publicState(row,rider){
   const mission=parse(row.mission);
-  return {version:3,armor:row.armor||0,armorId:row.layer,wearable:row.wearer===rider,dyes:parse(row.dyes)||[],dye:row.dye,bestLapMs:row.best,publicLapMs:row.public,leaders:parse(row.leaders)||[],bank:row.bank,licensed:!!row.licensed,revenue:row.revenue,revision:row.revision,cash:row.cash,completed:row.completed,reputation:row.reputation,owned:!!row.car,
+  return {version:3,wool:woolProgress(row),armor:row.armor||0,armorId:row.layer,wearable:row.wearer===rider,dyes:parse(row.dyes)||[],dye:row.dye,bestLapMs:row.best,publicLapMs:row.public,leaders:parse(row.leaders)||[],bank:row.bank,licensed:!!row.licensed,revenue:row.revenue,revision:row.revision,cash:row.cash,completed:row.completed,reputation:row.reputation,owned:!!row.car,
     mission:mission?{contract:mission.contract,stage:mission.stage,car:mission.car||null,started:mission.started,deadline:mission.deadline}:null};
 }
 async function hashProfile(profile){
@@ -38,7 +41,7 @@ async function hashProfile(profile){
   return Array.from(bytes,v=>v.toString(16).padStart(2,'0')).join('');
 }
 const near=(actor,place)=>Math.hypot(actor.x-place.x,actor.y-place.y)<=careerRadius;
-const allowed=new Set(['state','start','cancel','advance','repair','buy','collect','license','collectRent','deposit','withdraw','publishLap','hideLap','buyArmor','buyDye','equipDye']);
+const allowed=new Set(['woolPick','woolReturn','state','start','cancel','advance','repair','buy','collect','license','collectRent','deposit','withdraw','publishLap','hideLap','buyArmor','buyDye','equipDye']);
 export async function runCareer(db,b,room,now){
   if(room!=='enfer:public'||!profileId.test(b.profile)||!allowed.has(b.action))
     return {ok:false,error:'Demande de carrière invalide.'};
@@ -99,6 +102,20 @@ export async function runCareer(db,b,room,now){
     return fail('La progression a changé. Les données ont été actualisées.');
   }else if(down||!Number.isFinite(actor.x+actor.y)){
     return fail('Patiente jusqu’au retour de ton personnage en ville.');
+  }else if(b.action==='woolPick'||b.action==='woolReturn'){
+    const collect=b.action==='woolPick';
+    const outcome=woolAction({row,actor,now,slot:b.slot,collect});
+    if(outcome.error)return fail(outcome.error);
+    guard+=' AND NOT EXISTS (SELECT 1 FROM mc_seats WHERE room=? AND rider=?) AND EXISTS (SELECT 1 FROM mc_members WHERE room=? AND id=? AND state=?)';
+    guardArgs.push(room,b.id,room,b.id,member.state);
+    if(collect){
+      effects.push(q(`INSERT INTO mc_lost_wool(profile,slot,picked,paid)
+        SELECT ?,?,?,0 WHERE ${hasMutation} ON CONFLICT(profile) DO UPDATE SET
+        slot=excluded.slot,picked=excluded.picked,paid=0`,profile,b.slot,now,profile,marker));
+    }else{
+      cash+=outcome.reward;
+      effects.push(q(`UPDATE mc_lost_wool SET paid=1 WHERE profile=? AND slot=? AND ${hasMutation}`,profile,b.slot,profile,marker));
+    }
   }else if(['buyArmor','buyDye','equipDye'].includes(b.action)){
     if(!near(actor,careerPlaces.market))return fail('Rejoins la mercerie aux Halles des Tisserands.');
     if(b.action==='buyArmor'){

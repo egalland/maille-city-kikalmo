@@ -1,3 +1,4 @@
+import {lostWool,woolReward,woolRadius} from './lost-wool.js';
 import {browserProfile} from './ammunition.js';
 import {careerPlaces,careerContracts,careerGarage,careerRadius} from './career-catalog.js';
 import {outfitShop} from './outfit-shop.js';
@@ -27,7 +28,13 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
   let nextAction=null,transferAmount=25;
   const contract=()=>careerContracts[state?.mission?.contract];
   const stage=()=>contract()?.stages[state.mission.stage];
-  const goal=()=>stage()?careerPlaces[stage().place]:typeof manual==='object'?manual:careerPlaces[manual];
+  const wool=()=>lostWool(net.serverTime(),state?.wool);
+  const showWool=()=>{
+    const e=wool();
+    if(!state||state.mission||!['find','carrying'].includes(e.phase))return false;
+    return manual==='wool'||!manual&&(e.phase==='carrying'||reach(game.getPosition(),e.point)<5);
+  };
+  const goal=()=>showWool()?wool().goal:stage()?careerPlaces[stage().place]:typeof manual==='object'?manual:careerPlaces[manual];
   function nearby(){
     const self=game.getPosition();
     return Object.values(careerPlaces).find(p=>reach(p,self)<=careerRadius);
@@ -36,7 +43,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     if(state?.mission){notify('Termine ou quitte le contrat en cours pour changer de destination.');return;}
     manual=id;close();update();
   }
-  async function send(which,{contract:job,amount,dye}={}){
+  async function send(which,{contract:job,amount,dye,slot}={}){
     if(pending||net.status!=='online'){if(which!=='state')notify('La connexion au monde est nécessaire.');return;}
     const before=state;
     pending=true;lastRead=Date.now();update();
@@ -44,7 +51,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),8000);
     try{
       const response=await fetch('/api/world/career',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',
-        body:JSON.stringify({map:'enfer',id,token,profile,action:which,revision:before?.revision,contract:job,amount,dye,wear:game.getArmorWear?.()}),signal:abort.signal});
+        body:JSON.stringify({map:'enfer',id,token,profile,action:which,revision:before?.revision,contract:job,amount,dye,slot,wear:game.getArmorWear?.()}),signal:abort.signal});
       const data=await response.json();
       if(data.state){
         state=data.state;
@@ -54,6 +61,8 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       if(!response.ok||!data.ok)throw Error(data.error||'Le registre est momentanément indisponible.');
       lastIssue='';
       if(data.notice&&!data.vehicle){notify(data.notice);return;}
+      if(which==='woolPick'){manual='wool';notify('Pelote ramassée · Rapporte-la à la mercerie.');}
+      if(which==='woolReturn'){manual=null;notify('Pelote rendue · +'+money(woolReward));}
       if(which==='start'){manual=null;close();notify(contract().title);}
       if(which==='advance'){
         if(!state.mission)notify('Contrat rempli · +'+money(state.cash-before.cash));
@@ -82,6 +91,9 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
   action.onclick=act;
   function update(){
     const now=net.serverTime(),pos=game.getPosition(),life=getState(),s=stage(),point=goal(),place=nearby();
+    const ev=wool(),eventGoal=showWool();
+    game.setLostWool?.(state&&ev.phase==='find'?ev.point:null);
+    if(manual==='wool'&&!eventGoal)manual=null;
     setCareerGoal(point);
     const name=state?money(state.cash):'— ₣';
     if(balance.textContent!==name)balance.textContent=name;
@@ -100,7 +112,15 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       instruction.textContent=s?s.label:target.name;
       detail.textContent=[s?target.name:'',dist>=1000?(dist/1000).toFixed(1).replace('.',',')+' km':Math.round(dist)+' m',remaining===null?'':clock(remaining)].filter(Boolean).join(' · ');
       let verb='';
-      if(at&&s&&remaining>0){
+      if(eventGoal){
+        const collect=ev.phase==='find';
+        instruction.textContent=collect?'Retrouver la pelote':'Rapporter la pelote';
+        detail.textContent=target.name+' · '+Math.round(dist)+' m · '+clock(until(ev.ends,now));
+        if(dist<=woolRadius){
+          if(life.inVehicle)detail.textContent+=' · Descends du véhicule';
+          else{verb=collect?'Ramasser':'Remettre';nextAction=()=>send(collect?'woolPick':'woolReturn',{slot:ev.slot});}
+        }
+      }else if(at&&s&&remaining>0){
         if(s.vehicle&&life.inVehicle&&!life.passenger&&contract().id!=='race'&&life.speed>14){
           detail.textContent+=' · Ralentis pour t’arrêter';
         }else if(!s.vehicle||life.inVehicle&&!life.passenger){verb='Valider';nextAction=()=>send('advance');}
@@ -113,7 +133,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       const projected=dist<95&&game.projectPlace?.(target.x,target.y);
       pin.hidden=!projected||Boolean(modalOpen());
       if(projected&&!pin.hidden){
-        pin.textContent=placeSymbols[target.id]||'V';pin.style.left=(projected.x*100)+'%';pin.style.top=(projected.y*100)+'%';
+        pin.textContent=eventGoal?'●':placeSymbols[target.id]||'V';pin.style.left=(projected.x*100)+'%';pin.style.top=(projected.y*100)+'%';
         pin.setAttribute('aria-label',target.name);
       }
     }else pin.hidden=true;
@@ -128,7 +148,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     const pos=game.getPosition(),here=reach(pos,careerPlaces.garage)<=careerRadius,car=getState();
     const inBank=['garage','market','police'].includes(nearby()?.id);
     const market=nearby()?.id==='market';
-    const key=JSON.stringify([market,inBank,car.armor,state?.leaders,state?.revision,state?.cash,state?.mission,nowOnline(),here,car.inVehicle,car.vehicleHealth,pending,lastIssue,staged]);
+    const key=JSON.stringify([wool().phase,wool().slot,market,inBank,car.armor,state?.leaders,state?.revision,state?.cash,state?.mission,nowOnline(),here,car.inVehicle,car.vehicleHealth,pending,lastIssue,staged]);
     if(key===lastPanelKey&&body.childNodes.length)return;
     lastPanelKey=key;
     body.dataset.transferFocus=document.activeElement?.id==='career-amount'?'1':'0';
@@ -184,6 +204,15 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
           ranking.open=Boolean(body.querySelector?.('.career-ranking')?.open);
           card.append(ranking);
         }
+        list.append(card);
+      }
+      const event=wool();
+      if(!job&&state&&['find','carrying'].includes(event.phase)){
+        const card=make('article','career-job'),head=make('div','career-job-head');
+        head.append(make('h3','','La pelote égarée'),make('strong','career-reward','+'+money(woolReward)));
+        const track=control(event.phase==='carrying'?'Rejoindre la mercerie':'Chercher à pied',()=>guide('wool'));
+        card.append(head,make('p','',event.phase==='carrying'?'La mercerie des Halles attend ta trouvaille.':
+          'Une pelote est tombée près de '+event.point.name+'. Retrouve-la avant la fin de la collecte.'),track);
         list.append(card);
       }
       return list;
