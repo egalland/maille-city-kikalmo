@@ -1,3 +1,5 @@
+import {lampState,pedestrianGreen} from './street-signals.js';
+import {nearbySignals} from './paris-world.js';
 import {pavementRuns} from './curb-clearance.js';
 import {frontageSigns,frontageStyle} from './enfer-frontage.js';
 import {canopyDyes} from './street-props-art.js';
@@ -653,6 +655,17 @@ function decoration(kind,variant,stage,distant=false) {
       }
     }
     for(const x of [-1.55,1.55])b.box(x,0,0,.23,masonry?.92:iron?1.64:1.45,.28,masonry?'#aa7561':'#80786a');
+  }else if(kind==='signal'){
+    b.tube([0,.04,0],[0,3.14,0],.115,.074,metal,7);
+    b.tube([0,.06,0],[0,.37,0],.185,.15,edge,7);
+    b.box(0,2.40,0,.33,1.05,.48,'#263d40');
+    for(let i=0;i<3;i++){
+      const y=3.23-i*.31,active=variant%4===i;
+      b.ball(.179,y,0,.053,.114,.117,active?['#ff624d','#ffc247','#47f2a7'][i]:'#48514e',8,4,active?'signalLight':'plain');
+      b.box(.167,y+.13,0,.19,.048,.30,'#344749');
+    }
+    b.box(0,1.64,0,.28,.46,.31,'#344749');
+    b.ball(0,1.89,.165,.088,.106,.033,variant>=4?'#56f7b2':'#ef7669',7,4,'signalLight');
   }else if(kind==='lamp'){
     b.tube([0,0,0],[0,.34,0],.32,.23,metal,9);
     b.tube([0,.3,0],[0,1.21,0],.17,.115,edge,9);
@@ -855,6 +868,7 @@ function disposeGroup(group){
 }
 export function createCity3D(scene,{software=false}={}){
   const materials=cityMaterials(isEnfer), index=makeIndex(),root=new T.Group();root.name=isEnfer?'Maille City · Enfer':'Maille City · Paris';
+  if(isEnfer)materials.signalLight=new T.MeshBasicMaterial({vertexColors:true,side:T.DoubleSide,toneMapped:false});
   const terrain=new Batch();makeGround(terrain);
   const base=terrain.mesh(materials);
   if(isEnfer)for(const surface of base.children)surface.receiveShadow=true;
@@ -897,6 +911,19 @@ export function createCity3D(scene,{software=false}={}){
         strip(b,'plain',seg.a,seg.d,seg.street.w,.03,'#827e84');
       }
     }
+    if(isEnfer && !target.skyline){
+      b.base=0;b.foundation=false;b.drape=true;
+      for(const signal of nearbySignals((ix+.5)*chunkSize,(iz+.5)*chunkSize,chunkSize*.56)){
+        if(key(signal.x,signal.y)!==target.key)continue;
+        for(const arm of signal.arms){
+          const c=Math.cos(arm.angle),s=Math.sin(arm.angle),w=arm.width/2-.38;
+          for(let offset=-w+.22;offset<w;offset+=.90){
+            const x=arm.x+c*arm.setback-s*offset,z=arm.y+s*arm.setback+c*offset;
+            strip(b,'plain',[x-c*.95,z-s*.95],[x+c*.95,z+s*.95],.46,.105,'#e5d9bd',1);
+          }
+        }
+      }
+    }
     const object=b.mesh(materials);
     if(isEnfer&&!target.skyline)for(const surface of object.children){
       surface.receiveShadow=true;
@@ -930,11 +957,14 @@ export function createCity3D(scene,{software=false}={}){
     }
     propModels.set(k,instances);return instances;
   }
+  let visibleSignal=false,lastSignalTick=-1;
   function updateProps(pos,state){
-    propGroups.clear();let shadowIndex=0;
+    visibleSignal=false;propGroups.clear();let shadowIndex=0;
     for(const prop of pickProps(state?.props,pos,software?78:220)){
       if(state.destroyed?.has?.(prop.id))continue;
-      const type=prop.type||prop.kind||'bollard',h=hash(prop.id),variant=type==='tree'?h%3:0;
+      if(prop.type==='signal')visibleSignal=true;
+      const type=prop.type||prop.kind||'bollard',h=hash(prop.id),variant=type==='tree'?h%3:type==='signal'?
+        ['red','amber','green'].indexOf(lampState(prop.signal,prop.angle,state.epoch))+(pedestrianGreen(prop.signal,state.epoch)?4:0):0;
       const stage=propWearStage(state.propHealth?.get(prop.id));
       const distant=type==='tree'&&(prop.x-pos.x)**2+(prop.y-pos.y)**2>58*58,k=type+variant+'/'+stage+'/'+distant;
       if(!propGroups.has(k))propGroups.set(k,{items:[],type,variant,stage,distant});
@@ -965,8 +995,9 @@ export function createCity3D(scene,{software=false}={}){
     while(targets.length&&count<(initial?2:3)&&(count===0||performance.now()-start<(initial?26:4))){buildChunk(targets.shift());count++;}
     tick++;const size=worldState.destroyed?.size||0,n=worldState.props?.length||0;
     const changed=wearChanged(worldState.props||[],worldState.propHealth,worldState.propDamageRevision);
-    if(stamp===0||Math.hypot(propX-pos.x,propZ-pos.y)>2.8||size!==destroyCount||n!==lastPropCount||changed||tick-stamp>=33){
-      updateProps(pos,worldState);propX=pos.x;propZ=pos.y;destroyCount=size;lastPropCount=n;stamp=tick;
+    const signalTick=Math.floor((worldState.epoch??Date.now())/1000);
+    if(stamp===0||(signalTick!==lastSignalTick&&visibleSignal)||Math.hypot(propX-pos.x,propZ-pos.y)>2.8||size!==destroyCount||n!==lastPropCount||changed||tick-stamp>=33){
+      lastSignalTick=signalTick;updateProps(pos,{...worldState,epoch:worldState.epoch??Date.now()});propX=pos.x;propZ=pos.y;destroyCount=size;lastPropCount=n;stamp=tick;
     }
   };
   return {update,dispose(){

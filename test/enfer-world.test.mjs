@@ -39,6 +39,15 @@ test('the bundled Noyonnais map opens on usable streets and includes water, terr
   assert.ok(data.streets.length>3_000);
   assert.ok(data.streets.some(r=>r.name?.toLowerCase().includes('parvis notre')));
   assert.ok(data.water.some(w=>w.elevation>0));
+  const {nearbySignals}=await import('../public/paris-world.js');
+  const signals=nearbySignals(SPAWN.x,SPAWN.y,380);
+  assert.ok(signals.length>=2);
+  const signal=signals[0],activeEpoch=(720-signal.offset+18)*1000;
+  const poles=nearbyProps(signal.x,signal.y,20).filter(p=>p.type==='signal');
+  assert.equal(poles.length,signal.arms.length);
+  assert.ok(poles.every(p=>blocked(p.x,p.y,.35)));
+  const walking=routeAgents(signal.x,signal.y,21,activeEpoch).actors.find(a=>a.id==='n-cross-'+signal.id);
+  assert.ok(walking);
   assert.equal(SPAWN.key,'noyon');
   assert.equal(districtAt(SPAWN.x,SPAWN.y),'Les Vieilles Mailles');
   assert.ok(coreDestinations.every(p=>!/Noyon|Pontoise|Couarcy/i.test(p.label)));

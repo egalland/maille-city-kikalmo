@@ -1,3 +1,5 @@
+import {cityClimate} from './city-climate.js';
+import {junctionSignals,crossingWalker,sidewalkRoutine} from './street-signals.js';
 import {yarnPalette} from './wool-art.js';
 // Local coordinates are metres, east and south. All map layers share the IGN projection in paris-data.
 import { buildings, streets, water, green, metadata } from './paris-data.js';
@@ -770,10 +772,30 @@ function clearTrafficFurniture(){
   props.length=retained;
 }
 clearTrafficFurniture();
+const signals = isEnfer ? junctionSignals(trafficRoutes, streetList, {
+  builtUp:(x,y)=>enferDistrict(x,y)!=='Vallée des Aulnes',
+  clear:(x,y,radius)=>!testPose(x,y,{radius}), hash
+}) : {sites:[], byId:new Map()};
+const signalGrid=new Grid(96);
+for(const signal of signals.sites){
+  signalGrid.insert(signal,bounds([[signal.x,signal.y]],24));
+  for(const [i,arm] of signal.arms.entries()){
+    const [x,y]=arm.pole,r=.17;
+    const prop={id:'signal-'+signal.id+'-'+i,type:'signal',x,y,r,h:3.45,angle:arm.angle,signal};
+    props.push(prop);decor.insert(prop,bounds([[x,y]],r));
+  }
+}
+export function nearbySignals(x,y,radius){
+  return [...signalGrid.area(x,y,radius)];
+}
 const detours=indexTrafficDetours(trafficRoutes);
 export const trafficAlternatives=detours.alternatives;
 for(const route of trafficRoutes.values())circulation.insert(route,bounds(route.points,4));
-export const sampleTrafficRoute=(routeId,distance)=>sampleRoadRoute(trafficRoutes.get(routeId),distance);
+export function sampleTrafficRoute(routeId,distance){
+  const pose=sampleRoadRoute(trafficRoutes.get(routeId),distance);
+  if(pose?.junction)pose.junction.signal=signals.byId.get(pose.junction.id);
+  return pose;
+}
 // Build the swept envelopes of the traffic lanes once, near each travel stop.
 // A stationary car needs to clear the rear of a turning bus as well as its centre line.
 function lanesNearStop(stop,radius){
@@ -866,7 +888,10 @@ for(const {p} of walkerSeeds.values()){
     for(let d=start;d<end;d+=3.5){
       const pos=alongPath(p,d),off=(p.road.w*.5+1.9)*side;
       const x=pos.x-Math.sin(pos.angle)*off,y=pos.y+Math.cos(pos.angle)*off;
-      if(testPose(x,y,{radius:.28})){
+      // End a sidewalk trip where a different carriageway cuts the pavement.
+      const carriageway=isEnfer && [...roadGrid.area(x,y,8)].some(seg=>seg.road!==p.road &&
+        seg.road.kind!=='path' && !seg.road.level && lineDist2(x,y,seg.a,seg.b)<sq(seg.road.w*.5+.28));
+      if(carriageway || testPose(x,y,{radius:.28})){
         if(run.length)addPatrol(run,p.id+':'+side+':'+(number++),p.road.name);
         run=[];continue;
       }
@@ -912,15 +937,27 @@ export function routeAgents(x,y,radius=140,epochMs=Date.now()){
       consider(cars,{...p,...car,routeDistance});
     }
   }
+  const hour=isEnfer?cityClimate(epochMs).hour:12;
   for(const route of footPatrol.area(x,y,radius)){
-    const speed=.85+(route.key%67)*.009,period=2*route.length;
+    const pace=.85+(route.key%67)*.009,period=2*route.length;
     for(let i=0;i<route.count;i++){
-      const d=wrap(sec*speed+route.key%period+i*period/route.count,period),ret=d>route.length;
-      const pos=alongPath(route,ret?period-d:d);
-      if(ret)pos.angle+=Math.PI;
+      const d=wrap(sec*pace+route.key%period+i*period/route.count,period);
+      const trip=isEnfer?sidewalkRoutine(sec,route,i,hour):{
+        distance:d>route.length?period-d:d,returning:d>route.length,speed:pace,activity:'walking'
+      };
+      if(!trip)continue;
+      const pos=alongPath(route,trip.distance);
+      if(trip.returning)pos.angle+=Math.PI;
       const n=(route.key+i*3)>>>0, type=isEnfer?'human':flocks[n%flocks.length];
-      consider(actors,{...pos,id:'n'+route.id+'-'+i,type,kind:type,variant:n%8,color:tintedPeds[n%tintedPeds.length],speed,moving:true,walk:sec*speed*4.6+i});
+      consider(actors,{...pos,id:'n'+route.id+'-'+i,type,kind:type,variant:n%8,color:tintedPeds[n%tintedPeds.length],
+        speed:trip.speed,activity:trip.activity,moving:trip.speed>0,walk:sec*trip.speed*4.6+i});
     }
+  }
+  for(const signal of nearbySignals(x,y,radius)){
+    const n=hash(signal.id),arm=signal.arms[n%signal.arms.length];
+    if((hour<6||hour>=22)&&n%3)continue;
+    consider(actors,{...crossingWalker(arm,signal,epochMs),id:'n-cross-'+signal.id,
+      type:'human',kind:'human',variant:n%8,color:tintedPeds[n%tintedPeds.length],walk:sec*5});
   }
   for(const v of parkedCars)consider(cars,{...v});
   return {actors:actors.sort((a,b)=>a.distanceSq-b.distanceSq).slice(0,32),cars:cars.sort((a,b)=>a.distanceSq-b.distanceSq).slice(0,24)};

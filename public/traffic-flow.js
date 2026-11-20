@@ -1,3 +1,4 @@
+import {lampState} from './street-signals.js';
 import { vehicleSpec } from './vehicle-types.js';
 
 const clamp=(value,min,max)=>Math.max(min,Math.min(value,max));
@@ -125,7 +126,13 @@ export function createTrafficFlow(sample,chooseDetour){
     }
     return true;
   }
-  function planJunctions(states,bodies){
+  function mayEnter(car,j,epoch){
+    if(!j?.signal)return true;
+    // Clear the intersection if a driver is past the stop line on phase change.
+    if(j.distance<stopLine+car.body.length-.4)return true;
+    return lampState(j.signal,j.angle,epoch)==='green';
+  }
+  function planJunctions(states,bodies,epoch){
     const groups=new Map();
     function groupFor(j){
       let group=groups.get(j.id);
@@ -142,7 +149,7 @@ export function createTrafficFlow(sample,chooseDetour){
       if(!car||car.distance>=permit.clearAt){permits.delete(permit);continue;}
       if(car.distance-permit.lastDistance>.35){permit.lastDistance=car.distance;permit.lastProgress=tick;}
       if(car.distance<permit.enterAt+.55){
-        if(j&&!exitOpen(car,bodies)){permits.delete(permit);continue;}
+        if(j&&(!mayEnter(car,j,epoch)||!exitOpen(car,bodies))){permits.delete(permit);continue;}
         if(tick-permit.lastProgress>3.2){car.yieldUntil=tick+2;permits.delete(permit);continue;}
       }
       groupFor(permit.crossing).grants.push(permit);
@@ -159,7 +166,7 @@ export function createTrafficFlow(sample,chooseDetour){
       }
     }
     for(const group of groups.values()){
-      const eligible=group.drivers.filter(car=>!permitted(car.seed.id,car.pose.junction)&&car.yieldUntil<=tick&&exitOpen(car,bodies));
+      const eligible=group.drivers.filter(car=>!permitted(car.seed.id,car.pose.junction)&&car.yieldUntil<=tick&&mayEnter(car,car.pose.junction,epoch)&&exitOpen(car,bodies));
       if(!eligible.length)continue;
       const turningLeft=new Set();
       for(const car of eligible){
@@ -447,7 +454,7 @@ export function createTrafficFlow(sample,chooseDetour){
       if(planIn<=0){
         planIn=planPeriod;
         for(const car of states)if(cars.has(car.seed.id))considerDetour(car,bodies,blockedPose);
-        planJunctions(states,bodies);
+        planJunctions(states,bodies,epoch);
         for(const car of states)if(cars.has(car.seed.id))car.target=planSpeed(car,bodies,blockedPose);
       }
       for(const car of states){
@@ -457,7 +464,9 @@ export function createTrafficFlow(sample,chooseDetour){
         else car.stalledSince=null;
         const stalled=car.stalledSince==null?0:tick-car.stalledSince;
         const close=observer&&distanceSquared(observer,car.pose)<12**2;
-        const recycle=recycleAfter>0&&stalled>=recycleAfter*(close?2:1);
+        const waitingAtLight=car.pose.junction?.signal && !mayEnter(car,car.pose.junction,epoch);
+        if(waitingAtLight)car.stalledSince=null;
+        const recycle=!waitingAtLight&&recycleAfter>0&&stalled>=recycleAfter*(close?2:1);
         if(!advanced||recycle){
           cars.delete(car.seed.id);releasePermits(car.seed.id);
           refused.set(car.seed.id,recycle?tick+12:Infinity);car.body.x=Infinity;
