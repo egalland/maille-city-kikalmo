@@ -93,7 +93,13 @@ test('walk, board, deliver, crash, repair and start a new job on the continuous 
   await command('state');const openingCash=career.cash;
   await command('start',{contract:'delivery'});await command('advance');assert.equal(career.mission.stage,1);
   await driveTo(careerPlaces.quay);await command('advance');assert.equal(career.cash,openingCash+85);
+  for(let shot=0;shot<6&&hud.wanted<1;shot++){
+    game.action('fire',true);game.action('fire',false);
+    for(let i=0;i<10;i++){step();if(i%3===0)await sync();}
+  }
+  assert.ok(hud.wanted>=1,'witnesses reported shots near the unloading place');
   await driveTo(careerPlaces.garage);
+  assert.equal(hud.wanted,0,'the search ends when the moving suspect loses contact');
   if(hud.vehicleHealth===100){
     const g=game.getPosition();let obstacle;
     for(let d=6;d<21&&!obstacle;d+=.6)for(let i=0;i<32;i++){
