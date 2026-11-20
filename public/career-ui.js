@@ -3,6 +3,7 @@ import {placeSymbols,setCareerGoal} from './career-navigation.js';
 const money=n=>Number(n).toLocaleString('fr-FR')+' ₣';
 const until=(timestamp,now)=>Math.max(0,Math.ceil((timestamp-now)/1000));
 const clock=seconds=>Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');
+const lapTime=ms=>clock(Math.floor(ms/1000))+','+String(Math.floor((ms%1000)/10)).padStart(2,'0');
 const reach=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
 const make=(tag,style,label)=>{
   const e=document.createElement(tag);e.className=style;
@@ -50,7 +51,10 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       const response=await fetch('/api/world/career',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',
         body:JSON.stringify({map:'enfer',id,token,profile,action:which,revision:before?.revision,contract:job,amount}),signal:abort.signal});
       const data=await response.json();
-      if(data.state)state=data.state;
+      if(data.state){
+        state=data.state;
+        game.setFarePassenger?.(state.mission?.contract==='taxi'&&state.mission.stage>0?state.mission.car:null);
+      }
       if(!response.ok||!data.ok)throw Error(data.error||'Le registre est momentanément indisponible.');
       lastIssue='';
       if(data.notice&&!data.vehicle){notify(data.notice);return;}
@@ -60,6 +64,8 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
         else notify('Étape validée · '+stage().label);
       }
       if(which==='cancel')notify('Contrat quitté.');
+      if(which==='publishLap')notify('Ton chrono est publié.');
+      if(which==='hideLap')notify('Ton chrono a été retiré.');
       if(which==='license')notify('La licence de ton atelier est active.');
       if(which==='collectRent')notify('Recettes encaissées · +'+money(state.cash-before.cash));
       if(which==='deposit'||which==='withdraw')notify('Virement effectué · '+money(amount));
@@ -74,7 +80,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       if(which!=='state')notify(lastIssue);
     }finally{clearTimeout(timer);pending=false;update();}
   }
-  const act=()=>{if(nextAction&&!pending)nextAction();};
+  const act=()=>{if(nextAction&&!pending)return nextAction();};
   action.onclick=act;
   function update(){
     const now=net.serverTime(),pos=game.getPosition(),life=getState(),s=stage(),point=goal(),place=nearby();
@@ -93,7 +99,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       if(at&&s&&remaining>0){
         if(s.vehicle&&life.inVehicle&&!life.passenger&&contract().id!=='race'&&life.speed>14){
           detail.textContent+=' · Ralentis pour t’arrêter';
-        }else if(!s.vehicle||life.inVehicle&&!life.passenger){verb='Valider';nextAction=()=>void send('advance');}
+        }else if(!s.vehicle||life.inVehicle&&!life.passenger){verb='Valider';nextAction=()=>send('advance');}
         else detail.textContent+=' · Prends le volant';
       }else if(at&&target.id==='garage'){verb='Garage';nextAction=()=>{staged='garage';open();};}
       else if(at&&service&&target.id===place.id){verb='Banque';nextAction=()=>{staged='bank';open();};}
@@ -116,7 +122,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     panelBody=body;
     const pos=game.getPosition(),here=reach(pos,careerPlaces.garage)<=careerRadius,car=getState();
     const inBank=['garage','market','police'].includes(nearby()?.id);
-    const key=JSON.stringify([inBank,state?.revision,state?.cash,state?.mission,nowOnline(),here,car.inVehicle,car.vehicleHealth,pending,lastIssue,staged]);
+    const key=JSON.stringify([inBank,state?.leaders,state?.revision,state?.cash,state?.mission,nowOnline(),here,car.inVehicle,car.vehicleHealth,pending,lastIssue,staged]);
     if(key===lastPanelKey&&body.childNodes.length)return;
     lastPanelKey=key;
     body.dataset.transferFocus=document.activeElement?.id==='career-amount'?'1':'0';
@@ -152,7 +158,26 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       const take=control(job.cooperative?'Accepter en duo':'Accepter',()=>send('start',job.id),'mc-primary');
       take.disabled=!state||pending||!nowOnline();
       const foot=make('div','career-job-foot');foot.append(make('span','',job.stages.length+' étapes · '+clock(job.seconds)),take);
-      card.append(heading,make('p','',job.description),foot);list.append(card);
+      card.append(heading,make('p','',job.description),foot);
+      if(job.id==='race'){
+        const ranking=make('details','career-ranking');
+        ranking.append(make('summary','','Chronos du quartier'));
+        if(state?.leaders?.length){
+          const scores=make('ol','');
+          for(const lap of state.leaders)scores.append(make('li','',lap.name+' · '+lapTime(lap.ms)));
+          ranking.append(scores);
+        }else ranking.append(make('p','','Aucun chrono publié.'));
+        if(state?.bestLapMs){
+          ranking.append(make('p','','Ton record · '+lapTime(state.bestLapMs)));
+          if(!state.publicLapMs||state.bestLapMs<state.publicLapMs){
+            const share=control('Publier mon chrono',()=>send('publishLap'));share.disabled=pending;ranking.append(share);
+          }
+          if(state.publicLapMs){const hide=control('Retirer mon chrono',()=>send('hideLap'));hide.disabled=pending;ranking.append(hide);}
+        }
+        ranking.open=Boolean(body.querySelector?.('.career-ranking')?.open);
+        card.append(ranking);
+      }
+      list.append(card);
     }
     const workshop=make('section','career-garage');
     const title=make('h3','','Garage des Deux Bornes');

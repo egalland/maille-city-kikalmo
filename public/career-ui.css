@@ -23,3 +23,4 @@
 .career-property{margin-top:12px;border-top:1px dashed #788678;padding-top:12px}
 .career-garage .career-bank-balance{margin:5px 0 15px;font-size:25px;color:#f7d699;font-weight:750}
 .career-transfer-label{display:block;color:#d3dfd3;font-size:14px;margin:6px 0}.career-garage input{display:block;width:100%;margin-bottom:9px}
+.career-ranking{margin-top:12px;border-top:1px dashed #718276;padding-top:9px}.career-ranking summary{cursor:pointer;font-size:14px;color:#f5d89f}.career-ranking ol{padding-left:20px;font-variant-numeric:tabular-nums}.career-ranking li+li{margin-top:4px}.career-ranking button{margin:3px 6px 2px 0}
