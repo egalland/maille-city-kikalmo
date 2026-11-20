@@ -1,3 +1,5 @@
+import {heritageByFootprint,heritagePlinth} from './enfer-heritage.js';
+import {heritageModel} from './heritage-models.js';
 import {emotePatch} from './emote-art.js';
 import {canvasViewRange,detailedCanvasRange,streetViewRange} from './view-range.js';
 import {paintSkyView} from './textile-sky.js';
@@ -9,7 +11,7 @@ import {paintKnit as knitArchitecture} from './wool-art.js';
 import {createBleedFibers} from './bleed-fibers.js';
 import {fiberLifetime,impactFibers} from './puppet-combat.js';
 import {gradedRoad} from './enfer-bridges.js';
-import {terrainHeight,terrainGradient,roadHeight,buildingGround,waterLevel,walkingPose} from './terrain-height.js';
+import {baseTerrainHeight,terrainHeight,terrainGradient,roadHeight,buildingGround,waterLevel,walkingPose} from './terrain-height.js';
 import {terracePanels} from './street-terraces.js';
 import {propDebris,propWearProfile,propWearStage,trackPropWear} from './prop-wear.js';
 import {buildShotEffect,effectDuration} from './weapon-effects.js';
@@ -631,6 +633,29 @@ export function createCanvasView(canvas,spawn,onNotice){
   }
   function building(item,skyline=false){
     const {o,wind,seed,bounds}=item,poly=o.poly,H=Math.max(2.2,o.h||13);
+    const site=isEnfer&&heritageByFootprint.get(String(o.id));
+    if(site){
+      projectionBase=baseTerrainHeight(site.x,site.y);
+      const add=(points,color)=>{
+        const pp=projectPoly(points);
+        if(!pp)return;
+        const u=points[1][0]-points[0][0],v=points[1][1]-points[0][1],l=Math.hypot(u,v);
+        const shade=l>.001?.91+.09*(v-u*.4)/l:1;
+        const z=points.reduce((n,p)=>n+depth(p[0],p[1]),0)/points.length,fill=tint(color,shade);
+        queue.push({z,draw:()=>fillPath(pp,fill)});
+      };
+      const base=heritagePlinth(site,o);
+      for(let i=0;i<base.poly.length;i++){
+        const a=base.poly[i],b=base.poly[(i+1)%base.poly.length];
+        add([[...a,0],[...b,0],[...b,base.height],[...a,base.height]],site.key==='mairie-briques'?'#a25e50':'#cbbb9e');
+      }
+      add(base.poly.map(p=>[...p,base.height]),'#9a8981');
+      if(String(o.id)===site.ids[0]){
+        const near=!skyline&&Math.hypot(site.x-camX,site.y-camY)<150;
+        for(const f of heritageModel(site,skyline?'silhouette':near))add(f.p.map(([x,h,z])=>[x,z,h]),f.color);
+      }
+      return;
+    }
     const enferIndex=isEnfer?enferStyle(o):-1,local=enferStyles[enferIndex];
     const glass=!local&&(H>48||(bounds.x< -135&&bounds.y< -625&&H>24));
     const pitched=local&&enferRoof(poly,H,enferIndex);

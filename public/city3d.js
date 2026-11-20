@@ -1,3 +1,5 @@
+import {heritageByFootprint,heritagePlinth} from './enfer-heritage.js';
+import {heritageModel} from './heritage-models.js';
 import {lampState,pedestrianGreen} from './street-signals.js';
 import {streetFurniture} from './street-furniture.js';
 import {drawBoundary} from './residential-boundaries.js';
@@ -396,6 +398,25 @@ function frontageDetails(b,a,d,side,seed,store){
   }
 }
 
+function addHeritageBuilding(batch,site,building,detail,skyline){
+  batch.base=baseTerrainHeight(site.x,site.y);batch.road=null;batch.drape=false;batch.foundation=true;
+  const material=skyline?'plain':'felt',color=site.key==='mairie-briques'?'#a25e50':'#cbbb9e';
+  const base=heritagePlinth(site,building);
+  for(const outline of [base.poly,...building.holes||[]])for(let i=0;i<outline.length;i++){
+    const a=outline[i],b=outline[(i+1)%outline.length];
+    batch.wall(material,a,b,0,base.height,color,Math.hypot(a[0]-b[0],a[1]-b[1])/3,base.height/3);
+  }
+  flatWithHoles(batch,material,base.poly,building.holes,base.height,'#9a8981',3);
+  if(String(building.id)!==site.ids[0])return;
+  for(const {p,color,mat} of heritageModel(site,skyline?'silhouette':detail)){
+    // Choose UV axes from the surface itself so the stitches remain the same
+    // physical size on a bell tower and on the face of a dormer.
+    const dx=p[1][0]-p[0][0],dz=p[1][2]-p[0][2],len=Math.hypot(dx,dz);
+    const vertical=Math.max(...p.map(v=>v[1]))-Math.min(...p.map(v=>v[1]))>.05;
+    const uv=p.map(v=>vertical&&len>.001?[(v[0]*dx+v[2]*dz)/(3*len),v[1]/3]:[v[0]/3,v[2]/3]);
+    for(let i=1;i<p.length-1;i++)batch.tri(skyline?'plain':mat,p[0],p[i],p[i+1],color,[uv[0],uv[i],uv[i+1]]);
+  }
+}
 function addEnferBuilding(b,building,poly,detail,skyline,h){
   const index=enferStyle(building),{wall,roof,bay}=enferStyles[index];
   const sections=[poly,...(building.holes||[])];
@@ -484,13 +505,18 @@ function addEnferBuilding(b,building,poly,detail,skyline,h){
     b.box(x,roofShape.top([x,z])+.81,z,.73,.16,.76,'#5c4949');
   }
 }
-function addBuilding(b,building,detail,skyline=false){
+function addBuilding(b,building,detail,skyline=false,heritageDetail=false){
   const poly=distinct(building.poly);if(poly.length<3)return;
   const [cx,cz]=mean(poly);
   b.base=buildingGround(building.poly);b.foundation=true;
   if(specialFootprint(String(building.id),cx,cz))return;
   const id=hash(building.id),h=Math.max(1.9,Math.min(260,Number(building.h)||14));
-  if(isEnfer){addEnferBuilding(b,building,poly,detail,skyline,h);return;}
+  if(isEnfer){
+    const site=heritageByFootprint.get(String(building.id));
+    if(site)addHeritageBuilding(b,site,building,detail||heritageDetail,skyline);
+    else addEnferBuilding(b,building,poly,detail,skyline,h);
+    return;
+  }
   const glass=h>48||(cx< -135&&cz< -625&&h>24);
   const stone=glass?['#d0d1d4','#c8c6d6','#aabdc2','#ccced5'][id%4]:stones[id%stones.length];
   const roof=slates[(id>>>3)%slates.length];
@@ -917,7 +943,7 @@ export function createCity3D(scene,{software=false}={}){
     const b=new Batch();
     const [ix,iz]=target.key.split(',').map(Number);
     groundTile(b,ix*chunkSize,iz*chunkSize,target.detail?16:target.skyline?4:8,lakes,parks,isEnfer&&geo.buildings.length<15);
-    for(const building of geo.buildings)addBuilding(b,building,target.detail,target.skyline);
+    for(const building of geo.buildings)addBuilding(b,building,target.detail,target.skyline,target.heritageDetail);
     for(const seg of geo.segments){
       b.road=seg;
       if(!target.skyline)addRoad(b,seg,isEnfer?index.adjacent(seg):[]);
@@ -963,7 +989,15 @@ export function createCity3D(scene,{software=false}={}){
     }
     root.add(object);root.userData.cpuRevision++;
     const before=chunks.get(target.key);if(before)disposeGroup(before.object);
-    chunks.set(target.key,{object,detail:target.detail,skyline:target.skyline});
+    chunks.set(target.key,{object,detail:target.detail,skyline:target.skyline,heritageDetail:target.heritageDetail});
+  }
+  const monumentChunks=new Map();
+  if(isEnfer)for(const building of buildings){
+    const site=heritageByFootprint.get(String(building.id));
+    if(site?.ids[0]!==String(building.id))continue;
+    const [x,z]=mean(building.poly),k=key(x,z);
+    if(!monumentChunks.has(k))monumentChunks.set(k,[]);
+    monumentChunks.get(k).push(site);
   }
   function setTargets(pos){
     const sx=Math.floor(pos.x/chunkSize),sz=Math.floor(pos.y/chunkSize),keys=new Set(),next=[];
@@ -973,10 +1007,11 @@ export function createCity3D(scene,{software=false}={}){
       const dd=Math.hypot((cx+.5)*chunkSize-pos.x,(cz+.5)*chunkSize-pos.y);
       if(dd>(software?440:cityViewRange)||dd>streetViewRange&&!index.groups.has(k))continue;
       const detail=dd<(software?130:245),skyline=dd>(software?280:streetViewRange);
-      keys.add(k);next.push({key:k,detail,skyline,dist:dd});
+      const heritageDetail=monumentChunks.get(k)?.some(s=>Math.hypot(s.x-pos.x,s.y-pos.y)<155)||false;
+      keys.add(k);next.push({key:k,detail,skyline,heritageDetail,dist:dd});
     }
     for(const [k,entry] of chunks)if(!keys.has(k)){disposeGroup(entry.object);chunks.delete(k);root.userData.cpuRevision++;}
-    targets=next.filter(t=>!chunks.has(t.key)||chunks.get(t.key).detail!==t.detail||chunks.get(t.key).skyline!==t.skyline).sort((a,b)=>a.dist-b.dist);
+    targets=next.filter(t=>!chunks.has(t.key)||chunks.get(t.key).detail!==t.detail||chunks.get(t.key).skyline!==t.skyline||chunks.get(t.key).heritageDetail!==t.heritageDetail).sort((a,b)=>a.dist-b.dist);
     lastX=pos.x;lastZ=pos.y;
   }
   function propSet(kind,variant,stage,distant){

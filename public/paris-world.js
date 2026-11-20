@@ -1,3 +1,5 @@
+import {heritageByFootprint,heritagePlinthHeight} from './enfer-heritage.js';
+import {heritageHeight} from './heritage-models.js';
 import {streetParking} from './street-parking.js';
 import {boundarySpans} from './residential-boundaries.js';
 import {containsPoint as inRing,edgeContact} from './collision-ring.js';
@@ -11,7 +13,7 @@ import {yarnPalette} from './wool-art.js';
 import { buildings, streets, water, green, metadata, enclosureRows } from './paris-data.js';
 
 import {enferStops,enferDistrict,enferStreet} from './enfer-places.js';
-import { terrainHeight, buildingGround, waterLevel } from './terrain-height.js';
+import { baseTerrainHeight, terrainHeight, buildingGround, waterLevel } from './terrain-height.js';
 import {workshopId,workshopColliders} from './workshop.js';
 import {airfields} from './airfield.js';
 import { terraceProfiles } from './street-terraces.js';
@@ -133,6 +135,7 @@ for(const b of buildings){
     continue;
   }
   const item={...b,type:'building'};
+  if(isEnfer)item.heritage=heritageByFootprint.get(String(b.id));
   if(!isEnfer&&pyramidIds.has(String(b.id))){
     item.h=String(b.id)==='245184969'?21.6:21.6*Math.hypot(b.poly[0][0]-b.poly[1][0],b.poly[0][1]-b.poly[1][1])/35;
     item.taperCenter=b.poly.reduce((pt,v)=>[pt[0]+v[0]/b.poly.length,pt[1]+v[1]/b.poly.length],[0,0]);
@@ -245,6 +248,7 @@ function withinBoundary(x,y,r=0) {
 export const vaultableProp = item => (item.type==='enclosure'&&item.h<=1.34)||['bench','bollard','hydrant','bin','postbox','crate'].includes(item.type);
 export function surfaceTop(item,x,y) {
   if(item.type==='enclosure')return item.h;
+  if(item.heritage)return heritageHeight(item.heritage,x,y,heritagePlinthHeight(item.heritage,String(item.id)))+baseTerrainHeight(item.heritage.x,item.heritage.y)-terrainHeight(x,y);
   const base=item.poly?buildingGround(item.poly):terrainHeight(item.x,item.y);
   const relativeBase=base-terrainHeight(x,y)+(item.lift||0);
   const height=item.h??(item.type==='building'?11:item.fallen ? .50 : 1.63);
@@ -289,7 +293,7 @@ function testPose(x,y,opt={},propsEnabled=true) {
   for(const b of terrain.area(x,y,reach)){
     if(b.type==='water' && (opt.camera || (isEnfer && opt.swimmer) || isBridge(x,y,reach)))continue;
     if(b.type==='building'){
-      const clear=footZ==null ? z>=(b.h||11)||z<(b.minHeight||0)
+      const clear=footZ==null ? z>=(b.heritage?surfaceTop(b,x,y):b.h||11)||z<(b.minHeight||0)
         : footZ>=surfaceTop(b,x,y)-.002 || (b.minHeight>0 && footZ+(opt.bodyHeight||1.55)<=surfaceTop(b,x,y)-b.h+b.minHeight);
       if(clear)continue;
     }
