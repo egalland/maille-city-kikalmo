@@ -1,0 +1,37 @@
+import {careerPlaces} from './career-catalog.js';
+import {makeCareerRouter} from './career-route.js';
+export const placeSymbols={market:'M',garage:'G',station:'S',quay:'Q',police:'P'};
+let goal=null,route=[],router=null,origin=null;
+export function setCareerGoal(place){
+  if(goal?.id===place?.id)return;
+  goal=place;route=[];origin=null;
+}
+export function paintCareerNavigation(c,player,streets,{px,py,w,h,full}){
+  if(goal&&(!origin||Math.hypot(player.x-origin.x,player.y-origin.y)>18)){
+    router??=makeCareerRouter(streets);
+    route=router(player,goal);
+    origin={x:player.x,y:player.y};
+  }
+  c.save();
+  if(goal&&route.length){
+    c.beginPath();c.moveTo(px(player.x),py(player.y));
+    for(const p of route)c.lineTo(px(p.x),py(p.y));
+    c.lineTo(px(goal.x),py(goal.y));
+    c.lineJoin='round';c.lineCap='round';
+    c.lineWidth=full?4:5;c.strokeStyle='#46392f';c.stroke();
+    c.lineWidth=full?2.2:3;c.strokeStyle='#ffca65';c.stroke();
+  }
+  const pins=Object.values(careerPlaces);
+  if(goal&&!careerPlaces[goal.id])pins.push(goal);
+  for(const p of pins){
+    const active=p.id===goal?.id,r=active?8:6.5;
+    let x=px(p.x),y=py(p.y);
+    if(!full&&active){x=Math.max(r+2,Math.min(w-r-2,x));y=Math.max(r+2,Math.min(h-r-2,y));}
+    if(x<0||x>w||y<0||y>h)continue;
+    c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fillStyle=active?'#ffd583':'#253f41';c.fill();
+    c.strokeStyle=active?'#48372c':'#ecd8a9';c.lineWidth=1.4;c.stroke();
+    c.font='bold '+(r+2)+'px system-ui';c.textAlign='center';c.textBaseline='middle';c.fillStyle=active?'#372e2a':'#fff1cf';
+    c.fillText(placeSymbols[p.id]||'•',x,y+.4);
+  }
+  c.restore();
+}
