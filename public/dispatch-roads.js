@@ -254,7 +254,7 @@ export function stepDispatchFoot(state,goal,age,stride,walkable,face=goal){
 
 // Find a connected approach from beyond the immediate block. Edge directions
 // are reversed for the search so the resulting path can be driven forwards.
-export function planDistantDispatch(scene,type,roads,clear,walkable,from=null){
+export function planDistantDispatch(scene,type,roads,clear,walkable,from=null,block=null){
   const spec=vehicleSpec(type),nodes=new Map();
   function node(point){
     const [x,y]=point,key=Math.round(x*2)+','+Math.round(y*2);
@@ -277,7 +277,7 @@ export function planDistantDispatch(scene,type,roads,clear,walkable,from=null){
       }
     }
   }
-  const goals=[...nodes.values()].filter(n=>distance(n,scene)<46&&n.back.length);
+  const goals=[...nodes.values()].filter(n=>distance(n,scene)<(block?10:46)&&n.back.length);
   goals.sort((a,b)=>distance(a,scene)-distance(b,scene));
   for(const goal of goals.slice(0,12)){
     const frontier=[goal],dist=new Map([[goal,0]]),next=new Map(),closed=new Set();
@@ -290,6 +290,14 @@ export function planDistantDispatch(scene,type,roads,clear,walkable,from=null){
       if(spawn&&travel>=10){
         const points=from?[[from.x,from.y]]:[];
         for(let p=n;p;p=next.get(p))points.push([p.x,p.y]);
+        if(block){
+          const approach={x:block.x-3.4*Math.cos(block.angle),y:block.y-3.4*Math.sin(block.angle),angle:block.angle};
+          if(!clear(approach,spec,true))continue;
+          for(const q of [approach,block]){
+            const last=points.at(-1);
+            if(Math.hypot(q.x-last[0],q.y-last[1])>.1)points.push([q.x,q.y]);
+          }
+        }
         const line=streetGeometry({path:points,w:spec.halfWidth*2+.35},scene);
         const plan={type,spec,line,sign:1,length:line.length,from:0,distant:true};
         plan.park=dispatchRoadPose(plan,plan.length);
@@ -304,7 +312,7 @@ export function planDistantDispatch(scene,type,roads,clear,walkable,from=null){
       }
     }
   }
-  if(!from){
+  if(!from&&!block){
     for(const node of [...nodes.values()].filter(p=>distance(p,scene)>106&&distance(p,scene)<164)
       .sort((a,b)=>distance(a,scene)-distance(b,scene)).slice(0,24)){
       const approach=planDispatch(node,type,roads,clear,walkable);
