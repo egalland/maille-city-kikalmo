@@ -5,7 +5,7 @@ import {cabinFit,cabinOccupant,fitCabinPuppet} from './cabin-rider.js';
 import {yarnPalette} from './wool-art.js';
 import {puppetAppearance} from './puppet-dyes.js';
 import {puppetKnit,puppetFelt} from './puppet-material.js';
-import {jacketPattern,dressCivilian,travelerScarf,outerFoxEar} from './figure-tailoring.js';
+import {jacketPattern,civilianJackets,dressCivilian,travelerScarf,outerFoxEar} from './figure-tailoring.js';
 import {foxFaces,humanHead,humanNose,distantHead,distantNose,haircuts,distantSleeve,distantThigh,upperSleeve,foreSleeve,turnedCuff,trouserThigh,trouserCalf,boots} from './character-patterns.js';
 import {motionSeed,sampleLocomotion} from './locomotion-pose.js';
 import * as THREE from './three.js';
@@ -22,6 +22,8 @@ const geo={
   cylinder:new THREE.CylinderGeometry(1,1,1,16),cone:new THREE.ConeGeometry(1,1,12),
 };
 const crowdBall=new THREE.SphereGeometry(1,7,5);
+const civilianTrousers=['#3d5365','#685a4d','#594952','#4a4d59','#435d63','#545e49'];
+const civilianBoots=['#554347','#754b3f','#6b454a','#51414a','#48555a','#765b45'];
 const TAU=Math.PI*2;
 const clamp=(n,lo,hi)=>Math.max(lo,Math.min(hi,n));
 const colors={ink:yarnPalette.ink,boot:'#543f45',sole:'#392f3b',glove:'#fbe3b5',trim:'#e9ba69',teal:'#378784',deepTeal:yarnPalette.petrol};
@@ -197,14 +199,15 @@ function makeBody(look,high,seated=false){
   const group=new THREE.Group(),core=joint(group,'core',0,.69,0),torso=joint(core,'torso',0,.065,0);
   const head=joint(core,'head',.025,.49,0);
   const fur=pal.fur;
+  const human=animal==='human',faceSurface=high?'felt':'yarn',cut=look.pick%6;
+  const trousers=human?civilianTrousers[cut]:'#454052',boot=human?civilianBoots[cut]:isFox?'#815a43':colors.boot;
   const small=(parent,x,y,z,sx,sy,sz,c,rx=0,ry=0,rz=0,style='yarn')=>
     addPart(parent,high?geo.littleBall:crowdBall,x,y,z,sx,sy,sz,c,rx,ry,rz,style);
   const stitches={part:addPart,small,cord};
   // The yoke reaches the arm joints, closing the gap under each raised sleeve.
-  addPart(torso,jacketPattern,0,0,0,1,1,1,out[0]);
+  addPart(torso,human?civilianJackets[cut]:jacketPattern,0,0,0,1,1,1,out[0]);
   small(torso,.006,.252,0,.119,.135,.13,isFox?colors.deepTeal:out[0]);
   ball(torso,.01,-.224,0,.156,.089,.182,'#4d5262');
-  const human=animal==='human', faceSurface=high?'felt':'yarn';
   const detail=high?'near':'far';
   if(human)addPart(head,high?humanHead:distantHead,0,0,0,1,1,1,fur,0,0,0,faceSurface);
   else if(animal==='fox'){
@@ -213,14 +216,21 @@ function makeBody(look,high,seated=false){
   }
   else addPart(head,high?geo.detailBall:geo.littleBall,-.006,.120,0,.269,.245,.284,fur,0,0,0,faceSurface);
   if(animal==='human'){
-    const kind=look.pick%6;
-    if(kind!==4){
-      addPart(head,haircuts[kind][detail],0,0,0,1,1,1,pal.shade,0,0,0,faceSurface);
+    head.scale.set([1,.95,1.07,.96,1.02,.94][cut],[.98,1.05,.97,1.04,.93,1.02][cut],[.98,.91,1.03,.89,1.05,.97][cut]);
+    if(cut!==4){
+      addPart(head,haircuts[cut][detail],0,0,0,1,1,1,pal.shade,0,0,0,faceSurface);
     }
-    if(kind===2)small(head,-.239,.092,.016,.091,.082,.119,pal.shade,0,0,-.20);
-    if(kind===1||kind===5){
-      small(head,-.025,.324,0,.278,.092,.285,cloth);
-      small(head,.134,.294,-.006,.192,.031,.220,edge,0,0,-.075);
+    if(cut===0){
+      for(const [x,y,z,r] of [[.045,.327,-.142,.093],[-.064,.362,-.084,.091],[-.125,.345,.078,.102],[.055,.338,.099,.103],[-.030,.374,.049,.089]])
+        small(head,x,y,z,r,.77*r,r,pal.shade,0,0,0,faceSurface);
+    }
+    if(cut===1){
+      small(head,-.025,.355,0,.264,.082,.268,cloth);
+      small(head,.151,.313,-.006,.175,.027,.213,edge,0,0,-.095);
+    }
+    if(cut===2)small(head,-.243,.093,.045,.086,.073,.104,pal.shade,0,0,-.20);
+    if(cut===3){
+      for(const side of [-1,1])small(head,-.117,.056,side*.208,.132,.164,.072,pal.shade,.23*side,0,-.22,faceSurface);
     }
     for(const side of [-1,1]){
       small(head,-.042,.10,side*.257,.072,.087,.044,fur,0,0,0,faceSurface);
@@ -239,14 +249,14 @@ function makeBody(look,high,seated=false){
       if(seated){
         const side=s<0?'L':'R',arm=joint(core,'arm'+side,.001,.182,s*.224),leg=joint(core,'leg'+side,-.016,-.24,s*.112);
         const elbow=joint(arm,'elbow'+side,.008,-.162,.04*s),knee=joint(leg,'knee'+side,-.012,-.141,0);
-        for(const limb of [leg,knee])addPart(limb,distantThigh,0,0,0,.98,1,.98,'#454052');
-        addPart(knee,boots.far[0],0,0,0,1,1,1,colors.boot);
+        for(const limb of [leg,knee])addPart(limb,distantThigh,0,0,0,.98,1,.98,trousers);
+        addPart(knee,boots.far[0],0,0,0,1,1,1,boot);
         for(const limb of [arm,elbow])addPart(limb,distantSleeve,0,0,0,1,1,1,isFox?'#385561':out[0]);
         small(elbow,.06,-.166,s*.011,.065,.063,.061,human?fur:isFox?pal.shade:colors.glove);
         for(const limb of [arm,leg,elbow,knee])batchGroup(limb);
       }else{
-        addPart(core,distantThigh,-.016,-.24,s*.112,.98,1.8,.98,'#454052');
-        addPart(core,boots.far[0],-.028,-.381,s*.112,1,1,1,colors.boot);
+        addPart(core,distantThigh,-.016,-.24,s*.112,.98,1.8,.98,trousers);
+        addPart(core,boots.far[0],-.028,-.381,s*.112,1,1,1,boot);
         addPart(core,distantSleeve,.001,.182,s*.224,1,1.8,1,isFox?'#385561':out[0],-.13*s);
         small(core,.047,-.132,s*.266,.065,.063,.061,human?fur:isFox?pal.shade:colors.glove);
       }
@@ -286,15 +296,14 @@ function makeBody(look,high,seated=false){
     cord(head,[[.158,.248,.156*sign],[.192,.259,.131*sign],[.217,.25,.099*sign]],.014,pal.shade);
   }
   if(human){
-    const cut=look.pick%6,smile=cut===0||cut===3;
+    const smile=cut===0||cut===3;
     addPart(head,humanNose,0,0,0,1,1,1,pal.fur,0,0,0,faceSurface);
-    cord(head,[[.236,.021,-.061],[.25,.016,-.026],[.252,.018,.023],[.24,smile?.039:.020,.062]],.0058,pal.shade);
-    cord(head,[[.242,.003,-.03],[.255,.002,0],[.244,.007,.035]],.005,pal.inner);
+    cord(head,[[.236,smile?.039:.025,-.064],[.252,.014,-.024],[.252,.017,.023],[.236,smile?.037:.022,.063]],.007,pal.shade);
     for(const side of [-1,1]){
       const z=n=>side*n;
       cord(head,[[.242,.225,z(.075)],[.225,.243,z(.123)],[.186,.23,z(.174)]],.009,pal.shade);
       cord(head,[[.294,.095,z(.022)],[.278,.078,z(.040)],[.265,.076,z(.043)]],.005,pal.inner);
-      small(head,.186,.097,z(.17),.025,.022,.043,pal.inner,.05,-.60*side,0,faceSurface);
+      small(head,.194,.103,z(.163),.027,.030,.044,pal.inner,.05,-.58*side,0,faceSurface);
       if(cut===3){
         small(head,-.019,.055,z(.292),.010,.014,.009,'#e6bd73',0,0,0,'plain');
         cord(head,[[-.02,.048,z(.294)],[-.019,.025,z(.301)],[-.005,.024,z(.294)]],.004,'#caa46a');
@@ -382,9 +391,9 @@ function makeBody(look,high,seated=false){
     const hand=human?fur:isFox?pal.shade:colors.glove;
     small(elbow,.054,-.17,.011*s,.069,.083,.062,hand,.1*s,0,.05,faceSurface);
     small(elbow,.091,-.151,-.021*s,.039,.051,.036,hand,0,0,0,faceSurface);
-    addPart(leg,trouserThigh,0,0,0,1,1,1,'#454052');
-    addPart(knee,trouserCalf,0,0,0,1,1,1,'#454052');
-    addPart(knee,boots.near[0],0,0,0,1,1,1,isFox?'#815a43':colors.boot,0,0,0,'felt');
+    addPart(leg,trouserThigh,0,0,0,1,1,1,trousers);
+    addPart(knee,trouserCalf,0,0,0,1,1,1,trousers);
+    addPart(knee,boots.near[0],0,0,0,1,1,1,boot,0,0,0,'felt');
     addPart(knee,boots.near[1],0,0,0,1,1,1,colors.sole);
     for(const offset of [0,.028])cord(knee,[[.068+offset,-.139-offset*.55,-.046],[.073+offset,-.127-offset*.55,0],[.083+offset,-.145-offset*.55,.046]],.005,'#c69a75');
   }
@@ -447,7 +456,7 @@ export function createPuppet(type='fox',color,seed=0){
   }
   const human=animal==='human';
   if(human){
-    const width=[.94,1.03,.98,.91,1.08,1.01][pick%6],height=[1.02,1.04,.99,.95,1.05,.98][pick%6];
+    const width=[1.08,.97,1.04,.91,1.12,.94][pick%6],height=[.96,1.07,.98,1.06,.94,1.02][pick%6];
     lod.scale.set(1,height,width);
   }
   const hero=type==='fox',ragRig=createRagdollRig(bone),farDistance=lod.levels[1].distance;

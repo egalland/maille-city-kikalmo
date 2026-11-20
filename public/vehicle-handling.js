@@ -37,12 +37,18 @@ export function wheelForces(spec,speed,surfaceGrip,tyres,reverse=false){
 }
 // Integrate speed in metres/second. Road load always acts, including while
 // coasting or braking. At full throttle the governor balances it at the model's top speed.
-export function stepRoadDrive(spec,{speed,pedal,grip,tyres,power,grounded,incline,dt}){
+export function stepRoadDrive(spec,{speed,pedal,grip,tyres,power,grounded,incline,handbrake=false,dt}){
   const magnitude=Math.abs(speed),direction=Math.sign(speed);
   const braking=direction!==Math.sign(pedal)&&Math.abs(pedal)>.12&&magnitude>.45;
   const forces=wheelForces(spec,speed,grip,tyres,pedal<0);
   const rolling=.22,aero=.00017+.60*spec.halfWidth*spec.height/spec.mass;
   const roadLoad=rolling+aero*magnitude*magnitude;
+  if(handbrake&&grounded){
+    const bite=forces.brake*1.28+roadLoad+direction*9.81*Math.max(-.35,Math.min(.35,incline));
+    return {speed:direction*Math.max(0,magnitude-Math.max(.5,bite)*dt),braking:true,
+      tractionYaw:forces.tractionYaw*.65};
+  }
+  if(handbrake)pedal=0;
   const condition=Math.sqrt(power);
   const rated=(pedal<0?spec.reverse:spec.forward)*condition;
   const base=(pedal<0?spec.reverse:(spec.powerBand??spec.forward))*condition;

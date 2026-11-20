@@ -138,7 +138,7 @@ function movementFields(s,now,previous){
   if(!Number.isFinite(s.lift))return {};
   if(isAircraft(s.vehicle?.type))return {lift:num(s.lift,0,0,flightCeiling),motion:s.lift>0?'carAir':'idle',verticalSpeed:num(s.verticalSpeed,0,-8,8)};
   const falling=!s.vehicle&&(s.motion==='fall'||s.motion==='jump');
-  const aircraftFallUntil=falling&&(previous?.vehicle?.type==='helicopter'&&previous.lift>.18?now+6000:previous?.aircraftFallUntil)||0;
+  const aircraftFallUntil=falling&&(isAircraft(previous?.vehicle?.type)&&previous.lift>.16?now+6000:previous?.aircraftFallUntil)||0;
   const inFlight=aircraftFallUntil>now;
   const lift=num(s.lift,0,0,inFlight?flightCeiling+3:64);
   if(s.vehicle)return s.motion==='carAir'&&lift>0
@@ -223,7 +223,7 @@ function eventData(type,raw,now) {
       if(!key(d.id))return null;
       const occupied=!!d.occupied;
       const out={...result,id:d.id,occupied,...(!occupied&&d.shifted?{shifted:true}:{}),...(!occupied?{expiresAt:now+abandonedFor}:{})};
-      if(!occupied&&out.type==='helicopter'&&validFlightPath(d.flightPath)){
+      if(!occupied&&isAircraft(out.type)&&validFlightPath(d.flightPath,out.type)){
         out.flightPath=d.flightPath;out.lift=d.flightPath[0][1];
         out.flightAt=num(d.flightAt,now,now-1800,now);out.expiresAt=out.flightAt+(out.flightPath.length-1)*flightSampleMs+abandonedFor;
       }
@@ -551,7 +551,7 @@ async function sync(db,b,now,room) {
     const driver=member.seatedDriver?JSON.parse(member.seatedDriver):gliding.roadCoast?sampleRoadCoast(gliding,now):sampleAutorotation(gliding,now);
     for(const field of ['x','y','angle','vx','vy','speed','moving','lift','verticalSpeed'])
       if(driver[field]!==undefined)rawState[field]=driver[field];
-    if((driver.vehicle?.type==='helicopter'||gliding?.flightPath)&&driver.lift>.18)rawState.aircraftFallUntil=now+6000;
+    if((isAircraft(driver.vehicle?.type)||gliding?.flightPath)&&driver.lift>.16)rawState.aircraftFallUntil=now+6000;
     rawState.vehicle=null;
   }
   const state=Number.isFinite(rawState.x) ? JSON.stringify(rawState) : member.state;

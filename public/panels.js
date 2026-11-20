@@ -33,6 +33,7 @@ const shortcuts = [
   ['Courir', ['Maj']],
   ['Garde basse · s’accroupir et parer de face', ['X']],
   ['Sauter, franchir ou grimper', ['Espace']],
+  ['Frein à main au volant', ['Espace']],
   ['Utiliser l’arme équipée', ['Clic gauche', 'F']],
   ['Frapper au corps à corps', ['V']],
   ['Tourner la caméra', ['Glisser clic droit']],
@@ -435,7 +436,7 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
     const mobile=node('section','mc-guide-section');
     mobile.append(node('h3','','Commandes tactiles'),node('p','','À pied, déplace légèrement le joystick pour marcher, puis pousse-le vers le bord pour courir. Glisse sur le décor pour tourner la caméra. Au volant, braque avec les flèches à gauche et utilise les pédales à droite. Si le bouton Sortir devient Sauter, le véhicule roule assez vite pour que ton personnage parte en roulade. La voiture continue sur sa lancée.'));
     mobile.append(node('p','','Maintiens le bouton de tir pour accrocher une cible devant toi. Un réticule apparaît dessus. Glisse le pouce sur ce bouton pour ajuster la visée, puis relâche pour arrêter de tirer.'));
-    if(isEnfer)mobile.append(node('h3','','Piloter dans Maille City'),node('p','','Sur la carte, choisis le H de l’hélistation ou le A du mât d’amarrage, puis « Guider vers ce lieu ». Monte à bord avec E ou la commande de véhicule. Les touches de direction orientent l’appareil et le font avancer. R fait monter et F fait descendre. Sur écran tactile, maintiens Monter ou Descendre et utilise les flèches pour tourner. En hélicoptère, E ou Sauter permet de quitter la cabine en vol. La hauteur et la vitesse comptent à la réception. Pour quitter le dirigeable, pose-toi et ralentis.'));
+    if(isEnfer)mobile.append(node('h3','','Piloter dans Maille City'),node('p','','Sur la carte, choisis le H de l’hélistation ou le A du mât d’amarrage, puis « Guider vers ce lieu ». Monte à bord avec E ou la commande de véhicule. Les touches de direction orientent l’appareil et le font avancer. R fait monter et F fait descendre. Sur écran tactile, maintiens Monter ou Descendre et utilise les flèches pour tourner. Dans les deux appareils, E ou Sauter permet de quitter la cabine en vol. La hauteur et la vitesse comptent à la réception.'));
     const health=node('section','mc-guide-section');
     health.append(node('h3','','Vie et soins'),node('p','','Utilise une trousse avec H ou le bouton de soins. Un ambulancier peut te soigner et remplir ta trousse. À zéro point de vie, un compte à rebours indique quand tu reviens dans le jeu.'));
     const guide=node('a','mc-secondary','Guide du quartier et carnet de version');

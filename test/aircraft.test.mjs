@@ -62,7 +62,7 @@ test('rotors are independent of the fuselage, and the two actual occupants leave
   }
 });
 
-test('keyboard helicopter bailout, inherited momentum and fall injury work alongside the airship landing controls in Enfer',async t=>{
+test('pilots can bail out of either aircraft and keep their momentum in Enfer',async t=>{
   globalThis.location=new URL('https://maille.test/?monde=enfer');
   t.mock.method(globalThis,'fetch',async path=>new Response(await readFile(new URL('../public'+String(path).split('?')[0],import.meta.url))));
   const {createGame}=await import('../public/game.js');
@@ -110,14 +110,18 @@ test('keyboard helicopter bailout, inherited momentum and fall injury work along
       ticks(65);assert.ok(hud.health<100);assert.ok(!game.getPosition().airborne);
       continue;
     }
-    assert.equal(hud.canBail,false);
-    game.action('vehicle');ticks(5);assert.ok(hud.piloting);
-    game.setDrive(.4,.5);ticks(15);game.setDrive(0,0);ticks(55);
-    if(byKeyboard)keyboard('f',true);else game.setFlightVertical(-1);
+    assert.equal(hud.canBail,true);
+    game.setDrive(0,1);ticks(32);
+    const before={lift:draw.p.lift,speed:published.speed};
+    assert.ok(before.speed>2);
+    game.action('vehicle');ticks(1);
+    assert.ok(!hud.inVehicle&&game.getPosition().airborne);
+    assert.ok(Math.abs(published.lift-before.lift)<1.3);
+    assert.ok(Math.hypot(published.vx,published.vy)>before.speed);
+    const coasting=draw.entities.find(e=>e.type==='airship'&&!e.self);
+    assert.ok(coasting?.moving&&coasting.lift>0&&!coasting.driver);
     ticks(150);
-    if(byKeyboard)keyboard('f',false);else game.setFlightVertical(0);
-    assert.equal(hud.flightHeight,0);game.action('vehicle');ticks(9);
-    assert.equal(hud.inVehicle,false);assert.ok(!contactAt(draw.p.x,draw.p.y,{radius:.42}));
+    assert.ok(!game.getPosition().airborne);
   }
 });
 
@@ -142,11 +146,11 @@ test('a second client receives flight-height, heading and attitude and can only 
     assert.ok(body.players.every(p=>!p.passenger));
     await post(pilot,'sync',fly(0));body=await ask('ground');
     assert.deepEqual(body.players.find(p=>p.id===rider.id).passenger,{car:craft.id,driver:pilot.id});
-    const height=field.type==='helicopter'?71:28;
+    const height=71;
     await post(pilot,'sync',fly(height));body=await post(rider,'sync');
     assert.equal(body.players.find(p=>p.id===rider.id).lift,height);
     body=await post(rider,'sync',{events:[{type:'seat',op:'exit-in-air',data:{leave:true}}]});
-    if(field.type==='helicopter'){
+    {
       assert.ok(!body.players.find(p=>p.id===rider.id).passenger);
       body=await post(rider,'sync',{state:{...pose,lift:69,motion:'fall'}});
       assert.equal(body.players.find(p=>p.id===rider.id).lift,69);
@@ -156,13 +160,15 @@ test('a second client receives flight-height, heading and attitude and can only 
       const sky={...pose,lift:70,verticalSpeed:1,vx:cruise,vehicle:{...craft,speed:cruise},speed:cruise};
       await post(pilot,'sync',{state:sky});body=await post(rider,'sync');
       assert.equal(body.players.find(p=>p.id===pilot.id).vehicle.speed,cruise);
-      const path=[[0,70],[35,68],[61,63],[82,59],[95,54],[105,49],[112,42],[118,35],[122,28],[126,21],[129,14],[132,7],[135,0]];
+      const path=field.type==='helicopter'
+        ?[[0,70],[35,68],[61,63],[82,59],[95,54],[105,49],[112,42],[118,35],[122,28],[126,21],[129,14],[132,7],[135,0]]
+        :Array.from({length:57},(_,i)=>[Math.min(i*5,32),70-i*1.25]);
       const release={...craft,speed:sky.speed,lift:70,occupied:false,flightAt:stamp,flightPath:path};
       await post(pilot,'sync',{state:{...sky,vehicle:null,motion:'fall'},events:[{type:'vehicle',op:'jump',data:release}]});
       stamp+=1000;body=await post(rider,'sync');
       const stillAboard=body.players.find(p=>p.id===rider.id);
-      assert.equal(stillAboard.passenger.coasting,true);assert.equal(stillAboard.lift,63);
-      assert.ok(Math.abs(stillAboard.x-(craft.x+61*Math.cos(craft.angle)))<.001);
+      assert.equal(stillAboard.passenger.coasting,true);assert.equal(stillAboard.lift,path[2][1]);
+      assert.ok(Math.abs(stillAboard.x-(craft.x+path[2][0]*Math.cos(craft.angle)))<.001);
       const observer=user();
       const watching=await post(observer,'join',{state:pose});
       assert.deepEqual(watching.world.vehicles[craft.id].flightPath,path);
@@ -174,14 +180,8 @@ test('a second client receives flight-height, heading and attitude and can only 
       assert.equal(midairTake.denied[0]?.owner,'autorotation');
       body=await post(rider,'sync',{events:[{type:'seat',op:'jump-too',data:{leave:true}}]});
       assert.ok(!body.players.find(p=>p.id===rider.id).passenger);
-      await post(observer,'leave');await post(rider,'leave');await post(pilot,'leave');continue;
+      await post(observer,'leave');await post(rider,'leave');await post(pilot,'leave');
     }
-    assert.ok(body.players.find(p=>p.id===rider.id).passenger);
-    stamp+=1700;await post(pilot,'sync',fly(26));await post(pilot,'leave');
-    body=await post(rider,'sync');assert.ok(!body.players.find(p=>p.id===rider.id).passenger);
-    const replay=await post(rider,'join');
-    assert.equal(replay.world.vehicles[craft.id].x,field.x);assert.equal(replay.world.vehicles[craft.id].lift,0);
-    await post(rider,'leave');
   }
 });
 

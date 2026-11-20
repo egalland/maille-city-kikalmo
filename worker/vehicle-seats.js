@@ -62,10 +62,7 @@ export function requestSeat(stmts,q,{room,id,name,op,now,aliveSince,driver,car,l
   const fresh="NOT EXISTS (SELECT 1 FROM mc_events WHERE room=? AND player=? AND op=?)";
   if(leave){
     stmts.push(q(`DELETE FROM mc_air_riders WHERE room=? AND rider=? AND ${fresh}`,room,id,room,id,op));
-    stmts.push(q(`DELETE FROM mc_seats WHERE room=? AND rider=? AND ${fresh} AND NOT EXISTS (
-      SELECT 1 FROM mc_members d WHERE d.room=mc_seats.room AND d.id=mc_seats.driver AND d.seen>?
-      AND json_extract(d.state,'$.vehicle.type')='airship' AND
-      (coalesce(json_extract(d.state,'$.lift'),0)>.18 OR abs(coalesce(json_extract(d.state,'$.speed'),0))>1.5))`,room,id,room,id,op,aliveSince));
+    stmts.push(q(`DELETE FROM mc_seats WHERE room=? AND rider=? AND ${fresh}`,room,id,room,id,op));
   }else{
     stmts.push(q(`DELETE FROM mc_seats WHERE room=? AND car=? AND
       (NOT EXISTS (SELECT 1 FROM mc_members WHERE room=mc_seats.room AND id=mc_seats.driver AND seen>?)

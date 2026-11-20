@@ -69,6 +69,13 @@ test('a real moving road car releases the driver at its door, then both travel i
   advance(270);assert.equal(visible().length,1);assert.equal(visible()[0].speed,0);
   assert.ok(Math.hypot(visible()[0].x-scene.p.x,visible()[0].y-scene.p.y)>5);
   const result={car:Math.hypot(visible()[0].x-release.x,visible()[0].y-release.y),person:Math.hypot(scene.p.x-exit.x,scene.p.y-exit.y)};
+  assert.ok(game.restoreTravelState({...game.exportTravelState(),...start,health:100,vehicle:{id:'brake-car',type:'sedan',speed:7}}));
+  const key=(type,value)=>window.dispatchEvent(Object.assign(new Event(type),{key:value}));
+  key('keydown',' ');key('keydown','z');advance(100);
+  assert.equal(published.speed,0);assert.equal(published.vehicle.brake,true);
+  key('keyup',' ');advance(34);
+  assert.ok(published.speed>1);assert.equal(published.vehicle.brake,false);
+  key('keyup','z');
   assert.ok(game.restoreTravelState({...game.exportTravelState(),...start,health:100,vehicle:{id:'slow-car',type:'sedan',speed:3.8}}));
   advance(4);assert.ok(!hud.canBailRoad);game.action('vehicle');advance(1);
   assert.equal(published.vehicle,null);assert.ok(!published.ragdoll&&hud.health===100);

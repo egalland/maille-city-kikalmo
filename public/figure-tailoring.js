@@ -28,6 +28,20 @@ export const jacketPattern = pattern([
   [-.259, .118, .159], [-.238, .18, .213], [-.189, .184, .22], [-.12, .178, .207],
   [.014, .196, .219], [.128, .179, .25], [.16, .153, .252], [.202, .12, .174], [.212, .091, .118]
 ]);
+
+// Share the shoulder anchors with the walking rig, with different hems and
+// volumes for workwear, puffers, coats and close-fitting knitwear.
+const civilBodies=[
+  [[-.251,.15,.21],[-.169,.184,.205],[-.042,.18,.178],[.122,.185,.25]],
+  [[-.25,.155,.194],[-.19,.201,.229],[-.025,.223,.237],[.126,.199,.26]],
+  [[-.28,.192,.245],[-.217,.194,.237],[-.036,.171,.187],[.129,.171,.246]],
+  [[-.279,.174,.238],[-.180,.184,.221],[-.037,.173,.201],[.126,.174,.246]],
+  [[-.242,.143,.192],[-.173,.172,.201],[-.035,.187,.208],[.128,.173,.244]],
+  [[-.245,.157,.201],[-.173,.179,.221],[-.04,.189,.219],[.124,.176,.251]]
+];
+export const civilianJackets=civilBodies.map(rings=>pattern([
+  [rings[0][0]-.012,.12,rings[0][2]*.85],...rings,[.168,.151,.241],[.211,.091,.116]
+]));
 // A patch is cut from a planar silhouette and padded away from its stitching.
 // It reads on the back as well as the front; one material batch holds all panels.
 function patch(outline, rise) {
@@ -47,7 +61,9 @@ const patchShapes={
   lapel:patch([[-.035,.12],[.085,.153],[.092,.095],[.056,.068],[.084,.051],[-.03,-.109]],.010),
 };
 const sailorBand=pattern([[-1,.982,.982],[0,1,1],[1,.982,.982]],16);
-const streetCuts=['atelier','poste','marche','manteau','marin','poste'];
+const streetCuts=['atelier','poste','marche','manteau','marin','photo'];
+const workPack=pattern([[-1,.73,.80],[-.87,.95,.98],[.58,1,1],[.91,.88,.94],[1,.68,.78]],10);
+const cameraLens=new THREE.CylinderGeometry(1,1,1,10).rotateZ(-Math.PI/2);
 
 export function dressCivilian(torso,head,look,high,tools) {
   const {part,small,cord}=tools,{pick,coat,trim,pelt}=look,style=streetCuts[pick%6];
@@ -67,6 +83,13 @@ export function dressCivilian(torso,head,look,high,tools) {
       cord(torso,[[.173,-.161,-.107],[.205,-.18,0],[.173,-.161,.107]],.007,canvas);
       if(style==='marche')small(head,-.20,.033,.179,.104,.094,.093,pelt.shade);
     }
+    if(style==='atelier'){
+      part(torso,workPack,-.170,-.004,0,.100,.146,.149,ink);
+      if(high)cord(torso,[[-.258,-.049,-.092],[-.273,-.046,0],[-.258,-.049,.092]],.009,canvas);
+    }else{
+      small(head,-.044,.372,0,.244,.058,.277,'#b86360',0,.09,.16);
+      if(high)cord(head,[[.158,.355,-.151],[.197,.374,0],[.146,.395,.153]],.009,'#e29b81');
+    }
   }else if(style==='poste'){
     small(torso,-.012,-.146,.212,.125,.119,.069,leather);
     panel(torso,'flap',-.010,-.11,.257,canvas,0,-Math.PI/2,.93);
@@ -75,11 +98,20 @@ export function dressCivilian(torso,head,look,high,tools) {
       cord(torso,[[-.02,.202,-.176],[-.117,.164,-.127],[-.195,.06,-.013],[-.181,-.042,.112],[-.05,-.114,.23]],.02,leather);
       small(torso,-.003,-.132,.286,.016,.023,.010,'#bc7841');
     }
+  }else if(style==='photo'){
+    const camera=part(torso,workPack,.193,-.071,0,.048,.065,.114,ink);
+    camera.rotation.z=.12;
+    part(torso,cameraLens,.245,-.071,0,.074,.055,.055,ink);
+    part(torso,cameraLens,.282,-.071,0,.014,.042,.042,'#78a9a1');
+    if(high)cord(torso,[[.072,.196,-.111],[.157,.135,-.123],[.205,-.039,-.104],[.233,-.061,0],
+      [.205,-.039,.104],[.157,.135,.123],[.072,.196,.111]],.010,leather);
   }else if(style==='manteau'){
     for(const s of [-1,1]){
       panel(torso,'lapel',.172,.002,.078*s,trim,0,-.33*s,s===1?1:.92);
       if(high)for(const y of [-.14,-.064,.005])small(torso,.181,y,s*.067,.012,.016,.016,'#5e4954');
     }
+    part(torso,workPack,.003,.167,0,.154,.063,.190,'#734c68');
+    if(high)cord(torso,[[.144,.176,-.14],[.164,.133,-.047],[.156,.153,.096]],.008,'#bd8896');
   }else{
     for(const [y,depth,width] of [[-.148,.186,.218],[-.063,.191,.218],[.023,.199,.225]]){
       part(torso,sailorBand,0,y,0,depth,.016,width,trim);

@@ -76,7 +76,6 @@ const driving=installDriveControls($('#driveControls'),(steering,throttle,vertic
 function showFlightControls(active){
   $('#scene').toggleAttribute('data-piloting',active);
   $('#flightShortcut').hidden=!active;
-  $('#traversalShortcut').hidden=active;
   const captions=active?['Reculer','Avancer']:['Frein · Recul','Accélérer'];
   for(const [i,key] of ['brake','throttle'].entries()){
     const button=document.querySelector('[data-drive="'+key+'"]');
@@ -210,6 +209,8 @@ function onState(next){
     driving.release();showFlightControls(Boolean(state.piloting));
   }
   driving.setActive(drivingNow&&state.lifeState!=='down');
+  $('#traversalShortcut').hidden=Boolean(state.inVehicle);
+  $('#handbrakeShortcut').hidden=!drivingNow||Boolean(state.inAircraft);
   $('#district').textContent=state.district;
   const street=state.street||'';
   $('#street').textContent=street===state.district?'':street;
@@ -235,7 +236,7 @@ function onState(next){
   if(state.passenger)passengerExit.textContent=state.canBail||state.canBailRoad?'Sauter':'Sortir';
   const exit=$('#driveExit');
   exit.querySelector('span').textContent=state.canBail||state.canBailRoad?'Sauter':'Sortir';
-  exit.setAttribute('aria-label',state.canBail?'Sauter de l’hélicoptère':state.canBailRoad?'Sauter du véhicule en marche':'Sortir du véhicule');
+  exit.setAttribute('aria-label',state.canBail?'Sauter en vol':state.canBailRoad?'Sauter du véhicule en marche':'Sortir du véhicule');
   ride.title=$('#rideShortcut').title=rideLabel;
   $('#rideShortcut span').textContent=rideVerb;
   traversal.update(state);
