@@ -71,7 +71,9 @@ export function createAirship(THREE,art,color,seed=0){
   }
   oval(.48,1.55,0,1.44,.10,.74,cream);
   box(1.48,.84,0,.22,.20,.93,wood);
-  for(const side of [-1,1])box(.69,.61,side*.30,.52,.13,.36,'#965d50');
+  for(const side of [-1,1])box(.69,.33,side*.32,.52,.13,.36,'#965d50');
+  carTrim(frame,[1.16,.64,-.32],[1.06,.82,-.32],.035,deep);
+  carTrim(frame,[1.06,.855,-.465],[1.06,.855,-.175],.032,wood);
   const blades=[];
   for(const side of [-1,1]){
     const hub=new THREE.Group();hub.name='Hélice latérale';hub.position.set(-1.68,.95,side*.89);
@@ -93,11 +95,11 @@ export function createAirship(THREE,art,color,seed=0){
     frame.rotation.z=afloat?.019*Math.sin(time*1.6)+Math.min(.04,Math.abs(pose.speed||0)*.002):0;
     frame.rotation.x=afloat?-.055*(pose.turn||0):0;
     cabin.rotation.copy(frame.rotation);
-    art.updateSeatedFigures(cabin,pose,seats,seed);
+    art.updateSeatedFigures(cabin,pose,seats,seed,'airship');
     if(pose.wrecked){frame.scale.y=.46;frame.rotation.z=-.08;cabin.visible=false;}
     else{frame.scale.y=1;cabin.visible=true;}
   },dispose(){
-    for(const seat of seats)seat.figure?.removeFromParent();
+    art.clearCabin(seats);
     frame.traverse(child=>{if(child.isMesh)child.geometry.dispose();});group.removeFromParent();
   }};
 }

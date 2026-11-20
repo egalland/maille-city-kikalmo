@@ -12,7 +12,7 @@ export function marketPickup(paint,{section,box,rod,parcel,makeWheel}){
     [-2.305,.525,.802,.76],[-2.215,.41,.865,.88],[-1.91,.354,.896,.911],
     [-.342,.354,.882,.903],[-.27,.368,1.133,.848],[-.156,.373,1.23,.88],
     [.88,.379,1.235,.88],[1.23,.381,1.192,.902],[1.82,.401,1.122,.911],
-    [2.18,.44,1.071,.858],[2.307,.524,.994,.738]],axles,r,8)});
+    [2.18,.44,1.071,.858],[2.307,.524,.994,.738]],axles,r,8,[-.18,1.14])});
 
   // A recessed slatted bed with a pressed inner tub and tie-downs on each side.
   for(let i=-3;i<=3;i++)part([-1.28,.914,i*.208],[1.88,.046,.200],i%2?'#9b6c4d':'#af8058');
@@ -73,11 +73,15 @@ export function marketPickup(paint,{section,box,rod,parcel,makeWheel}){
   rail(windPoint(1.26,.02),windPoint(1.331,.45),.013,ink);
   const mount={x:.345,y:1.004,spacing:.374,scale:.91};
   for(const z of [-mount.spacing,mount.spacing]){
-    part([.13,1.206,z],[.132,.348,.426],'#6e594c');
-    part([.124,1.423,z],[.109,.13,.232],'#896e58');
-    part([.36,1.025,z],[.423,.092,.418],'#745c4e');
+    part([.13,.752,z],[.132,.348,.426],'#6e594c');
+    part([.124,.991,z],[.109,.13,.232],'#896e58');
+    part([.36,.517,z],[.423,.092,.418],'#745c4e');
   }
   part([.918,1.165,0],[.216,.142,1.47],ink);
+  for(let i=0;i<16;i++){
+    const rim=t=>[.665-.050*Math.sin(t),1.00+.147*Math.sin(t),-.374+.155*Math.cos(t)];
+    rail(rim(i*Math.PI/8),rim((i+1)*Math.PI/8),.018,ink);
+  }
 
   // A tapered hood with a pair of pressed ridges and broad grille surround.
   // Its rear edge meets the cowl below the windshield.

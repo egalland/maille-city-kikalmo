@@ -12,11 +12,12 @@ function geometry(positions,uvs,indices){
   return shape;
 }
 
-export function coachBody(stations,axles,radius){
-  return ringGeometry(coachRings(stations,axles,radius));
+export function coachBody(stations,axles,radius,opening){
+  return ringGeometry(coachRings(stations,axles,radius,14,opening));
 }
-export function coachRings(stations,axles,radius,steps=14){
+export function coachRings(stations,axles,radius,steps=14,opening){
   const xs=new Set(stations.map(([x])=>x)),clearance=radius+.055;
+  if(opening)for(const x of [opening[0]-.022,opening[0],opening[1],opening[1]+.022])xs.add(x);
   for(const axle of axles){
     for(let n=0;n<=steps;n++)xs.add(axle-clearance*Math.cos(Math.PI*n/steps));
   }
@@ -35,7 +36,9 @@ export function coachRings(stations,axles,radius,steps=14){
       [x,shoulder-.047,s*(w-.026)],[x,shoulder,s*(w-.081)],
       [x,shoulder+.018,s*width*.69]
     ];
-    return [...side(-1),...side(1).reverse()];
+    // Press the cockpit well into the shell between the A- and C-pillars.
+    const inside=opening&&x>=opening[0]&&x<=opening[1],deck=inside?floor+.027:shoulder+.017;
+    return [...side(-1),[x,deck,-width*.68],[x,deck,width*.68],...side(1).reverse()];
   });
   return rings;
 }

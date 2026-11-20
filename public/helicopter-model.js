@@ -1,5 +1,5 @@
 // Fuselage faces +X. Separate rigid batches keep the cabin, skids and rotor heads inexpensive.
-export function createHelicopter(THREE,{geo,addPart,batchGroup,cord,carTrim,updateSeatedFigures},color,seed){
+export function createHelicopter(THREE,{geo,addPart,batchGroup,cord,carTrim,updateSeatedFigures,clearCabin},color,seed){
   const group=new THREE.Group(),shell=new THREE.Group(),rotor=new THREE.Group(),tailRotor=new THREE.Group();
   const seatState=[{},{},{}],paint=/^#[\da-f]{6}$/i.test(color||'')?color:'#db8553';
   const dark='#38454b',cream='#fff0c9',metal='#7e8987',gold='#efbd68',teal='#447873';
@@ -30,6 +30,8 @@ export function createHelicopter(THREE,{geo,addPart,batchGroup,cord,carTrim,upda
     oval(shell,-.93,1.12,s(.58),.115,.082,.069,side>0?'#70bf92':'#e27267','glow');
     for(let i=0;i<4;i++)box(shell,-.86+i*.13,1.84,s(.47),.048,.15,.03,dark,side*.2,0,-.24);
   }
+  carTrim(shell,[.98,1.04,-.34],[.88,1.27,-.34],.026,dark);
+  carTrim(shell,[.88,1.275,-.49],[.88,1.275,-.19],.034,dark);
   carTrim(shell,[.59,1.99,0],[1.69,1.15,0],.033,cream);
   carTrim(shell,[-1.02,1.31,0],[-3.38,1.59,0],.12,paint);
   carTrim(shell,[-.97,1.06,0],[-3.05,1.51,0],.058,cream);
@@ -62,13 +64,13 @@ export function createHelicopter(THREE,{geo,addPart,batchGroup,cord,carTrim,upda
     const wrecked=!!pose.wrecked;debris.visible=wrecked;
     shell.visible=rotor.visible=tailRotor.visible=!wrecked;
     if(wrecked)return;
-    updateSeatedFigures(shell,pose,seatState,seed);
+    updateSeatedFigures(shell,pose,seatState,seed,'helicopter');
     const target=pose.driver&&pose.chassisHp!==0?24:0;
     rotationSpeed+=(target-rotationSpeed)*(1-Math.exp(-dt*(target?2.1:.85)));
     rotor.rotation.y=(rotor.rotation.y+rotationSpeed*dt)%(Math.PI*2);
     tailRotor.rotation.z=(tailRotor.rotation.z+rotationSpeed*3.5*dt)%(Math.PI*2);
   },dispose(){
-    for(const seat of seatState)seat.figure?.removeFromParent();
+    clearCabin(seatState);
     group.traverse(item=>{if(item.isMesh)item.geometry.dispose();});group.removeFromParent();
   }};
 }

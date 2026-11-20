@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {localDatabase} from '../scripts/local-db.mjs';
 import {handleApi} from '../worker/game-api.js';
-import {createCar} from '../public/puppets3d.js';
+import {createCar,createPuppet} from '../public/puppets3d.js';
+import {cabinOccupant} from '../public/cabin-rider.js';
+import {motionSeed} from '../public/locomotion-pose.js';
 import {Box3,Vector3} from '../public/three.js';
 
 test('concurrent seat requests are exclusive, proximity-checked, retry-safe and released on disconnect',async t=>{
@@ -44,22 +46,53 @@ test('concurrent seat requests are exclusive, proximity-checked, retry-safe and 
   assert.deepEqual(occupied(await call(waiting,'sync')),[]);
 });
 
-test('car, compact, sedan, sports car, taxi and patrol share three-dimensional seated figures inside the glazing',()=>{
-  for(const type of ['car','compact','sedan','sport','taxi','police']){
-    const car=createCar(type),p={driver:true,self:true,passenger:true,driverSkin:'foret',passengerSkin:'bruyere'};
-    car.update(p,.02,0);
-    const objects=['Conducteur assis','Passager assis'].map(name=>car.group.getObjectByName(name));
-    const bounds=objects.map(o=>new Box3().setFromObject(o,true));
-    for(const [i,box] of bounds.entries()){
-      assert.ok(objects[i].visible);
-      const extent=box.getSize(new Vector3());assert.ok(extent.x>.2&&extent.y>.33&&extent.z>.21);
-      assert.ok(box.min.y>.6&&box.max.y<1.75);
+test('the seated driver and passenger wear their complete walking models at world scale inside each cab',()=>{
+  const options={driver:true,peer:true,id:'peer-41',driverSkin:'foret~indigo',passenger:true,passengerId:'peer-57',passengerSkin:'bruyere'};
+  const walking=[options.id,options.passengerId].map((id,i)=>createPuppet('fox',i?options.passengerSkin:options.driverSkin,motionSeed(id)%65535));
+  for(const type of ['car','compact','sedan','sport','taxi','police','bus','van','swat','ambulance','firetruck','estate','flatbed','camper','pickup','helicopter','airship']){
+    const car=createCar(type);car.update(options,.02,0);car.group.updateMatrixWorld(true);
+    const actors=['Conducteur assis','Passager assis'].map(name=>car.group.getObjectByName(name));
+    for(const [i,actor] of actors.entries()){
+      assert.ok(actor.visible,type);
+      const fit=actor.parent.userData.cabinFit,head=actor.getObjectByName('head');
+      for(const part of ['torso','cape','head','eyes','earL','armL','elbowL','legR','kneeR','tail']){
+        const seated=actor.getObjectByName(part),walkingPart=walking[i].group.getObjectByName(part);
+        assert.deepEqual(seated.children.filter(n=>n.isMesh).map(n=>n.geometry.uuid),walkingPart.children.filter(n=>n.isMesh).map(n=>n.geometry.uuid),type+' '+part);
+      }
+      const size=head.getWorldScale(new Vector3());
+      assert.ok(Math.abs(size.x-1)<.005&&Math.abs(size.y-1)<.005&&Math.abs(size.z-1)<.005,type+' world scale');
+      const skull=new Box3().setFromObject(head,true),roof=actor.parent.localToWorld(new Vector3(fit.x,fit.roof,0));
+      assert.ok(skull.max.y<roof.y+.014,type+' roof clearance');
+      const foot=new Box3().setFromObject(actor.getObjectByName('kneeL'),true);
+      assert.ok(foot.min.y>0&&foot.min.y<skull.min.y-.32,type+' feet inside cab');
+      assert.ok(i?skull.min.z>-.012:skull.max.z<.012,type+' separate seats');
     }
-    assert.ok(bounds[0].max.z<bounds[1].min.z);
-    assert.notEqual(objects[0].children[0].geometry,objects[1].children[0].geometry);
-    car.update({...p,passenger:false},.02,.1);
-    assert.ok(!objects[1].visible);assert.ok(objects[0].visible);car.dispose();
+    const d=actors[0],f=d.parent.userData.cabinFit;
+    function hand(side){
+      const n=d.getObjectByName(side<0?'elbowL':'elbowR');
+      return n.localToWorld(new Vector3(.061,-.166,side*.011));
+    }
+    const wheel=d.parent.localToWorld(new Vector3(...f.wheel)),left=hand(-1);
+    assert.ok(Math.abs(left.distanceTo(wheel)-f.radius)<.003,type+' grip the rim');
+    car.update({...options,passenger:false,steer:1},.02,.1);car.group.updateMatrixWorld(true);
+    assert.ok(!actors[1].visible);assert.ok(d.visible&&left.distanceTo(hand(-1))>.05,type+' steer');
+    car.dispose();
   }
+  for(const model of walking)model.dispose();
+});
+
+test('seats keep the NPC appearance through ejection, simplify at distance and empty on exit',()=>{
+  const pose={id:'route-13',driver:true},car=createCar('car');
+  const walking=createPuppet('human',undefined,motionSeed('exit-route-13')%65535);
+  assert.equal(cabinOccupant({...pose,siren:true},0,'police').role,'police');
+  car.update(pose);const named=()=>car.group.getObjectByName('Conducteur assis');
+  const geometry=node=>node.children.filter(n=>n.isMesh).map(n=>n.geometry.uuid);
+  assert.deepEqual(geometry(named().getObjectByName('head')),geometry(walking.group.getObjectByName('head')));
+  car.update({...pose,cabinDistance:30});assert.ok(named().visible&&named().children.length<=4&&!named().getObjectByName('head'));
+  car.update({...pose,cabinDistance:70});assert.equal(named().visible,false);
+  car.update({...pose,cabinDistance:8});assert.ok(named().getObjectByName('head'));
+  car.update({...pose,driver:false});assert.equal(named().visible,false);
+  car.dispose();walking.dispose();
 });
 
 test('a cab renders the actual customer and passenger together, animates its door and switches lights by range and deceleration',async()=>{

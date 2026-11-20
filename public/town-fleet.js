@@ -1,3 +1,4 @@
+import {cabinFit} from './cabin-rider.js';
 // Metre-scale patterns in the same coordinate system as the wheels and collision boxes.
 import {fleetFabric as yarn} from './vehicle-fabric.js';
 export const townFleetPaint=Object.freeze({estate:'#556f82',camper:'#719a83',flatbed:'#a05a46'});
@@ -71,17 +72,17 @@ function frontRear(parts,{box,egg,rod},half,wide,frontLight,rearLight,commercial
   box(parts,[half-.139,frontLight-.013,0],[.07,.18,.55],yarn.ink);
   for(let k=-2;k<=2;k++)rod(parts,[half-.098,frontLight-.062,k*.10],[half-.098,frontLight+.045,k*.10],.013,commercial?yarn.silver:yarn.brass);
 }
-function upholstery(parts,art,mount){
-  const {x,y,spacing,scale}=mount;
+function upholstery(parts,art,mount,type){
+  const {x,y,spacing,wheel,radius}=cabinFit(type,mount),scale=1;
   for(const s of [-1,1]){
     const z=s*spacing;
-    art.egg(parts,[x-.11,y+.12*scale,z],[.11,.18*scale,.20*scale],umber);
-    art.egg(parts,[x-.13,y+.30*scale,z],[.067,.075,.13*scale],umber);
+    art.egg(parts,[x-.18,y+.18*scale,z],[.083,.21*scale,.20*scale],umber);
+    art.egg(parts,[x-.22,y+.40*scale,z],[.067,.075,.13*scale],umber);
     art.box(parts,[x,y-.065,z],[.38,.09,.37],umber);
   }
-  art.box(parts,[x+.38*scale,y+.095,0],[.18,.17,spacing*3.65],yarn.ink);
+  art.box(parts,[x+.38*scale,y+.36,0],[.18,.17,spacing*3.65],yarn.ink);
   for(let i=0;i<12;i++){
-    const rim=t=>[x+.245+.053*Math.sin(t),y+.235+.109*Math.sin(t),-spacing+.116*Math.cos(t)];
+    const rim=t=>[wheel[0]-.32*radius*Math.sin(t),wheel[1]+.948*radius*Math.sin(t),wheel[2]+radius*Math.cos(t)];
     art.rod(parts,rim(i*Math.PI/6),rim((i+1)*Math.PI/6),.018,yarn.ink);
   }
 }
@@ -187,7 +188,7 @@ const patterns={estate,camper,flatbed};
 export function createTownCarRecipe(type,paint,art){
   const chassis=art.section('carrosserie');
   const shape=patterns[type](chassis.parts,art,paint);
-  upholstery(chassis.parts,art,shape.seats3D);
+  upholstery(chassis.parts,art,shape.seats3D,type);
   frontRear(chassis.parts,art,shape.half,shape.wide,shape.frontY,shape.rearY,type==='flatbed');
   const wheels=shape.axles.flatMap(x=>[-1,1].map(side=>art.makeWheel(x,side*shape.track,shape.r,.19,x>0,false)));
   return {chassis,wheels,seats3D:shape.seats3D};

@@ -23,7 +23,7 @@ export function gripOnFork(mount,side,steering,out){
 }
 
 const normal=new Vector3(),perpendicular=new Vector3(),midpoint=new Vector3(),direction=new Vector3(),inverse=new Quaternion();
-function fitLimb(limb,goal){
+export function fitLimb(limb,goal){
   const {upper,lower,restUpper,restEnd,pole,first,second}=limb;
   direction.copy(goal).sub(upper.position);
   const distance=Math.max(.001,direction.length());normal.copy(direction).divideScalar(distance);
@@ -39,10 +39,8 @@ function fitLimb(limb,goal){
   lower.quaternion.setFromUnitVectors(restEnd,direction);lower.scale.setScalar(stretch);
 }
 
-export function createSaddleRig(group,mount,type){
-  const bone={};group.traverse(node=>{if(node.name)bone[node.name]=node;});
-  group.name='conducteur';
-  const limbs=[],target=new Vector3(),coreInverse=new Quaternion();
+export function seatedLimbs(bone){
+  const limbs=[];
   for(const side of [-1,1]){
     const suffix=side<0?'L':'R';
     for(const arm of [true,false]){
@@ -52,6 +50,13 @@ export function createSaddleRig(group,mount,type){
       limbs.push({side,arm,upper,lower,first:restUpper.length(),second:restEnd.length(),restUpper:restUpper.normalize(),restEnd:restEnd.normalize(),pole});
     }
   }
+  return limbs;
+}
+
+export function createSaddleRig(group,mount,type){
+  const bone={};group.traverse(node=>{if(node.name)bone[node.name]=node;});
+  group.name='conducteur';
+  const limbs=seatedLimbs(bone),target=new Vector3(),coreInverse=new Quaternion();
   const pedal=type==='cargo',[hx,hy]=mount.hip;
   function update(motion,e,time){
     const {roll,steering,phase}=motion,speed=Math.abs(e.speed||0);

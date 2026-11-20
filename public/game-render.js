@@ -108,7 +108,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,touch?1.15:1.4)*scale);
     renderer.setSize(w,h,false);camera.aspect=w/h;camera.fov=cameraFieldOfView(w/h,fieldOfView);camera.updateProjectionMatrix();
   }
-  function entity(e,dt,t){
+  function entity(e,dt,t,distance){
     const vehicle=!!e.isCar,key=e.renderId||e.id;
     const id=vehicle?'car/'+e.type:'puppet/'+e.type+'/'+(e.color||'');
     let item=models.get(key);
@@ -137,7 +137,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
         g.traverse(node=>{if(node.isMesh&&node.material&&!node.material.transparent){node.castShadow=casts;node.receiveShadow=true;}});
       }
     }
-    item.object.update(vehicle?{...e,appearance:undefined}:walkingPose(e),dt,t);
+    item.object.update(vehicle?{...e,cabinDistance:distance,appearance:undefined}:walkingPose(e),dt,t);
     return item;
   }
   function badge(e,label,bubble){
@@ -247,7 +247,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
       if(!critical && (d>(e.isCar?115:86) || (e.isCar?cars>=carLimit:npcs>=pedestrianLimit)))continue;
       if(critical && !e.self && d>210)continue;
       if(e.isCar)cars++;else npcs++;
-      entity(e,dt,time);
+      entity(e,dt,time,d);
       if(d<42)bloodMesh.draw(blood.actor(e));
       if(index<65&&e.motion!=='swim'){
         const floor=e.supportHeight||0,angle=e.angle||0,c=Math.cos(angle),s=Math.sin(angle);

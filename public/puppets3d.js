@@ -1,8 +1,7 @@
 import {createSaddleRig} from './saddle-rider.js';
 import {createHelicopter} from './helicopter-model.js';
 import {createAirship} from './airship-model.js';
-import {drawCabinDriver} from './cabin-art.js';
-import {appearanceKey} from './kikalmo-avatar.js';
+import {cabinFit,cabinOccupant,fitCabinPuppet} from './cabin-rider.js';
 import {yarnPalette} from './wool-art.js';
 import {puppetAppearance} from './puppet-dyes.js';
 import {puppetKnit,puppetFelt} from './puppet-material.js';
@@ -192,7 +191,7 @@ function serviceUniform(torso,head,type,cloth,edge){
     for(const s of [-1,1])cord(torso,[[.135,.19,s*.14],[.167,.061,s*.1],[.133,-.058,s*.16]],.014,edge);
   }
 }
-function makeBody(look,high){
+function makeBody(look,high,seated=false){
   const {type,animal,pelt:pal,coat:cloth,trim:edge,service}=look;
   const isFox=type==='fox',out=[cloth,edge];
   const group=new THREE.Group(),core=joint(group,'core',0,.69,0),torso=joint(core,'torso',0,.065,0);
@@ -237,10 +236,20 @@ function makeBody(look,high){
       if(animal!=='human'&&animal!=='fox')small(head,.155,.078,s*.119,.153,.104,.143,pal.cream);
       small(head,.216,.173,s*.127,.045,.057,.047,'#f4e5be');
       small(head,.247,.173,s*.144,.029,.042,.031,colors.ink);
-      addPart(core,distantThigh,-.016,-.24,s*.112,.98,1.8,.98,'#454052');
-      addPart(core,boots.far[0],-.028,-.381,s*.112,1,1,1,colors.boot);
-      addPart(core,distantSleeve,.001,.182,s*.224,1,1.8,1,isFox?'#385561':out[0],-.13*s);
-      small(core,.047,-.132,s*.266,.065,.063,.061,human?fur:isFox?pal.shade:colors.glove);
+      if(seated){
+        const side=s<0?'L':'R',arm=joint(core,'arm'+side,.001,.182,s*.224),leg=joint(core,'leg'+side,-.016,-.24,s*.112);
+        const elbow=joint(arm,'elbow'+side,.008,-.162,.04*s),knee=joint(leg,'knee'+side,-.012,-.141,0);
+        for(const limb of [leg,knee])addPart(limb,distantThigh,0,0,0,.98,1,.98,'#454052');
+        addPart(knee,boots.far[0],0,0,0,1,1,1,colors.boot);
+        for(const limb of [arm,elbow])addPart(limb,distantSleeve,0,0,0,1,1,1,isFox?'#385561':out[0]);
+        small(elbow,.06,-.166,s*.011,.065,.063,.061,human?fur:isFox?pal.shade:colors.glove);
+        for(const limb of [arm,leg,elbow,knee])batchGroup(limb);
+      }else{
+        addPart(core,distantThigh,-.016,-.24,s*.112,.98,1.8,.98,'#454052');
+        addPart(core,boots.far[0],-.028,-.381,s*.112,1,1,1,colors.boot);
+        addPart(core,distantSleeve,.001,.182,s*.224,1,1.8,1,isFox?'#385561':out[0],-.13*s);
+        small(core,.047,-.132,s*.266,.065,.063,.061,human?fur:isFox?pal.shade:colors.glove);
+      }
     }
     if(human)addPart(head,distantNose,0,0,0,1,1,1,pal.inner);
     else small(head,animal==='fox'?.387:.265,.094,0,.045,.038,.051,colors.ink);
@@ -472,7 +481,7 @@ import {coachBody,enamel} from './coachwork.js';
 surfaces.enamel=enamel;
 const carShapeCache = new Map();
 function wheelArchBody(key,stations,axles,radius){
-  if(!carShapeCache.has(key))carShapeCache.set(key,coachBody(stations,axles,radius));
+  if(!carShapeCache.has(key))carShapeCache.set(key,coachBody(stations,axles,radius,key==='saloon'?[-1.10,.84]:key==='sport-wing'?[-1.35,.98]:[-1.30,.81]));
   return carShapeCache.get(key);
 }
 function carLoft(key, sections, exponent = .55) {
@@ -488,6 +497,8 @@ function carLoft(key, sections, exponent = .55) {
   });
   for(let j=0;j<sections.length-1;j++) for(let i=0;i<slices;i++) {
     const a=j*(slices+1)+i,b=a+1,c=a+slices+1,d=c+1;
+    const bay=key==='city-bus'?sections[j][0]>=2.82:key==='van-body'&&sections[j][0]>=-.58&&sections[j+1][0]<=.91;
+    if(bay&&(i<2||i>=slices-2))continue;
     indices.push(a,b,c,b,d,c);
   }
   for(let end=0;end<=1;end++) {
@@ -644,8 +655,7 @@ function carPanel(g,points,color){
     patch([[0,0],[1,0],[1,1],[0,1]],carYarn.shadePane,0);
     patch([[.03,.06],[.97,.06],[.95,.95],[.05,.95]],color,.003);
   }
-  patch([[.08,.08],[.18,.08],[.45,.93],[.33,.93]],carYarn.gleam,.006);
-  patch([[.23,.10],[.255,.10],[.52,.92],[.495,.92]],'#b6ccba',.006);
+  patch([[.025,.76],[.041,.76],[.104,.96],[.089,.96]],carYarn.gleam,.006);
   patch([[.06,.025],[.94,.025],[.92,.055],[.08,.055]],carYarn.binding,.006);
   const geom=new THREE.BufferGeometry();
   geom.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
@@ -718,17 +728,22 @@ function townCar(g,type,paint){
 function cityBus(g,paint){
   const l=4.25,w=1.19,lower=1.20,top=2.80;
   const shell=carLoft('city-bus',[
-    [-4.24,.42,2.58,1.10],[-4.11,.35,2.77,w],[-3.91,.35,2.82,w],
-    [3.92,.35,2.82,w],[4.10,.37,2.76,1.16],[4.23,.48,2.56,1.08]
+    [-4.24,.42,1.28,1.10],[-4.11,.35,1.38,w],[-3.91,.35,1.39,w],
+    [2.82,.35,1.39,w],[3.92,.35,1.39,w],[4.10,.37,1.36,1.16],[4.23,.48,1.30,1.08]
   ],.22);
   carPart(g,shell,0,0,0,1,1,1,paint);
+  carPart(g,carLoft('city-bus-roof',[[-4.23,2.31,2.57,1.08],[-4.10,2.32,2.76,1.16],[-3.90,2.34,2.82,w],
+    [3.92,2.34,2.82,w],[4.10,2.32,2.76,1.16],[4.23,2.31,2.56,1.08]],.22),0,0,0,1,1,1,paint);
   for(const s of [-1,1]){
+    for(const end of [-1,1])carBox(g,end*4.14,1.83,s*1.10,.14,1.03,.12,paint);
     carBox(g,0,1.05,s*w,7.99,.55,.032,'#ece2c5');
     carBox(g,0,lower+.05,s*(w+.016),8.02,.047,.021,'#e7b05f');
     for(let i=0;i<7;i++){
       const x=-3.45+i*1.13;
       const door=s>0 && (i===3||i===6);
-      carBox(g,x,door?1.54:1.83,s*w,door?.94:1.00,door?1.79:.91,.041,'#354f60');
+      carBox(g,x-.53,1.83,s*w,.095,1.0,.041,'#354f60');
+      carBox(g,x,1.435,s*w,1.13,.105,.041,paint);
+      carBox(g,x,2.29,s*w,1.13,.075,.041,paint);
       const z=s*(w+.031);
       carPanel(g,[[x-.45,1.53,z],[x+.45,1.53,z],[x+.45,2.25,z],[x-.45,2.25,z]],door?carYarn.pane:i%2?carYarn.frontPane:carYarn.pane);
       if(door)carBox(g,x,1.48,s*(w+.032),.060,1.77,.018,'#586c70');
@@ -755,11 +770,12 @@ function cityBus(g,paint){
 
 function carVan(g,type,paint){
   const body=carLoft('van-body',[
-    [-2.45,.42,1.00,.72],[-2.37,.39,1.93,.94],[-2.16,.39,2.00,.98],[-.46,.39,2.00,.98],
-    [.02,.39,1.96,.95],[.30,.39,1.75,.91],[.56,.39,1.40,.88],[.91,.40,1.23,.89],
+    [-2.45,.42,1.00,.72],[-2.37,.39,1.93,.94],[-2.16,.39,2.00,.98],[-.62,.39,2.00,.98],
+    [-.58,.39,1.26,.95],[.30,.39,1.25,.91],[.56,.39,1.24,.88],[.91,.40,1.23,.89],
     [1.65,.43,1.19,.86],[2.12,.45,1.07,.77],[2.31,.55,.96,.68]
   ],.48);
   carPart(g,body,0,0,0,1,1,1,paint);
+  carPart(g,carLoft('van-cab-roof',[[-.70,1.89,2.0,.91],[-.53,1.90,2.03,.93],[.17,1.87,1.97,.87],[.33,1.82,1.91,.77]],.38),0,0,0,1,1,1,paint);
   const stripe=type==='firetruck'?'#f1b858':type==='swat'?'#7d90a6':'#49a593';
   for(const s of [-1,1]){
     carBox(g,-.74,1.05,s*.974,2.90,.13,.028,stripe);
@@ -768,10 +784,14 @@ function carVan(g,type,paint){
     if(type==='van'){
       carBox(g,-1.11,1.55,s*.972,1.53,.52,.022,'#ead9ad');
       for(let i=0;i<3;i++)carTrim(g,[-1.65+i*.26,1.45,s*.995],[-1.42+i*.26,1.66,s*.995],.027,'#99885a');
-    }else carBox(g,-.46,1.56,s*.940,.68,.41,.035,'#5a8692');
+    }else carBox(g,-.85,1.56,s*.946,.38,.41,.035,'#5a8692');
     if(type!=='van')carBox(g,-1.47,1.56,s*.945,.66,.40,.035,type==='swat'?'#414858':'#6c99a0');
     const z=s*.911;
-    carPanel(g,[[.055,1.34,z],[.394,1.30,z],[.38,1.59,z],[.068,1.655,z]],'#6e9ca1');
+    const high=s*.81;
+    carPanel(g,[[-.53,1.30,z],[.63,1.30,z],[.30,1.84,high],[-.53,1.89,high]],'#6e9ca1');
+    carTrim(g,[-.54,1.27,z],[-.54,1.92,high],.044,paint);
+    carTrim(g,[.66,1.25,s*.85],[.31,1.86,high],.044,paint);
+    carTrim(g,[-.55,1.28,z],[.65,1.28,z],.032,paint);
     carBall(g,1.9,1.03,s*.65,.23,.15,.19,paint);
     carBall(g,2.09,1.04,s*.66,.096,.10,.12,'#ffe4a1','glow');
     carBall(g,-2.389,1.14,s*.77,.075,.125,.12,carYarn.stop,'glow');
@@ -783,7 +803,7 @@ function carVan(g,type,paint){
     for(const xx of [-1.55,1.43])carBall(g,xx,.66,s*.83,.62,.26,.22,paint);
   }
   // Driver's forward glass leans from the roof down to the hood.
-  carPanel(g,[[.634,1.314,-.75],[.634,1.314,.75],[.334,1.790,.71],[.334,1.790,-.71]],carYarn.frontPane);
+  carPanel(g,[[.634,1.314,-.75],[.634,1.314,.75],[.314,1.852,.77],[.314,1.852,-.77]],carYarn.frontPane);
   carBox(g,.48,1.56,0,.065,.548,.04,paint,0,0,.56);
   carGrille(g,2.266,.84,.47);carBumpers(g,2.34,-2.45,.97);
   carBox(g,-2.405,1.22,0,.040,1.09,.041,'#776a6d');
@@ -870,7 +890,7 @@ function createCarBody(type='car',color,seed=0){
   const group=new THREE.Group(),frame=new THREE.Group(),body=new THREE.Group();
   group.name='Maille véhicule '+type;body.name='Carrosserie';
   group.add(frame);frame.add(body);
-  if(!bus&&!isVan){
+  {
     const low=type==='sport',compact=type==='compact';
     body.userData.seats3D={x:low?-.32:compact?-.31:.02,y:low?.71:compact?.91:1.01,spacing:low?.38:compact?.31:.335,scale:low?.70:compact?.89:.94};
   }
@@ -883,17 +903,21 @@ function createCarBody(type='car',color,seed=0){
     frame.scale.set(spec.halfLength/sourceLength,spec.height/(isVan?2.30:type==='taxi'||type==='police'?1.93:1.72),spec.halfWidth/sourceWidth);
   }
   if(body.userData.seats3D){
-    const {x,y,spacing,scale}=body.userData.seats3D;
+    body.userData.seats3D.units=frame.scale.toArray();
+    const fit=cabinFit(type,body.userData.seats3D),{x,y,spacing,wheel}=fit;
     for(const side of [-1,1]){
-      carBox(body,x-.20*scale,y+.17*scale,side*spacing,.105*scale,.38*scale,.41*scale,'#524952',0,0,-.11);
-      carBall(body,x-.21*scale,y+.36*scale,side*spacing,.073*scale,.089*scale,.132*scale,'#786368');
+      carBox(body,x-.19,y+.17,side*spacing,.105,.38,.41,'#524952',0,0,-.11);
+      carBall(body,x-.22,y+.38,side*spacing,.073,.089,.132,'#786368');
     }
-    carBox(body,x+.4*scale,y+.11*scale,0,.21*scale,.12*scale,spacing*3.4,'#4a4247');
-    const rim=carPart(body,spoolWelt,x+.225*scale,y+.22*scale,-spacing,.130*scale,.130*scale,.13*scale,'#3a3336',0,1.2,0);
-    carTrim(body,[rim.position.x,y+.17*scale,-spacing],[x+.4*scale,y+.12*scale,-spacing],.026,'#504648');
+    carBox(body,x+.58,y+.36,0,.21,.12,spacing*3.4,'#4a4247');
+    for(const s of [-1,1])carBox(body,x+.02,y-.045,s*spacing,.36,.10,.38,'#65545b');
+    const rim=t=>[wheel[0]-.32*fit.radius*Math.sin(t),wheel[1]+.948*fit.radius*Math.sin(t),wheel[2]+fit.radius*Math.cos(t)];
+    for(let i=0;i<16;i++)carTrim(body,rim(i*Math.PI/8),rim((i+1)*Math.PI/8),.013,'#3a3336');
+    carTrim(body,wheel,[wheel[0]+.20,wheel[1]-.065,wheel[2]],.026,'#504648');
   }
   const beacon=carServiceDetails(body,type,isVan);
   batchGroup(body);
+  const glass=body.children.find(mesh=>mesh.material===surfaces.glass);
   const wheelRadius=bus?.48:isVan?.434:type==='compact'?.304:type==='sport'?.34:.372;
   const axleZ=bus?1.10:isVan?.94:type==='compact'?.68:type==='sport'?.82:.805;
   const axles=bus?[-2.50,2.73]:isVan?[-1.54,1.45]:type==='compact'?[-1.06,1.03]:type==='sport'?[-1.31,1.36]:[-1.22,1.25];
@@ -919,6 +943,7 @@ function createCarBody(type='car',color,seed=0){
     pitch+=((acceleration*.0018-(pose.brake?.042:0))-pitch)*blend;
     roll+=(steer*velocity*.22-roll)*blend;
     compression+=(Math.min(.14,Math.abs(Number(pose.impact)||0)*.12)-compression)*Math.min(1,dt*15);
+    if(glass)glass.visible=!(pose.parts&1);
     body.position.y=(Math.sin(t*(4+velocity*5)+variant)*.009+Math.sin(t*13+variant)*.004)*velocity-compression*.26;
     const wear=1-chassisHealth(pose.chassisHp)/100;
     body.scale.set(1+compression*.12-wear*.071,1-compression*.6-wear*.096,1+compression*.34+wear*.018);
@@ -942,51 +967,43 @@ function createCarBody(type='car',color,seed=0){
   }};
 }
 
-// Cabin figures share fixed, batched wool geometry across the traffic fleet.
-const cabinFigures=new Map();
-function seatedFigure(role,skin,seed,atWheel){
-  const dye=puppetAppearance(role,skin,seed),{pelt,coat}=dye;
-  const key=[role,pelt.fur,coat,atWheel].join('/');
-  if(!cabinFigures.has(key)){
-    const g=new THREE.Group(),fox=role==='fox',face=.385;
-    carBall(g,-.042,.14,0,.123,.173,.171,coat);
-    carBall(g,0,face,0,.149,.154,.156,pelt.fur);
-    if(fox){
-      for(const side of [-1,1]){
-        carPart(g,geo.cone,-.038,.539,side*.090,.065,.148,.060,pelt.fur,side*.10,0,.08);
-        carBall(g,.033,.488,side*.085,.026,.039,.034,pelt.inner);
-      }
-      carBall(g,.123,.354,0,.091,.064,.102,pelt.cream);
-      carBall(g,.204,.367,0,.026,.028,.039,'#392e39');
-    }else{
-      carBall(g,-.026,.461,0,.149,.091,.154,pelt.shade);
-      carBall(g,.146,.372,0,.035,.038,.038,pelt.fur);
-    }
-    for(const side of [-1,1]){
-      carBall(g,.126,.409,side*.079,.022,.025,.021,'#302b36');
-      const hand=[atWheel?.201:.079,atWheel?.218:.082,side*(atWheel?.099:.085)];
-      carTrim(g,[-.02,.224,side*.134],hand,.044,coat);
-      carBall(g,...hand,.046,.044,.045,pelt.fur);
-    }
-    batchGroup(g);cabinFigures.set(key,g);
+const seatedSilhouettes=new Map();
+function prepareOccupant(identity,fit,index,close){
+  const look=puppetAppearance(identity.role,identity.skin,identity.seed);
+  if(close){
+    const figure=puppetTemplate(look).near.clone(true);
+    return {figure,update:fitCabinPuppet(figure,fit,index)};
   }
-  return cabinFigures.get(key).clone();
+  const key=[look.type,look.coat,look.pelt.fur,look.pick%6].join('/');
+  if(!seatedSilhouettes.has(key))seatedSilhouettes.set(key,makeBody(look,false,true));
+  const low=seatedSilhouettes.get(key).clone(true);
+  fitCabinPuppet(low,fit,index);
+  const position=low.position.clone(),scale=low.scale.clone();
+  low.position.set(0,0,0);low.scale.setScalar(1);
+  const figure=bakeStaticHierarchy(low);
+  figure.position.copy(position);figure.scale.copy(scale);
+  return {figure,dispose(){for(const mesh of figure.children)mesh.geometry.dispose();}};
 }
-function updateSeatedFigures(host,pose,occupants,seed){
-  const mount=host.userData.seats3D;
-  for(const [index,active] of [pose.driver,pose.passenger,pose.fare].entries()){
-    const seat=occupants[index],player=index===2?false:index?!!pose.passengerSkin:!!(pose.peer||pose.self);
-    const skin=index?pose.passengerSkin:pose.driverSkin,identity=player?'fox/'+skin:'human';
-    if(!active){if(seat.figure)seat.figure.visible=false;continue;}
-    if(seat.identity!==identity){
-      seat.figure?.removeFromParent();
-      seat.figure=seatedFigure(player?'fox':'human',skin,seed+index,index===0);
+function updateSeatedFigures(host,pose,occupants,seed,type){
+  const fit=host.userData.cabinFit??=cabinFit(type,host.userData.seats3D);
+  for(let index=0;index<occupants.length;index++){
+    const seat=occupants[index],distance=pose.cabinDistance??0;
+    const identity=distance<55&&cabinOccupant(pose,index,type,seed);
+    if(!identity){if(seat.figure)seat.figure.visible=false;continue;}
+    const key=[identity.role,identity.skin,identity.seed].join('/');
+    const close=distance<(seat.close?25:20);
+    if(seat.key!==key||close!==seat.close){
+      seat.figure?.removeFromParent();seat.dispose?.();
+      const rig=prepareOccupant(identity,fit,index,close);
+      Object.assign(seat,rig,{update:rig.update,dispose:rig.dispose,key,close});
       seat.figure.name=['Conducteur assis','Passager assis','Client du taxi'][index];
-      seat.figure.position.set(mount.x-(index===2?.60:0),mount.y,(index?1:-1)*mount.spacing);
-      seat.figure.scale.setScalar(mount.scale);host.add(seat.figure);seat.identity=identity;
+      host.add(seat.figure);
     }
-    seat.figure.visible=true;
+    seat.figure.visible=true;seat.update?.(pose.steer??pose.turn);
   }
+}
+function clearCabin(seats){
+  for(const seat of seats){seat.figure?.removeFromParent();seat.dispose?.();}
 }
 
 const headLens=new THREE.MeshBasicMaterial({color:'#fff6c0'});
@@ -1050,10 +1067,10 @@ export function createCar(type='car',color,seed=0){
   const kind=type?.type??type;
   if(kind==='helicopter'||kind==='airship'){
     const factory=kind==='helicopter'?createHelicopter:createAirship;
-    return factory(THREE,{geo,addPart,batchGroup,cord,carTrim,updateSeatedFigures},color,seed);
+    return factory(THREE,{geo,addPart,batchGroup,cord,carTrim,updateSeatedFigures,clearCabin},color,seed);
   }
   const body=createCarBody(type,color,seed),spec=vehicleSpec(type?.type??type);
-  let wear=null,cabin=null,door=null,wreck=null,hiddenIntact=null;
+  let wear=null,door=null,wreck=null,hiddenIntact=null;
   const intact=[...body.group.children],seated=[{},{},{}];
   let signals=null,signalSpeed=null,brakeFlash=0;
   function updateWreck(damaged){
@@ -1085,7 +1102,7 @@ export function createCar(type='car',color,seed=0){
       batchGroup(wreck);body.group.add(wreck);
     }
     wreck.visible=true;
-    if(cabin)cabin.group.visible=false;if(door)door.visible=false;
+    if(door)door.visible=false;
   }
   function updateDoor(open){
     if(!open||spec.openSeat){if(door)door.visible=false;return;}
@@ -1107,63 +1124,8 @@ export function createCar(type='car',color,seed=0){
     door.rotation.y=side*Math.abs(open)*1.04;
   }
   function updateCabin(pose){
-    if(spec.openSeat)return;
-    if(body.windowHost?.userData.seats3D){
-      updateSeatedFigures(body.windowHost,pose,seated,seed);
-      return;
-    }
-    if(!pose.driver&&!(pose.parts&1)){if(cabin)cabin.group.visible=false;return;}
-    const identity=[pose.driver?appearanceKey(pose.appearance)||pose.id:'',pose.driverSkin,pose.passengerSkin,pose.passenger?1:0,pose.parts&1].join('/');
-    if(!cabin){
-      const host=body.windowHost||body.group.getObjectByName('carrosserie');
-      if(!host)return;
-      const group=new THREE.Group();group.name='Occupants derrière les vitres';
-      const pictures=[0,1,2].map(()=>{
-        const canvas=document.createElement('canvas');canvas.width=canvas.height=96;
-        const map=new THREE.CanvasTexture(canvas);map.colorSpace=THREE.SRGBColorSpace;
-        const material=new THREE.MeshBasicMaterial({map,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-3,side:THREE.DoubleSide});
-        return {canvas,map,material};
-      });
-      const glazing=host.userData.glazing||[
-        {points:[[1.156,1.274,-.69],[1.156,1.274,.69],[1.156,1.665,.69],[1.156,1.665,-.69]],normal:[1,0,0]},
-        {points:[[-.241,1.328,-.545],[-.241,1.328,.545],[-.241,1.60,.545],[-.241,1.60,-.545]],normal:[-1,0,0]}
-      ];
-      for(const {points,normal} of glazing){
-        const x=points.reduce((sum,v)=>sum+v[0],0)/4;
-        const along=Math.abs(normal[0])>.63;
-        const view=along?(x<0?2:0):type==='compact'||type==='sport'?2:x<-.20?1:0;
-        const geometry=new THREE.BufferGeometry();
-        geometry.setAttribute('position',new THREE.Float32BufferAttribute(points.flatMap(p=>p.map((v,i)=>v+normal[i]*.025)),3));
-        geometry.setAttribute('uv',new THREE.Float32BufferAttribute([0,0,1,0,1,1,0,1],2));
-        geometry.setIndex([0,1,2,0,2,3]);geometry.computeVertexNormals();
-        group.add(new THREE.Mesh(geometry,pictures[view].material));
-      }
-      host.add(group);cabin={group,pictures,identity:null};
-    }
-    cabin.group.visible=true;
-    if(cabin.identity===identity)return;
-    cabin.identity=identity;
-    cabin.pictures.forEach(({canvas,map},i)=>{
-      const c=canvas.getContext('2d');c.clearRect(0,0,96,96);
-      function person(passenger,offset,size){
-        c.save();c.translate(offset,87-size);c.scale(size/96,size/96);
-        drawCabinDriver(c,passenger?{id:pose.id+'passenger',peer:!!pose.passengerSkin,driverSkin:pose.passengerSkin,color:'#8e5674'}:pose,96);
-        c.restore();
-      }
-      if(i===0&&pose.driver)person(false,17,64);
-      if(i===1&&pose.passenger)person(true,18,65);
-      if(i===2){
-        if(pose.driver)person(false,pose.passenger?10:20,pose.passenger?45:60);
-        if(pose.passenger)person(true,51,43);
-      }
-      if(pose.parts&1&&i!==1){
-        c.strokeStyle='#f4e2ca';c.lineWidth=1.7;
-        for(const [x,y] of [[2,32],[22,5],[69,8],[79,47],[51,78]]){
-          c.beginPath();c.moveTo(45,38);c.lineTo((45+x)/2+4,(38+y)/2-2);c.lineTo(x,y);c.stroke();
-        }
-      }
-      map.needsUpdate=true;
-    });
+    const host=body.windowHost;
+    if(host?.userData.seats3D)updateSeatedFigures(host,pose,seated,seed,kind);
   }
   function updateSignals(pose,dt){
     const current=Math.abs(Number(pose.speed)||0),decelerating=signalSpeed!==null&&signalSpeed-current>Math.max(.075,2.2*dt);
@@ -1184,7 +1146,7 @@ export function createCar(type='car',color,seed=0){
   }
   function update(pose={},dt=.016,time=0){
     updateSignals(pose,dt);
-    if(!body.windowHost?.userData.seats3D&&pose.fare&&!pose.passenger)pose={...pose,passenger:true};
+
     body.update(pose,dt,time);updateCabin(pose);updateDoor(pose.doorOpen);updateWreck(pose.wrecked);
     const stage=chassisStage(pose.chassisHp);
     if(!stage){if(wear)wear.group.visible=false;return;}
@@ -1235,5 +1197,5 @@ export function createCar(type='car',color,seed=0){
       puff.scale.setScalar(.075+.34*age);
     });
   }
-  return {...body,update,dispose(){for(const seat of seated)seat.figure?.removeFromParent();if(signals){signals.front.removeFromParent();signals.rear.removeFromParent();}if(door)for(const part of door.children)part.geometry.dispose();if(wreck){wreck.removeFromParent();wreck.traverse(part=>part.geometry?.dispose());}if(cabin){cabin.group.removeFromParent();for(const pane of cabin.group.children)pane.geometry.dispose();for(const picture of cabin.pictures){picture.map.dispose();picture.material.dispose();}}body.dispose();}};
+  return {...body,update,dispose(){clearCabin(seated);if(signals){signals.front.removeFromParent();signals.rear.removeFromParent();}if(door)for(const part of door.children)part.geometry.dispose();if(wreck){wreck.removeFromParent();wreck.traverse(part=>part.geometry?.dispose());}body.dispose();}};
 }

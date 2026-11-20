@@ -912,7 +912,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         const vehicle=vehicleHealth({id:vehicleId})>0?stepDispatch(state,age,dt,(q,spec)=>carClear(q,spec,bodies)):null;
         if(vehicle){
           state.vehicle=vehicle;
-          cars.push({...vehicle,id:vehicleId,type,isCar:true,occupied:state.arrived==null,siren:true,move:vehicle.moving});
+          cars.push({...vehicle,id:vehicleId,type,isCar:true,driverId:footId,driverRole:role,occupied:state.arrived==null,siren:true,move:vehicle.moving});
           if(state.arrived!=null)state.foot=dispatchDoor(vehicle,type,destination,freeFoot);
         }else if(!state.vehicle){
           state.plan=null;if(!isEnfer)state.arrived=age;
@@ -1819,7 +1819,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       burnProgress:burnProgress(vehicleWear.get(vehicleId(e)),epoch),
       doorOpen:e.doorOpen||movingDoor(vehicleId(e)),
       headlamps:e.headlamps??(!!(e.occupied||e.routeId)&&automaticLights(cityClimate(epoch))),
-      signalDetail:dist(e,p)<65,passengerSkin:cabinPassengers.get(vehicleId(e))?.color,
+      signalDetail:dist(e,p)<65,passengerId:cabinPassengers.get(vehicleId(e))?.id,passengerSkin:cabinPassengers.get(vehicleId(e))?.color,
       passenger:cabinPassengers.has(vehicleId(e))||!e.noDriver&&!e.self&&!e.peer&&e.routeId&&(e.type==='taxi'||e.type==='bus'),
       driver:!e.noDriver&&!!(e.self||e.peer||e.occupied||e.routeId)}:e)},dt,time);cameraSnap=false;
     const hudStart=measure?performance.now():0;
