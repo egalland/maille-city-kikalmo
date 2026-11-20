@@ -7,8 +7,10 @@ Jeu de ville en laine à la troisième personne. Enfer est le monde actif sur or
 Node 22.13 ou ultérieur fournit SQLite pour la prévisualisation et les tests.
 
 ```sh
+npm install
 npm run dev
-node --test test/*.mjs
+# Dans un deuxième terminal
+npm test
 node scripts/benchmark-district.mjs
 npm run build
 ```

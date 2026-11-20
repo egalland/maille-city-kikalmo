@@ -1,6 +1,14 @@
 {
-  "name":"maille-city",
-  "private":true,
-  "type":"module",
-  "scripts":{"dev":"node scripts/dev.mjs","build":"node scripts/build.mjs"}
+  "name": "maille-city",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.mjs",
+    "benchmark:district": "node scripts/benchmark-district.mjs"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "0.1.100"
+  }
 }
