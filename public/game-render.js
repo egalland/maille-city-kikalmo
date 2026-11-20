@@ -177,7 +177,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   let cpuFrame=-Infinity;
   function render(state,dt,time) {
     if(!active || !canvas.isConnected)return;
-    if(renderer.software&&!state.snap&&time-cpuFrame<.047)return;
+    if(renderer.software&&!state.snap&&time-cpuFrame<1/30-.002)return;
     if(renderer.software){dt=Math.min(.10,Math.max(dt,time-cpuFrame));cpuFrame=time;}
     resize();inFrame++;
     const {p,car,yaw,pitch,destroyed}=state;
@@ -242,8 +242,9 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
       if(e.vy!==undefined){e.vy-=7*dt;e.mesh.position.x+=e.vx*dt;e.mesh.position.z+=e.vz*dt;e.mesh.position.y=Math.max(terrainHeight(e.mesh.position.x,e.mesh.position.z)+.02,e.mesh.position.y+e.vy*dt);if(!e.fiber)e.mesh.rotation.z+=dt*6;}
       e.mesh.material.opacity=Math.min(1,e.life*(e.fiber?10:5));
     }
-    renderer.render(scene,camera,snap);
-    if(dt>.049)slowCount++;else slowCount=Math.max(0,slowCount-.5);
+    // The software view has already scheduled this frame before updating its scene.
+    renderer.render(scene,camera,snap||renderer.software);
+    if(!renderer.software&&dt>.049)slowCount++;else slowCount=Math.max(0,slowCount-.5);
     if(slowCount>55 && scale>.68){scale=Math.max(.68,scale-.12);width=0;slowCount=0;}
   }
   // World (east, south, elevation) to the last drawn viewport; depth is along the camera axis in metres.
