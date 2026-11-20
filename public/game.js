@@ -2,7 +2,7 @@ import {airfields,isAircraft} from './airfield.js';
 import {stepAircraft} from './flight.js';
 import {ammoCapacity,reloadMagazine} from './ammunition.js';
 import {vehicleContact,createVehicleDisplacements} from './vehicle-contact.js';
-import {automaticGear,wheelForces,impactSpeeds} from './vehicle-handling.js';
+import {automaticGear,stepRoadDrive,impactSpeeds} from './vehicle-handling.js';
 import {cameraOptions,cameraModes,readCameraOptions,writeCameraOptions} from './camera-options.js';
 import {createFrameMeter} from './diagnostics.js';
 import {roadblockSite,findOfficerCover} from './police-tactics.js';
@@ -1126,7 +1126,8 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         }
       }
     }
-    const near=[...actors,...cars,...remotes].filter(e=>dist(e,p)<(car?14:9));
+    const reach=car?14+Math.abs(speed)*.075:9;
+    const near=[...actors,...cars,...remotes].filter(e=>dist(e,p)<reach);
     obstacles=near.map(collisionBody);
     nearCar=car||passengerSeat?null:closestBoardableCar();
   }
@@ -1505,20 +1506,14 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         if(suspension?.lift>0)updateSuspension(spec,dt);
         speed=vx=vy=0;p.moving=false;braking=false;return;
       }
-      braking=Math.sign(speed)!==Math.sign(sy)&&Math.abs(sy)>.12&&Math.abs(speed)>.45;
       const grip=isEnfer?cityClimate(epoch).grip:1;
-      const forces=wheelForces(spec,speed,grip,tyres,sy<0);
-      const drive=forces.accel*power,limit=(sy<0?spec.reverse:spec.forward)*Math.sqrt(power);
-      const resistance=sy&&!braking?(drive-.46)/(limit*limit):.012;
-      const throttle=sy*(braking?forces.brake:drive),dragForce=Math.sign(speed)*(.46+resistance*speed*speed);
       const grade=terrainGradient(p.x,p.y);
-      const incline=(grade.x*Math.cos(p.angle)+grade.y*Math.sin(p.angle));
-      const gravityAlongRoad=onRoad&&(Math.abs(speed)>.10||sy)?-9.81*clamp(incline,-.35,.35):0;
-      const nextSpeed=speed+(onRoad?throttle+gravityAlongRoad-dragForce:-Math.sign(speed)*.30)*dt;speed=clamp(!sy&&Math.sign(nextSpeed)!==Math.sign(speed)?0:nextSpeed,-spec.reverse*Math.sqrt(power),spec.forward*Math.sqrt(power));
-      if(!sy&&Math.abs(speed)<.10)speed=0;
+      const incline=grade.x*Math.cos(p.angle)+grade.y*Math.sin(p.angle);
+      const driveline=stepRoadDrive(spec,{speed,pedal:sy,grip,tyres,power,grounded:onRoad,incline,dt});
+      speed=driveline.speed;braking=driveline.braking;
       steer+=(sx-steer)*blend(9,dt);
       const wheel=clamp(speed/6,-1,1);
-      const turnRate=Math.min(spec.steering/(1+Math.abs(speed)*.029),forces.tractionYaw);
+      const turnRate=Math.min(spec.steering/(1+Math.abs(speed)*.029),driveline.tractionYaw);
       lateralSpeed*=Math.exp(-2.6*dt);collisionSpin*=Math.exp(-3.3*dt);
       const targetAngle=p.angle+(steer*wheel*turnRate*(onRoad?1:.18)+collisionSpin)*dt;
       const c=Math.cos(targetAngle),s=Math.sin(targetAngle),driveX=c*speed-s*lateralSpeed,driveY=s*speed+c*lateralSpeed;

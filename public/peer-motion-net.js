@@ -1,3 +1,5 @@
+import {vehicleMotionLimit} from './vehicle-types.js';
+
 // All times are milliseconds on the shared server clock. The short render delay
 // absorbs delivery jitter; prediction is limited when the next pose is missing.
 const VIEW_DELAY = 65;
@@ -47,7 +49,8 @@ export function recordPeerMotion(track, data, now) {
   const angle = data.angle || 0;
   const vx = stopped ? 0 : Number.isFinite(data.vx) ? data.vx : speed * Math.cos(angle);
   const vy = stopped ? 0 : Number.isFinite(data.vy) ? data.vy : speed * Math.sin(angle);
-  const maxSpeed = vehicle ? 42 : 8;
+  const airborne = data.lift > 0 && (data.motion === 'jump' || data.motion === 'fall');
+  const maxSpeed = vehicle ? vehicleMotionLimit(data.vehicle.type) : airborne ? vehicleMotionLimit('helicopter') : 8;
   const scale = maxSpeed / Math.max(maxSpeed, Math.hypot(vx, vy));
   const sample = {at, x:data.x, y:data.y, vx:vx * scale, vy:vy * scale, vehicle, joined:data.joinedAt};
   if (previous) {

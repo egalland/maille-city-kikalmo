@@ -1,4 +1,5 @@
 import {canFireSql,canFireArgs} from './armory.js';
+import {vehicleMotionLimit} from '../public/vehicle-types.js';
 import {weaponCatalog} from '../public/weapon-catalog.js';
 import {weaponShotShape} from '../public/weapon-patterns.js';
 
@@ -61,11 +62,13 @@ export function prepareFire(data,now,validTarget){
 export async function readFireSession(db,q,{room,id,token,now,aliveSince,packets,submitted}){
   const auth='SELECT id,name,state,seen,joined FROM mc_members WHERE room=? AND id=? AND secret=? AND seen>?';
   const authArgs=[room,id,token,aliveSince];
-  const getMember=q(`SELECT m.id,m.name,m.state,m.seen,m.joined,d.state AS seatedDriver
+  const getMember=q(`SELECT m.id,m.name,m.state,m.seen,m.joined,d.state AS seatedDriver,v.data AS glidingCraft
     FROM mc_members m LEFT JOIN mc_seats s ON s.room=m.room AND s.rider=m.id
     LEFT JOIN mc_members d ON d.id=s.driver AND d.room=m.room AND d.seen>?
     AND json_extract(d.state,'$.vehicle.id')=s.car
-    WHERE m.room=? AND m.id=? AND m.secret=? AND m.seen>?`,aliveSince,...authArgs),tracks=new Map();
+    LEFT JOIN mc_air_riders a ON a.room=m.room AND a.rider=m.id AND a.until>?
+    LEFT JOIN mc_items v ON v.room=a.room AND v.item=a.car AND v.kind='vehicle' AND v.owner=''
+    WHERE m.room=? AND m.id=? AND m.secret=? AND m.seen>?`,aliveSince,now,...authArgs),tracks=new Map();
   const targets=new Set();
   for(const p of packets.values())for(const h of p.hits)if(h.target!==id)targets.add(h.target);
   const steadyMiss=Number.isFinite(submitted?.x)&&Number.isFinite(submitted?.y)&&
@@ -101,6 +104,12 @@ export async function readFireSession(db,q,{room,id,token,now,aliveSince,packets
   }
   return {member,priorState,tracks};
 }
+// Historical rows keep the vehicle ID. The current pose supplies the matching
+// model when available, including for extrapolating a fast helicopter bailout.
+function rewindSpeedLimit(track,sample,onFoot){
+  if(sample.car)return vehicleMotionLimit(sample.car===track.state.vehicle?.id?track.state.vehicle.type:undefined);
+  return sample.lift>0?vehicleMotionLimit('helicopter'):onFoot;
+}
 function atTime(track,time){
   const samples=[...track.past,track.current];
   let i=samples.length-1;
@@ -108,7 +117,7 @@ function atTime(track,time){
   // disconnected map positions. Keeping an older stationary pose is safe.
   while(i>0){
     const a=samples[i-1],b=samples[i],span=b.at-a.at;
-    const speed=a.car||b.car?65:10;
+    const speed=Math.max(rewindSpeedLimit(track,a,10),rewindSpeedLimit(track,b,10));
     if(a.car!==b.car||span>1400||distance(a,b)>2.8+speed*Math.min(.6,span/1000))break;
     i--;
   }
@@ -125,7 +134,7 @@ function atTime(track,time){
     previous=next;
   }
   const dt=clamp((time-previous.at)/1000,0,.18);
-  const factor=Math.min(1,(previous.car?52:7)/Math.max(.001,Math.hypot(previous.vx,previous.vy)));
+  const factor=Math.min(1,rewindSpeedLimit(track,previous,7)/Math.max(.001,Math.hypot(previous.vx,previous.vy)));
   return {...previous,x:previous.x+previous.vx*dt*factor,y:previous.y+previous.vy*dt*factor};
 }
 function chimeContact(shot,p,muzzle,tolerance,shape,usedRays){

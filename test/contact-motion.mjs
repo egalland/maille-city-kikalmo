@@ -84,3 +84,15 @@ test('an idle person appearing exactly between two replicated bodies clears both
   assert.equal(contactAt(resolved.x,resolved.y,options),null);
   assert.ok(Math.hypot(resolved.x-centre.x,resolved.y-centre.y)<1.4);
 });
+
+test('a supercar at top speed cannot cross a thin barrier during a long frame',async()=>{
+  const {vehicleSpec}=await import('../public/vehicle-types.js');
+  const spec=vehicleSpec('supercar'),start=point(-5,0);
+  const fence={...centre,id:'fence-panel',angle,halfLength:.055,halfWidth:2.5};
+  const options={angle,halfLength:spec.halfLength,halfWidth:spec.halfWidth,colliders:[fence]};
+  const travel=spec.forward*.075;
+  const result=moveBody(start.x,start.y,c*travel,s*travel,options);
+  assert.equal(result.touched?.id,fence.id);
+  assert.ok((centre.x-result.x)*c+(centre.y-result.y)*s>=spec.halfLength+fence.halfLength);
+  assert.equal(contactAt(result.x,result.y,options),null);
+});
