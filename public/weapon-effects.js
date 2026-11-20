@@ -6,12 +6,15 @@ const effectName=kind=>weaponCatalog[kind]?.effect||kind;
 export function effectDuration(kind){return lifetimes[effectName(kind)]||.17;}
 
 // Each stroke is a world-space polyline; both camera backends project the same strands.
-export function buildShotEffect(kind,x,y,angle,length,progress=.5){
-  const key=effectName(kind),pal=byEffect[key]||byEffect.shot;
+export function buildShotEffect(kind,x,y,angle,length,progress=.5,barrel=false){
+  const key=effectName(kind),pal=weaponCatalog[kind]?.palette||byEffect[key]||byEffect.shot;
   if(![x,y,angle,length].every(Number.isFinite)||length<0)return [];
   const u=Math.max(0,Math.min(1,progress)),len=Math.max(.03,length);
   const cs=Math.cos(angle),sn=Math.sin(angle),lines=[];
-  const pt=(along,side=0,z=1.04)=>({x:x+cs*along-sn*side,y:y+sn*along+cs*side,z});
+  const pt=(along,side=0,z=1.04)=>{
+    const spread=barrel?Math.max(0,Math.min(1,along/1.6)):1;
+    return {x:x+cs*along-sn*side*spread,y:y+sn*along+cs*side*spread,z:1.03+(z-1.03)*spread};
+  };
   const line=(color,width,points)=>lines.push({color,width,points});
   const curve=(color,width,count,point)=>line(color,width,Array.from({length:count+1},(_,i)=>point(i/count)));
   function loop(at,side,height,r,color,width=1.8){
@@ -21,7 +24,7 @@ export function buildShotEffect(kind,x,y,angle,length,progress=.5){
   if(key==='fist'){
     curve('#ffe8bb',2.5,9,t=>pt(len*(.38+.54*Math.sin(Math.PI*t)),(t-.5)*1.35,1.0+.13*Math.sin(Math.PI*t)));
   }else if(key==='shot'){
-    line('#ffdb9a',1.45,[pt(.02,0,1.03),pt(len,0,1.01)]);
+    line('#ffdb9a',1.45,[pt(0,0,1.03),pt(len,0,1.01)]);
   }else if(key==='yarn'||key==='ribbon'){
     const ribbon=key==='ribbon',turns=ribbon?2.5:3.75;
     for(let j=0;j<(ribbon?2:1);j++)curve(j?pal.trim:pal.accent,j?1.3:2.4,24,t=>{
@@ -60,4 +63,16 @@ export function buildShotEffect(kind,x,y,angle,length,progress=.5){
       curve(i%2?pal.trim:pal.accent,2-i*.18,22,t=>{const a=(t-.5)*2.65;return pt(r*Math.cos(a),r*Math.sin(a),.85+.21*Math.cos(a));});}
   }
   return lines;
+}
+
+export function muzzleFlash(kind,x,y,angle){
+  const {palette,noise}=weaponCatalog[kind];
+  const c=Math.cos(angle),s=Math.sin(angle),scale=kind==='shotgun'?1.45:noise?1:.77;
+  const point=(forward,side,up)=>({x:x+scale*(c*forward-s*side),y:y+scale*(s*forward+c*side),z:1.03+scale*up});
+  const origin=point(0,0,0),bright=noise?'#fff0bd':palette.trim,accent=noise?'#ffa359':palette.accent;
+  return [
+    {color:bright,width:4.3,points:[origin,point(.19,0,0)]},
+    ...[[.30,-.102,.018],[.25,.092,.055],[.34,.012,.075],[.19,.027,-.072]].map(([a,b,c])=>
+      ({color:accent,width:2.25,points:[point(.078,b*.2,c*.24),point(a,b,c)]}))
+  ];
 }

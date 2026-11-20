@@ -5,9 +5,10 @@ import {cabinFit,cabinOccupant,fitCabinPuppet} from './cabin-rider.js';
 import {yarnPalette} from './wool-art.js';
 import {puppetAppearance} from './puppet-dyes.js';
 import {puppetKnit,puppetFelt} from './puppet-material.js';
-import {jacketPattern,civilianJackets,dressCivilian,travelerScarf,outerFoxEar} from './figure-tailoring.js';
+import {jacketPattern,civilianJackets,serviceJackets,uniformBand,dressCivilian,travelerScarf,outerFoxEar} from './figure-tailoring.js';
 import {foxFaces,humanHead,humanNose,distantHead,distantNose,haircuts,distantSleeve,distantThigh,upperSleeve,foreSleeve,turnedCuff,trouserThigh,trouserCalf,boots} from './character-patterns.js';
 import {motionSeed,sampleLocomotion} from './locomotion-pose.js';
+import {heldWeapon,weaponPose} from './held-weapon.js';
 import * as THREE from './three.js';
 import { createStreetVehicle, isStreetVehicle } from './street-vehicles.js';
 import { vehicleSpec } from './vehicle-types.js';
@@ -166,31 +167,61 @@ function addFoxCape(torso,cloth){
   for(const u of [0,1])cord(cape,[0,.13,.39,.72,1].map(drop=>cloakPoint(u,drop)),.008,colors.trim);
   return cape;
 }
-function serviceUniform(torso,head,type,cloth,edge){
-  const brass='#ffd173';
+function serviceUniform(torso,head,type,edge,high,small){
+  const box=(parent,x,y,z,w,h,d,tint)=>addPart(parent,geo.box,x,y,z,w,h,d,tint);
+  const band=(y,x,z,tint)=>addPart(torso,uniformBand,0,y,0,x,.021,z,tint);
+  function cross(parent,x,y,z,color){
+    box(parent,x,y,z,.022,.101,.030,color);
+    box(parent,x,y,z,.022,.030,.101,color);
+  }
   if(type==='police'){
-    ball(head,0,.34,0,.297,.103,.294,'#34455f');ball(head,.169,.302,0,.196,.026,.237,'#30323e');
-    ball(head,.267,.347,0,.018,.033,.034,brass);
-    cord(torso,[[.20,.12,-.12],[.217,.04,0],[.18,-.09,.11]],.018,'#baa779');
-    ball(torso,.189,.12,-.11,.018,.048,.038,brass);
+    const navy='#28354c',sky='#8fc5df',silver='#e4e9e5';
+    small(head,-.025,.388,0,.308,.082,.315,navy);
+    small(head,-.018,.348,0,.285,.025,.291,sky);
+    small(head,.179,.322,0,.202,.031,.240,'#222c40',0,0,-.065);
+    small(head,.282,.371,0,.023,.038,.034,'#ffd173');
+    band(-.132,.190,.213,navy);
+    box(torso,-.177,.082,0,.056,.106,.309,navy);
+    box(torso,-.207,.085,0,.02,.044,.234,sky);
+    for(const side of [-1,1]){
+      box(torso,.052,.142,.246*side,.149,.036,.069,sky);
+      box(torso,.18,-.074,.135*side,.055,.095,.081,navy);
+    }
+    if(high){
+      small(torso,.195,.11,-.103,.019,.043,.039,'#ffd173');
+      cord(torso,[[.193,.152,-.152],[.213,.06,-.101],[.206,-.025,-.079]],.011,silver);
+    }
   }else if(type==='medic'){
-    ball(head,0,.342,0,.261,.08,.255,'#eee6d2');ball(head,0,.303,0,.250,.022,.249,'#4d807c');
-    cord(torso,[[.14,.158,-.141],[.196,.017,-.018],[.164,-.128,.129]],.019,edge);
-    addPart(head,geo.box,.25,.348,0,.023,.067,.024,'#317e70');addPart(head,geo.box,.246,.348,0,.025,.023,.067,'#317e70');
-    ball(torso,-.165,-.003,.08,.151,.197,.187,'#f1e0bd');
-    addPart(torso,geo.box,-.309,.03,.09,.018,.091,.027,'#3a8975');
-    addPart(torso,geo.box,-.311,.03,.09,.018,.026,.084,'#3a8975');
+    const teal='#258681',ivory='#f7edda',mint='#a6ded1';
+    small(head,.016,.332,0,.279,.077,.290,ivory);
+    small(head,.158,.298,0,.185,.024,.217,teal);
+    band(-.115,.203,.228,teal);
+    box(torso,-.198,-.008,0,.171,.348,.367,teal);
+    small(torso,-.211,.152,0,.105,.052,.18,mint);
+    cross(torso,-.292,.045,0,ivory);
+    cross(torso,.199,.062,-.101,teal);
+    for(const side of [-1,1]){
+      box(torso,-.075,-.036,side*.207,.178,.070,.054,mint);
+      if(high)cord(torso,[[-.15,.143,side*.133],[.035,.201,side*.163],[.161,.12,side*.155],[.185,-.069,side*.138]],.018,teal);
+    }
   }else if(type==='firefighter'){
-    ball(head,0,.345,0,.274,.168,.289,'#edb54c');ball(head,-.036,.278,0,.324,.035,.32,'#cd9442');
-    cord(head,[[-.23,.391,0],[0,.515,0],[.218,.406,0]],.025,'#ffe1a0');ball(head,.26,.354,0,.02,.044,.04,'#8b413d');
-    for(const y of [-.105,-.052])ball(torso,0,y,0,.20,.022,.235,'#f2cd67');
-  }else if(type==='swat'){
-    ball(head,0,.321,0,.289,.183,.29,'#424b5a');ball(head,0,.285,0,.305,.035,.299,'#2f3444');
-    ball(head,.236,.173,0,.063,.061,.216,'#393a46');ball(head,.282,.172,0,.023,.04,.179,'#81a4b2',0,0,0,'plain');
-    ball(torso,-.018,.018,0,.213,.198,.263,'#525a66');
-    for(const s of [-1,1])addPart(torso,geo.box,.187,-.035,s*.093,.045,.105,.11,'#68727c');
+    const helmet='#efaf3d',hi='#ffe17c',coal='#51404b';
+    small(head,-.033,.367,0,.293,.163,.293,helmet);
+    small(head,-.065,.287,0,.366,.043,.329,'#b97937',0,0,.10);
+    small(head,.221,.372,0,.071,.053,.079,hi,0,0,.16);
+    band(-.113,.238,.289,hi);band(-.217,.235,.288,hi);
+    for(const side of [-1,1]){
+      small(torso,-.243,-.026,.123*side,.104,.226,.100,coal);
+      small(torso,-.251,.045,.123*side,.106,.033,.103,hi);
+    }
+    if(high)cord(head,[[-.255,.418,0],[-.077,.536,0],[.132,.493,0],[.214,.426,0]],.025,'#ffeab3');
   }else{
-    for(const s of [-1,1])cord(torso,[[.135,.19,s*.14],[.167,.061,s*.1],[.133,-.058,s*.16]],.014,edge);
+    small(head,0,.340,0,.299,.169,.299,'#424b5a');
+    small(head,0,.285,0,.310,.035,.304,'#2f3444');
+    small(head,.238,.173,0,.063,.061,.216,'#393a46');
+    small(head,.290,.172,0,.020,.035,.178,'#81a4b2');
+    small(torso,-.018,.018,0,.213,.198,.263,'#525a66');
+    for(const side of [-1,1])box(torso,.187,-.035,side*.093,.045,.105,.11,edge);
   }
 }
 function makeBody(look,high,seated=false){
@@ -200,12 +231,12 @@ function makeBody(look,high,seated=false){
   const head=joint(core,'head',.025,.49,0);
   const fur=pal.fur;
   const human=animal==='human',faceSurface=high?'felt':'yarn',cut=look.pick%6;
-  const trousers=human?civilianTrousers[cut]:'#454052',boot=human?civilianBoots[cut]:isFox?'#815a43':colors.boot;
+  const trousers=human?civilianTrousers[cut]:({police:'#303d59',firefighter:'#63444a',medic:'#2f686b'})[type]||'#454052',boot=human?civilianBoots[cut]:isFox?'#815a43':colors.boot;
   const small=(parent,x,y,z,sx,sy,sz,c,rx=0,ry=0,rz=0,style='yarn')=>
     addPart(parent,high?geo.littleBall:crowdBall,x,y,z,sx,sy,sz,c,rx,ry,rz,style);
   const stitches={part:addPart,small,cord};
   // The yoke reaches the arm joints, closing the gap under each raised sleeve.
-  addPart(torso,human?civilianJackets[cut]:jacketPattern,0,0,0,1,1,1,out[0]);
+  addPart(torso,human?civilianJackets[cut]:serviceJackets[type]||jacketPattern,0,0,0,1,1,1,out[0]);
   small(torso,.006,.252,0,.119,.135,.13,isFox?colors.deepTeal:out[0]);
   ball(torso,.01,-.224,0,.156,.089,.182,'#4d5262');
   const detail=high?'near':'far';
@@ -267,17 +298,7 @@ function makeBody(look,high,seated=false){
       small(torso,-.076,.189,0,.217,.067,.235,'#d79b5a');
       addPart(torso,capeShape,-.015,.20,0,1,1,1,cloth);
       small(core,-.254,-.096,.12,.23,.09,.095,fur,.1,.3,.32);small(core,-.44,-.016,.216,.123,.075,.07,pal.cream);}
-    if(service){
-      const tone=type==='firefighter'?'#deb05e':type==='medic'?'#efe3c6':cloth;
-      small(head,0,.333,0,.286,.103,.285,tone);
-      if(type==='police'||type==='swat')small(head,.115,.287,0,.20,.030,.235,colors.ink);
-      else if(type==='firefighter')small(head,-.016,.287,0,.318,.028,.318,'#b38755');
-      if(type==='medic'){
-        small(torso,-.152,0,.035,.11,.146,.14,'#d9c6a3');
-        addPart(torso,geo.box,-.263,.015,.036,.014,.074,.022,edge);
-        addPart(torso,geo.box,-.264,.015,.036,.014,.021,.073,edge);
-      }
-    }
+    if(service)serviceUniform(torso,head,type,edge,high,small);
     batchGroup(head);batchGroup(core);batchGroup(torso);
     return group;
   }
@@ -364,7 +385,7 @@ function makeBody(look,high,seated=false){
     cord(torso,[[-.151,.089,-.114],[-.182,.048,0],[-.151,.089,.114]],.006,'#77636c');
     for(const y of [-.06,.025,.104])ball(torso,.192,y,0,.012,.022,.024,out[1],0,0,0,'plain');
   }
-  if(service)serviceUniform(torso,head,type,out[0],out[1]);
+  if(service)serviceUniform(torso,head,type,edge,high,small);
   if(isFox){
     travelerScarf(addFoxCape(torso,cloth),head,look,stitches,cloakPoint);
     const clasp=look.skinId==='braise'?'#e29b70':look.skinId==='bruyere'?'#a68eaf':look.skinId==='foret'?'#afbc78':'#6fe0c9';
@@ -388,7 +409,12 @@ function makeBody(look,high,seated=false){
     addPart(arm,upperSleeve,0,0,0,1,1,1,sleeve,-.21*s);
     addPart(elbow,foreSleeve,0,0,0,1,1,1,sleeve,-.07*s);
     addPart(elbow,turnedCuff,0,0,0,1,1,1,isFox?colors.trim:out[1],-.07*s);
-    const hand=human?fur:isFox?pal.shade:colors.glove;
+    if(type==='firefighter'||type==='medic'){
+      const stripe=type==='firefighter'?'#ffe17c':'#9edbd3';
+      small(elbow,.021,-.097,s*.021,.073,.022,.077,stripe);
+      small(knee,.015,-.087,0,.091,.022,.077,stripe);
+    }
+    const hand=human?fur:isFox?pal.shade:type==='firefighter'?'#49404a':colors.glove;
     small(elbow,.054,-.17,.011*s,.069,.083,.062,hand,.1*s,0,.05,faceSurface);
     small(elbow,.091,-.151,-.021*s,.039,.051,.036,hand,0,0,0,faceSurface);
     addPart(leg,trouserThigh,0,0,0,1,1,1,trousers);
@@ -432,6 +458,34 @@ function mountedPuppet(identity,mount,type){
   const look=puppetAppearance(identity.role,identity.skin,identity.seed);
   return createSaddleRig(puppetTemplate(look).near.clone(true),mount,type);
 }
+const weaponModels=new Map();
+function toyWeapon(kind){
+  if(weaponModels.has(kind))return weaponModels.get(kind);
+  const model=new THREE.Group(),{length,bulk,twoHanded,palette}=weaponPose(kind,{});
+  const part=(geom,x,y,z,w,h,d,color,roll=0,pitch=0)=>addPart(model,geom,x,y,z,w,h,d,color,roll,0,pitch);
+  const axle=(x,r,w,tint)=>part(geo.cylinder,x,.056,0,r,w,r,tint,0,Math.PI/2);
+  part(geo.box,-.031,-.037,0,.082,.146,bulk*.68,palette.cloth,0,-.23);
+  part(geo.box,length*.28,.043,0,length*.78,.088,bulk,palette.cloth);
+  if(['pistol','smg','shotgun'].includes(kind)){
+    const action=joint(model,'weapon-action');
+    addPart(kind==='shotgun'?model:action,geo.box,length*.46,.08,0,length*.84,.072,bulk*.79,palette.thread);
+    if(kind==='smg')part(geo.box,.065,-.065,0,.058,.123,.054,palette.accent,0,-.15);
+    if(kind==='shotgun')addPart(action,geo.box,length*.54,.018,0,.145,.059,bulk*1.06,palette.accent);
+    batchGroup(action);
+  }else if(kind==='ribbonbow'||kind==='needle'){
+    const span=bulk*.95,spanAt=length*.57;
+    cord(model,[[spanAt,-.075,-span],[length*.84,.05,-span*.70],[length*.86,.056,0],
+      [length*.84,.05,span*.70],[spanAt,-.075,span]],.017,palette.accent);
+    cord(model,[[spanAt,-.071,-span],[.028,.039,0],[spanAt,-.071,span]],.006,palette.trim);
+  }else{
+    axle(length*.53,bulk*.56,length*.42,palette.thread);
+    axle(length*.67,bulk*.59,.027,palette.accent);
+  }
+  if(twoHanded)part(geo.box,-.088,.041,0,.155,.065,bulk*.72,palette.cloth);
+  axle(length-.021,bulk*.42,.040,palette.accent);
+  axle(length-.003,bulk*.23,.009,'#352e42');
+  batchGroup(model);weaponModels.set(kind,model);return model;
+}
 export function createPuppet(type='fox',color,seed=0){
   const look=puppetAppearance(type,color,seed);
   type=look.type;
@@ -440,19 +494,23 @@ export function createPuppet(type='fox',color,seed=0){
   const group=new THREE.Group(),lod=new THREE.LOD();group.add(lod);lod.addLevel(near,0);lod.addLevel(far,type==='fox'?48:29,.12);
   const bone={};near.traverse(o=>{if(o.name)bone[o.name]=o;});
   let styleSeed=motionSeed(seed),lastId;
-  let phaseIdle=(pick%141)*.039,tailLag=0,em=0,impact=0,shot=0,equipment;
-  function updateEquipment(kit){
-    const selected=kit?.arm;
-    if(equipment?.name===selected)return;
-    if(equipment){equipment.removeFromParent();for(const mesh of equipment.children)mesh.geometry.dispose();equipment=null;}
-    if(!selected)return;
-    const long=selected!=='pistol';
-    equipment=joint(bone.elbowR,selected,.044,-.215,.011);
-    addPart(equipment,geo.box,.018,-.045,0,.075,long?.237:.123,.053,'#433744',0,0,.06,'plain');
-    addPart(equipment,geo.box,.016,long?-.186:-.115,0,.054,long?.145:.06,.045,'#77727a',0,0,0,'plain');
-    addPart(equipment,geo.box,-.018,-.013,0,.126,.058,.051,'#624453',0,0,-.1,'plain');
-    if(long)addPart(equipment,geo.box,.04,.144,0,.071,.09,.06,'#a96a4f');
-    batchGroup(equipment);
+  let phaseIdle=(pick%141)*.039,tailLag=0,em=0,impact=0,equipment,weaponAction;
+  const target=new THREE.Vector3(),axis=new THREE.Vector3(),bend=new THREE.Vector3(),fore=new THREE.Vector3();
+  const upperRest=new THREE.Vector3(),lowerRest=new THREE.Vector3(),inverse=new THREE.Quaternion();
+  function reachHand(side,point){
+    const arm=bone['arm'+side],elbow=bone['elbow'+side],sign=side==='R'?1:-1;
+    arm.scale.y=1;
+    upperRest.copy(elbow.position);lowerRest.set(.054,-.17,.011*sign);
+    const upper=upperRest.length(),lower=lowerRest.length();
+    target.fromArray(point).sub(bone.core.position).applyQuaternion(inverse.copy(bone.core.quaternion).invert()).sub(arm.position);
+    const reach=clamp(target.length(),.06,upper+lower-.002);
+    axis.copy(target).normalize();target.copy(axis).multiplyScalar(reach);
+    const along=(upper**2+reach**2-lower**2)/(2*reach);
+    bend.set(0,-1,sign*.36).addScaledVector(axis,-axis.dot(bend)).normalize();
+    bend.multiplyScalar(Math.sqrt(Math.max(0,upper**2-along**2))).addScaledVector(axis,along);
+    arm.quaternion.setFromUnitVectors(upperRest.normalize(),fore.copy(bend).normalize());
+    fore.subVectors(target,bend).applyQuaternion(inverse.copy(arm.quaternion).invert()).normalize();
+    elbow.quaternion.setFromUnitVectors(lowerRest.normalize(),fore);
   }
   const human=animal==='human';
   if(human){
@@ -462,10 +520,16 @@ export function createPuppet(type='fox',color,seed=0){
   const hero=type==='fox',ragRig=createRagdollRig(bone),farDistance=lod.levels[1].distance;
   function update(pose={},dt=1/60,time=0){
     ragRig.restore();
-    if(type==='police'||type==='swat')updateEquipment(pose.kit);
+    const selected=heldWeapon(pose);
+    if((equipment?.name??null)!==selected){
+      equipment?.removeFromParent();
+      equipment=selected?toyWeapon(selected).clone(true):null;
+      weaponAction=equipment?.getObjectByName('weapon-action');
+      if(equipment){equipment.name=selected;near.add(equipment);}
+    }
     if(pose.id!==lastId){lastId=pose.id;styleSeed=motionSeed(lastId??seed);}
     const motion=sampleLocomotion(pose,time,styleSeed);
-    const articulated=pose.ragdoll||motion.effort>.02||!!pose.kit;
+    const articulated=pose.ragdoll||motion.effort>.02||!!selected&&(!!pose.fire||!!pose.aiming||!!pose.engaged||pose.self);
     lod.levels[1].distance=articulated?Infinity:farDistance;
     if(articulated){near.visible=true;far.visible=false;}
     dt=clamp(Number(dt)||0,0,.1);phaseIdle+=dt;
@@ -473,7 +537,6 @@ export function createPuppet(type='fox',color,seed=0){
     const waveSignal=pose.emote?1:0;
     em+=(waveSignal-em)*(1-Math.exp(-dt*14));
     impact=Math.max(clamp(Number(pose.impact)||0,0,1),impact*Math.exp(-dt*8));
-    shot=Math.max(clamp(Number(pose.fire)||0,0,1),shot*Math.exp(-dt*14));
     far.position.y=motion.bob;
     far.rotation.set(motion.roll*.55,0,-motion.lean*.50);
     if(!near.visible)return;
@@ -498,11 +561,18 @@ export function createPuppet(type='fox',color,seed=0){
       arm.rotation.z=limb.arm+motion.lean*.48;
       arm.rotation.x=-s*limb.splay;
       bone['elbow'+k].rotation.z=limb.elbow;
-      if(s>0){const free=1-motion.effort;arm.rotation.z+=free*(1.11*shot+em*(2.4+.20*Math.sin(phaseIdle*13)));arm.rotation.x+=free*em*(.36+.16*Math.sin(phaseIdle*14));}
+      if(s>0){const free=1-motion.effort;arm.rotation.z+=free*em*(2.4+.20*Math.sin(phaseIdle*13));arm.rotation.x+=free*em*(.36+.16*Math.sin(phaseIdle*14));}
       if(ear){
         ear.rotation.x=s*(.085+.029*Math.sin(phase*2-.5)*rel)+turn*.07;
         ear.rotation.z=-.025*(1-rel)*idleBreath+.069*Math.sin(phase*2-.38)*rel+.13*impact;
       }
+    }
+    if(equipment){
+      const grip=weaponPose(selected,pose);
+      equipment.position.fromArray(grip.grip);equipment.rotation.z=grip.pitch;
+      if(weaponAction)weaponAction.position.x=-grip.cycle;
+      reachHand('R',grip.grip);
+      if(grip.supporting)reachHand('L',grip.support);
     }
     if(bone.cape){bone.cape.rotation.z=-.07*rel-.04*b*rel-.018*idleBreath;bone.cape.rotation.x=.045*a*rel+turn*.03;}
     if(bone.tail){
@@ -512,7 +582,7 @@ export function createPuppet(type='fox',color,seed=0){
     }
     if(pose.ragdoll)ragRig.apply(pose.ragdoll);
   }
-  return {group,update,dispose(){updateEquipment();group.removeFromParent();}};
+  return {group,update,dispose(){group.removeFromParent();}};
 }
 // A section runs across the body from its front to the back. A broad top and
 // rounded shoulders give the knitted car one continuous, upholstered silhouette.

@@ -15,7 +15,7 @@ import {createBleedFibers} from './bleed-fibers.js';
 import {createBleedMesh} from './bleed-mesh.js';
 import {fiberLifetime,impactFibers} from './puppet-combat.js';
 import {baseTerrainHeight,terrainHeight,terrainGradient,walkingPose} from './terrain-height.js';
-import {buildShotEffect,effectDuration} from './weapon-effects.js';
+import {buildShotEffect,effectDuration,muzzleFlash} from './weapon-effects.js';
 import {propDebris} from './prop-wear.js';
 import { vehicleSpec } from './vehicle-types.js';
 import * as THREE from './three.js';
@@ -24,6 +24,31 @@ import { createPuppet, createCar } from './puppets3d.js';
 import { createCanvasView } from './canvas-view.js';
 import { createPickupDisplay } from './pickup-models.js';
 import { cameraDistance, nearbyProps, swimmingSurface } from './paris-world.js';
+
+export function shotStrokeMesh(strokes,height){
+  const positions=[],tints=[],color=new THREE.Color();
+  for(const stroke of strokes){
+    color.set(stroke.color);
+    for(let i=1;i<stroke.points.length;i++){
+      const a=stroke.points[i-1],b=stroke.points[i];
+      const dx=b.x-a.x,dy=b.y-a.y,planar=Math.hypot(dx,dy);
+      const width=.009*stroke.width;
+      if(planar<.0001&&Math.abs(b.z-a.z)<.0001)continue;
+      const cross=planar>.0001?[-dy/planar*width,0,dx/planar*width]:[0,0,width];
+      for(const [sx,sy,sz] of [cross,planar>.0001?[0,width,0]:[width,0,0]]){
+        for(const [p,sign] of [[a,-1],[a,1],[b,1],[a,-1],[b,1],[b,-1]]){
+          positions.push(p.x+sx*sign,height+p.z+sy*sign,p.y+sz*sign);tints.push(color.r,color.g,color.b);
+        }
+      }
+    }
+  }
+  if(!positions.length)return;
+  const geometry=new THREE.BufferGeometry();
+  geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+  geometry.setAttribute('color',new THREE.Float32BufferAttribute(tints,3));
+  const material=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,transparent:true,depthWrite:false});
+  return new THREE.Mesh(geometry,material);
+}
 
 const clamp = (v,a,b) => Math.min(b,Math.max(a,v));
 const blend = (k,dt) => 1-Math.exp(-k*dt);
@@ -155,6 +180,12 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
       else{el.textContent=label;el.removeAttribute('aria-label');}
     }
   }
+  function drawShotStrokes(strokes,height,life,age){
+    if(age>=life)return;
+    const mesh=shotStrokeMesh(strokes,height);
+    if(!mesh)return;
+    scene.add(mesh);effects.push({mesh,life:life-age,max:life,shot:true,fresh:true});
+  }
   function effect(kind,x,y,angle=0,len=0,colors=[],lift=0,age=0) {
     if(!active || effects.length>42)return;
     const debris=propDebris(kind,colors?.type,angle);
@@ -172,13 +203,9 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     }
     if(kind!=='burst'&&kind!=='carExplosion'){
       const duration=effectDuration(kind);
-      for(const stroke of buildShotEffect(kind,x,y,angle,len,age?age/duration:.5)){
-        const points=stroke.points.map(p=>new THREE.Vector3(p.x,terrainHeight(x,y)+lift+p.z,p.y));
-        const geo=new THREE.BufferGeometry().setFromPoints(points);
-        const mat=new THREE.LineBasicMaterial({color:stroke.color,transparent:true,depthWrite:false});
-        const mesh=new THREE.Line(geo,mat);
-        scene.add(mesh);effects.push({mesh,life:duration-age,max:duration});
-      }
+      const height=terrainHeight(x,y)+lift,barrel=colors?.barrel;
+      drawShotStrokes(buildShotEffect(barrel||kind,x,y,angle,len,Math.max(.25,age/duration),!!barrel),height,duration,age);
+      if(colors?.flash)drawShotStrokes(muzzleFlash(barrel,x,y,angle),height,.095,age);
       return;
     }
     const explosion=kind==='carExplosion';
@@ -271,10 +298,11 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     }
     for(const [key,el] of names)if(el._used!==inFrame){el.remove();names.delete(key);}
     for(let i=effects.length-1;i>=0;i--){
-      const e=effects[i];e.life-=dt;
+      const e=effects[i];
+      if(e.fresh)e.fresh=false;else e.life-=dt;
       if(e.life<=0){scene.remove(e.mesh);e.mesh.geometry.dispose();e.mesh.material.dispose();effects.splice(i,1);continue;}
       if(e.vy!==undefined){e.vy-=7*dt;e.mesh.position.x+=e.vx*dt;e.mesh.position.z+=e.vz*dt;e.mesh.position.y=Math.max(terrainHeight(e.mesh.position.x,e.mesh.position.z)+.02,e.mesh.position.y+e.vy*dt);if(!e.fiber)e.mesh.rotation.z+=dt*6;}
-      e.mesh.material.opacity=Math.min(1,e.life*(e.fiber?10:5));
+      e.mesh.material.opacity=Math.min(1,e.shot?1.72*e.life/e.max:e.life*(e.fiber?10:5));
     }
     // The software view has already scheduled this frame before updating its scene.
     const presented=renderer.render(scene,camera,snap||renderer.software);

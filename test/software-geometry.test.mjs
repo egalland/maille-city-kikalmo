@@ -2,7 +2,32 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {triangleBlocks,verticesPerBlock,blockVisible} from '../public/software-geometry.js';
 import {createMeshRenderer} from '../public/mesh-renderer.js';
+import {shotStrokeMesh} from '../public/game-render.js';
+import {buildShotEffect,muzzleFlash} from '../public/weapon-effects.js';
 import {BoxGeometry,DataTexture,Group,Mesh,MeshBasicMaterial,PerspectiveCamera,PlaneGeometry,RepeatWrapping,Scene} from '../public/three.js';
+
+test('the compatible 3D renderer shows the barrel flash and tracer',()=>{
+  let lit=0;
+  const canvas={getContext:()=>({
+    createImageData:(w,h)=>({data:new Uint8ClampedArray(w*h*4)}),
+    putImageData(frame){
+      lit=0;
+      for(let i=0;i<frame.data.length;i+=4)if(frame.data[i]>235&&frame.data[i+2]<205)lit++;
+    }
+  })};
+  const renderer=createMeshRenderer(canvas,{adaptive:false});
+  const scene=new Scene(),camera=new PerspectiveCamera(42,2,.1,30);
+  camera.position.set(1.5,1.25,4);camera.lookAt(1.5,1,0);
+  const tracer=shotStrokeMesh(buildShotEffect('pistol',0,0,0,3,0,true),0);
+  const flash=shotStrokeMesh(muzzleFlash('pistol',0,0,0),0);
+  renderer.setSize(396,198);
+  renderer.render(scene,camera,true);const background=lit;
+  scene.add(tracer);renderer.render(scene,camera,true);const trail=lit;
+  scene.add(flash);renderer.render(scene,camera,true);
+  assert.ok(trail>background+25&&lit>trail+8);
+  for(const mesh of [tracer,flash]){mesh.geometry.dispose();mesh.material.dispose();}
+  renderer.dispose();
+});
 
 test('triangle blocks cull offscreen runs while retaining partly visible and near-clipped faces',()=>{
   const positions=new Float32Array(3*(verticesPerBlock+3));

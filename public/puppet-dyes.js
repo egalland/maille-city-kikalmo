@@ -16,8 +16,8 @@ const complexions=[
 ];
 const foxShadows={lagon:'#9e5843',bruyere:'#765972',foret:'#795c48',braise:'#a96543'};
 const crews={
-  police:['cat','#3e596e','#bac9c3'],medic:['rabbit','#ece0bc','#568f85'],
-  firefighter:['bear','#874c50','#e8bd68'],swat:['raccoon','#414958','#829895']
+  police:['cat','#344a70','#8fc5df'],medic:['rabbit','#f7edda','#258681'],
+  firefighter:['bear','#8c4a45','#ffe17c'],swat:['raccoon','#414958','#829895']
 };
 const coats=['#93718e',yarnPalette.teal,yarnPalette.coral,'#b28a56','#66869b','#859a76','#837a98','#bf9657'];
 const wildlife=['rabbit','bear','cat','raccoon'];

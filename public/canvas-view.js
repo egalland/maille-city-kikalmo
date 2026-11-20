@@ -14,7 +14,7 @@ import {gradedRoad} from './enfer-bridges.js';
 import {baseTerrainHeight,terrainHeight,terrainGradient,roadHeight,buildingGround,waterLevel,walkingPose} from './terrain-height.js';
 import {terracePanels} from './street-terraces.js';
 import {propDebris,propWearProfile,propWearStage,trackPropWear} from './prop-wear.js';
-import {buildShotEffect,effectDuration} from './weapon-effects.js';
+import {buildShotEffect,effectDuration,muzzleFlash} from './weapon-effects.js';
 import {isAircraft} from './airfield.js';
 import { vehicleSpec } from './vehicle-types.js';
 // Perspective software renderer for browsers without a WebGL 2 context.
@@ -834,7 +834,8 @@ export function createCanvasView(canvas,spawn,onNotice){
   function effect(kind,x,y,angle=0,len=0,colors=[],lift=0,age=0){
     const debris=propDebris(kind,colors?.type,angle);
     if(effects.length>60)effects.shift();
-    effects.push({kind,x,y,angle,len,lift:lift+(debris?.height||0),born:clock-age,duration:debris?.lifetime,
+    effects.push({kind,x,y,angle,len,lift:lift+(debris?.height||0),born:clock-age,duration:debris?.lifetime,barrel:colors?.barrel,flash:colors?.flash,
+      firstAge:colors?.barrel?age:null,
       fibers:debris?.strands||(kind==='meleeImpact'?impactFibers(angle,len):null)});
   }
   function render(state,dt,time){
@@ -1058,7 +1059,9 @@ export function createCanvasView(canvas,spawn,onNotice){
       queue.push({z:depth(p.x,p.y),draw:()=>drawBlood(strands)});
     });
     queue.sort((a,b)=>b.z-a.z);for(const o of queue)o.draw();
-    for(let i=effects.length-1;i>=0;i--){const e=effects[i],age=time-e.born;
+    for(let i=effects.length-1;i>=0;i--){const e=effects[i];
+      if(e.firstAge!=null){e.born=time-e.firstAge;e.firstAge=null;}
+      const age=time-e.born;
       const duration=e.duration??(e.fibers?fiberLifetime:e.kind==='burst'?.55:e.kind==='carExplosion'?1.35:effectDuration(e.kind));
       if(age>duration){effects.splice(i,1);continue;}
       if(e.fibers){
@@ -1089,7 +1092,9 @@ export function createCanvasView(canvas,spawn,onNotice){
         const pp=at(e.x,e.y,.93+e.lift);if(!pp)continue;
         for(let j=0;j<8;j++){const v=j*2.39+age;g.fillStyle=j%2?'#f0c891':'#94b5a6';g.fillRect(pp.x+Math.cos(v)*age*80,pp.y+Math.sin(v)*age*80,3,3);}
       }else{
-        for(const stroke of buildShotEffect(e.kind,e.x,e.y,e.angle,e.len,age/duration)){
+        const strokes=buildShotEffect(e.barrel||e.kind,e.x,e.y,e.angle,e.len,age/duration,!!e.barrel);
+        if(e.flash&&age<.095)strokes.push(...muzzleFlash(e.barrel,e.x,e.y,e.angle));
+        for(const stroke of strokes){
           g.beginPath();g.strokeStyle=stroke.color;g.lineWidth=stroke.width;let pen=false;
           for(const vertex of stroke.points){const pt=at(vertex.x,vertex.y,vertex.z+e.lift+terrainHeight(e.x,e.y)-terrainHeight(vertex.x,vertex.y));if(!pt){pen=false;continue;}if(pen)g.lineTo(pt.x,pt.y);else g.moveTo(pt.x,pt.y);pen=true;}
           g.stroke();

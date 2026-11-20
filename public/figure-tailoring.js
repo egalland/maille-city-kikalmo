@@ -42,6 +42,11 @@ const civilBodies=[
 export const civilianJackets=civilBodies.map(rings=>pattern([
   [rings[0][0]-.012,.12,rings[0][2]*.85],...rings,[.168,.151,.241],[.211,.091,.116]
 ]));
+export const serviceJackets={
+  police:pattern([[-.252,.154,.181],[-.211,.175,.194],[-.046,.179,.191],[.133,.183,.259],[.178,.155,.251],[.215,.094,.138]]),
+  firefighter:pattern([[-.301,.155,.221],[-.272,.21,.261],[-.057,.215,.263],[.133,.197,.275],[.179,.166,.265],[.211,.088,.139]]),
+  medic:pattern([[-.251,.159,.197],[-.211,.183,.215],[-.037,.191,.214],[.126,.195,.251],[.172,.147,.233],[.213,.095,.137]])
+};
 // A patch is cut from a planar silhouette and padded away from its stitching.
 // It reads on the back as well as the front; one material batch holds all panels.
 function patch(outline, rise) {
@@ -60,7 +65,7 @@ const patchShapes={
   flap:patch([[-.11,.075],[.11,.075],[.117,-.050],[.079,-.075],[-.09,-.075],[-.118,-.052]],.015),
   lapel:patch([[-.035,.12],[.085,.153],[.092,.095],[.056,.068],[.084,.051],[-.03,-.109]],.010),
 };
-const sailorBand=pattern([[-1,.982,.982],[0,1,1],[1,.982,.982]],16);
+export const uniformBand=pattern([[-1,.998,.998],[0,1,1],[1,.998,.998]],16);
 const streetCuts=['atelier','poste','marche','manteau','marin','photo'];
 const workPack=pattern([[-1,.73,.80],[-.87,.95,.98],[.58,1,1],[.91,.88,.94],[1,.68,.78]],10);
 const cameraLens=new THREE.CylinderGeometry(1,1,1,10).rotateZ(-Math.PI/2);
@@ -114,7 +119,7 @@ export function dressCivilian(torso,head,look,high,tools) {
     if(high)cord(torso,[[.144,.176,-.14],[.164,.133,-.047],[.156,.153,.096]],.008,'#bd8896');
   }else{
     for(const [y,depth,width] of [[-.148,.186,.218],[-.063,.191,.218],[.023,.199,.225]]){
-      part(torso,sailorBand,0,y,0,depth,.016,width,trim);
+      part(torso,uniformBand,0,y,0,depth,.016,width,trim);
     }
     // Ribbed fold of the watch cap casts a rim around the face.
     small(head,-.035,.32,0,.263,.109,.268,coat);

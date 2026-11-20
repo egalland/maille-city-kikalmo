@@ -186,7 +186,9 @@ export function recordFire(stmts,q,room,id,name,packet,tracks,actor,now){
     if(packet.rays.some(r=>distance(r,{x:origin.x+Math.cos(r.angle)*muzzle,y:origin.y+Math.sin(r.angle)*muzzle})>.35))return;
   }
   const shotOp='fire:'+shot.shotId;
-  const rows=[{op:shotOp,type:'shot',data:shot}],usedTargets=new Set(),usedRays=new Set();
+  const visual=shooter.car?{...shot,fromVehicle:(actor.vehicle?.id===shooter.car?actor.vehicle.type:null)
+    ||(track.state.vehicle?.id===shooter.car?track.state.vehicle.type:null)||'car'}:shot;
+  const rows=[{op:shotOp,type:'shot',data:visual}],usedTargets=new Set(),usedRays=new Set();
   for(const hit of packet.hits){
     if(usedTargets.size===packet.limit)break;
     if(hit.target===id||usedTargets.has(hit.target))continue;

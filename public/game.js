@@ -42,7 +42,8 @@ import { activeBleeding, bleedingAfterHit, hitSeverity } from './bleeding.js';
 import { ragdollPose } from './ragdoll.js';
 import { vehicleSpec, isVehicleType, vehicleDoorways } from './vehicle-types.js';
 import { weaponCatalog as weapons, starterWeapons, weaponList } from './weapon-catalog.js';
-import { resolveWeaponShot } from './weapon-patterns.js';
+import { resolveWeaponShot,weaponShotShape } from './weapon-patterns.js';
+import { renderShotRay,shotMuzzle } from './held-weapon.js';
 import { effectDuration } from './weapon-effects.js';
 import { createShotPlayback } from './shot-playback.js';
 import { applyPropDamage, propMaxHealth, vehiclePropDamage } from './prop-damage.js';
@@ -899,7 +900,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       const reaction=witnessedRecoils.get(d.id);
       const recoil=recoilPhase(reaction&&(!d.recoil||reaction.at>d.recoil.at)?reaction:d.recoil,epoch);
       const firePose=shooting?Math.max(0,1-(epoch-shot.at)/215):(d.shooting&&elapsed<.20 ? .75 : 0);
-      remotes.push({...d,...(d.vehicle||{}),bleeding:down?null:activeBleeding(d.bleeding,epoch),ragdoll:fallen,stunned:!!fallen||down,down,id:d.id,peer:true,driverSkin:d.color,name:d.name,type:d.vehicle?.type||'fox',x:e.x,y:e.y,viewAt:Math.round(pose.at),angle:e.angle,isCar:!!d.vehicle,
+      remotes.push({...d,...(d.vehicle||{}),weapon:shooting?shot.kind:d.weapon,bleeding:down?null:activeBleeding(d.bleeding,epoch),ragdoll:fallen,stunned:!!fallen||down,down,id:d.id,peer:true,driverSkin:d.color,name:d.name,type:d.vehicle?.type||'fox',x:e.x,y:e.y,viewAt:Math.round(pose.at),angle:e.angle,isCar:!!d.vehicle,
         melee:!down&&!fallen&&!d.vehicle&&punchPhase<1?{kind:animated.kind,phase:punchPhase}:null,recoil,
         lift:e.lift,supportHeight,stride:e.stride,speed:d.vehicle?(moving?d.speed:0):e.gaitSpeed,motionPhase:e.phase,moving,move:moving,fire:firePose,walk:e.walk,bubble:bubbles.get(d.id)?.symbol});
     }
@@ -1475,6 +1476,18 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       if(swingQueued){swingQueued=false;startSwing(source);}
     }
   }
+  function showWeaponShot(kind,rays,actor,age=0){
+    if(!rays.length||!weapons[kind])return;
+    const muzzle=shotMuzzle(kind,{...actor,fire:Math.max(0,1-age*4.5)},rays[0].angle);
+    const ground=(muzzle.aircraft?baseTerrainHeight:terrainHeight)(actor.x,actor.y,actor.angle);
+    const chain=weaponShotShape(kind).chain,effect=weapons[kind].effect;
+    for(const [index,ray] of rays.entries()){
+      if(index&&chain){view.effect(effect,ray.x,ray.y,ray.angle,ray.length,[],actor.lift||0,age);continue;}
+      const r=renderShotRay(ray,muzzle);
+      const lift=ground-terrainHeight(r.x,r.y)+r.height-1.03;
+      view.effect(effect,r.x,r.y,r.angle,r.length,{barrel:kind,flash:index===0},lift,age);
+    }
+  }
   function fire(source='manual'){
     if(paused||incapacitated()||passengerSeat||['swim','climb','vault'].includes(p.motion)||!view.available||cooldown>0)return;
     if(weapon==='fist'){
@@ -1545,7 +1558,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       }
     }
     const rays=pattern.rays.map(r=>({x:r.origin.x,y:r.origin.y,angle:r.angle,length:r.length}));
-    for(const r of rays)view.effect(w.effect,r.x,r.y,r.angle,r.length,[],p.lift);
+    showWeaponShot(weapon,rays,{...p,vehicle:car?{...car,angle:p.angle}:null});
     if(pattern.impact)view.effect('burst',pattern.impact.x,pattern.impact.y);
     const contacts=shotContacts;shotContacts=null;
     if(rays.length)emit('fire',{...rays[0],kind:weapon,lift:p.lift,shotId,firedAt,viewAt:peerViewTime(epoch),
@@ -1764,11 +1777,14 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   function playRemoteShot(event,age){
     const d=event.data,effect=weapons[d.kind]?.effect||'shot';
     if(dist(d,p)>=180)return;
-    if(age<.2&&Number.isFinite(d.angle))witnessedShots.set(event.player,{angle:d.angle,at:epoch-age*1000});
+    if(age<.2&&Number.isFinite(d.angle))witnessedShots.set(event.player,{angle:d.angle,kind:d.kind,at:epoch-age*1000});
     if(age<effectDuration(effect)){
-      const rays=Array.isArray(d.rays)?d.rays.slice(0,13):[d];
-      for(const r of rays)if([r.x,r.y,r.angle,r.length].every(Number.isFinite))
-        view.effect(effect,r.x,r.y,r.angle,clamp(r.length,0,100),[],d.lift||0,age);
+      const rays=(Array.isArray(d.rays)?d.rays.slice(0,13):[d]).filter(r=>[r.x,r.y,r.angle,r.length].every(Number.isFinite));
+      const seen=remotes.find(e=>e.id===event.player);
+      const vehicle=d.fromVehicle?(seen?.vehicle||{type:d.fromVehicle,angle:d.angle}):null;
+      const origin=offset(d,d.angle,vehicle?-1.8:-.35);
+      const anchor=seen&&dist(seen,origin)<2.6&&!!seen.vehicle===!!vehicle?seen:origin;
+      showWeaponShot(d.kind,rays,{...anchor,lift:anchor.lift??d.lift,vehicle,isCar:!!vehicle},age);
     }
     if(age<.23&&dist(d,p)<78){
       const profile=weapons[d.kind],volume=1-dist(d,p)/83;
@@ -1838,7 +1854,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       const aim=Math.atan2(p.y-officer.y,p.x-officer.x);
       if(!clearSight(officer,p))continue;
       officerFiring.set(officer.id,epoch);officer.angle=aim;officer.fire=1;
-      view.effect(weapons[kit.arm].effect,officer.x,officer.y,aim,range,[],.82);
+      showWeaponShot(kit.arm,[{x:officer.x,y:officer.y,angle:aim,length:range}],officer);
       tone(105,.10,'triangle',.035,238);
       if(car&&((Math.round(epoch/100)+officer.id.length)%3!==0))continue;
       damage(kit.damage,aim,.18,'police');contactLock=.78;
@@ -1893,6 +1909,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     audio.update({weather:isEnfer?cityClimate(epoch):null,epoch,vehicleType:car?.type||passengerSeat?.type,speed:car?speed:passengerSeat?.speed??Math.hypot(vx,vy),driving:!!(car||passengerSeat),walking:!car&&!passengerSeat&&p.moving&&traversal.grounded,city:actors.length>5,sirenDistance:Math.min(145,...cars.filter(e=>e.siren).map(e=>dist(e,p))),time});
     const self={...p,...(car||{}),headlamps:!!car&&lightsOn(),fare:!!car&&fareCar===car.id,melee:swing?{kind:swing.kind,phase:clamp((time-swing.begin)/meleeMoves[swing.kind].duration,0,1)}:null,
       recoil:recoilPhase(selfRecoil,epoch),id:'self',self:true,appearance,bleeding:life.bleeding,stunned:incapacitated(),down:life.down,ragdoll:ragdollPose(life.ragdoll,p.angle,epoch),moving:p.moving,move:p.moving,sprinting:p.sprinting,walk:p.walk,turn,impact,fire:shootPose,steer,
+      weapon,aiming:!paused&&!reloading&&(fireHeld||touchFireHeld||keys.has('f')),reload:reloading?1-reloading/weapons[weapon].reload:undefined,
       vehicleId:car?.id,bank:suspension?.bank,carPitch:suspension?.pitch,driverSkin:p.color,brake:braking,emote:bubbles.get(net?.id||'self')?.symbol,bubble:bubbles.get(net?.id||'self')?.symbol,speed:car?speed:Math.hypot(vx,vy),isCar:!!car};
     const renderStart=measure?performance.now():0;
     const presented=view.render({p,lostWool:woolPoint,districtIncident,car:car||passengerSeat,speed,yaw,pitch,cameraConfig,vehicleImpact:car?.type==='helicopter'?impact:0,passengerView:!!passengerSeat,steering:steer,vehiclePitch:suspension?.pitch,epoch,snap:cameraSnap,destroyed,propHealth,propDamageRevision,pickups,entities:[...(passengerSeat?[]:[self]),...remotes,...cars,...actors].map(e=>e.isCar?{...e,chassisHp:vehicleHealth(e),parts:vehicleWear.get(vehicleId(e))?.parts||0,

@@ -149,6 +149,14 @@ test('a sideways shot faces its target, bleeds on the victim and witness, and ca
   assert.ok(shot && Math.abs(shot.angle - Math.PI / 2) < .03);
   assert.ok(Math.abs(player.angle - shot.angle) < .12);
   assert.ok(witness && Math.abs(witness.angle - shot.angle) < .22);
+  for(const client of [a,b]){
+    const [kind,x,y,angle,length,visual]=client.effects.find(([kind])=>kind==='shot');
+    assert.equal(kind,'shot');assert.equal(visual.barrel,'pistol');assert.ok(visual.flash);
+    assert.ok(Math.abs(x-shot.x)>.10,'the flash follows the gun hand beside the body');
+    const fromShot=(shot.x+Math.cos(shot.angle)*shot.length)-(x+Math.cos(angle)*length);
+    const acrossShot=(shot.y+Math.sin(shot.angle)*shot.length)-(y+Math.sin(angle)*length);
+    assert.ok(Math.hypot(fromShot,acrossShot)<.001,'the trace still reaches its original impact');
+  }
   assert.equal(b.hud.health, 83);
   assert.ok(b.hud.bleeding && b.hud.bleedSeconds > 0);
   assert.ok(a.scene.entities.find(e => e.id === b.id)?.bleeding);

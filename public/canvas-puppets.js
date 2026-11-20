@@ -5,6 +5,7 @@ import {chassisStage,wheelPart} from './vehicle-damage.js';
 import {yarnPalette,paintKnit} from './wool-art.js';
 import {puppetAppearance} from './puppet-dyes.js';
 import {motionSeed,posedLimb,sampleLocomotion} from './locomotion-pose.js';
+import {heldWeapon,weaponPose} from './held-weapon.js';
 import { drawStreetVehicle, isStreetVehicle } from './street-vehicles.js';
 import { vehicleSpec } from './vehicle-types.js';
 import {bodyFabric as carColors,serviceFabric as carFleet,fleetFabric as trim} from './vehicle-fabric.js';
@@ -90,12 +91,11 @@ function ear(c,s,kind,furry,front,roll) {
 }
 function hat(c,type,rear,profile){
   if(type==='medic'){
-    panel(c,'M-18 -73 Q-15 -89 0 -89 Q17 -88 20 -72 Q7 -77 -18 -73 Z','#ebdfc8',[-21,-91,44,22]);
-    shape(c,'M-17 -77 Q-1 -81 17 -77 L19 -73 Q1 -76 -18 -73 Z','#4d807c',outline,.7,true);
-    shape(c,'M-2 -86 H2 V-82 H6 V-78 H2 V-74 H-2 V-78 H-6 V-82 H-2 Z','#4f9d93',null);
+    panel(c,'M-20 -73 Q-18 -89 0 -90 Q18 -89 22 -73 Q7 -77 -20 -73 Z','#f7edda',[-23,-92,47,22]);
+    shape(c,'M-19 -77 Q-1 -81 18 -77 L22 -73 Q1 -76 -21 -73 Z','#258681',outline,.7,true);
   } else if(type==='firefighter'||type==='swat'){
-    panel(c,'M-20 -73 Q-20 -90 -3 -92 Q15 -92 20 -76 L24 -73 Q14 -69 -21 -70 L-25 -72 Z',type==='swat'?'#565b69':'#d4a24f',[-27,-95,54,29]);
-    stitch(c,[[-16,-76],[0,-78],[17,-76]],2.2,type==='swat'?'#7c8893':'#f6d282');
+    panel(c,'M-22 -74 Q-23 -93 -7 -97 Q12 -100 20 -77 L28 -74 Q22 -68 -21 -68 L-29 -71 Z',type==='swat'?'#565b69':'#efaf3d',[-31,-102,63,36]);
+    stitch(c,[[-21,-75],[0,-79],[22,-75]],2.2,type==='swat'?'#7c8893':'#ffe17c');
     if(type==='swat'){
       if(rear<.16){
         c.save();c.translate(profile*6,0);
@@ -104,7 +104,8 @@ function hat(c,type,rear,profile){
       }else stitch(c,[[-14,-72],[-7,-71],[8,-71],[15,-72]],1.4,'#606b76');
     }
   } else if(type==='police'){
-    panel(c,'M-21 -77 L-17 -84 Q0 -94 17 -84 L21 -77 L13 -72 L-18 -73 Z','#456278',[-24,-93,48,25]);
+    panel(c,'M-24 -77 L-23 -86 Q0 -96 23 -86 L24 -77 L15 -72 L-19 -73 Z','#28354c',[-26,-96,52,26]);
+    stitch(c,[[-22,-80],[0,-83],[22,-80]],2.55,'#8fc5df');
     shape(c,'M-20 -75 Q0 -79 19 -76 L23 -72 Q11 -69 -17 -72 Z',outline,null);
     bead(c,3,-81,3,3.5,gold,null);
   }
@@ -127,7 +128,8 @@ export function drawCanvasPuppet(c,o,x,groundY,height,time=0,viewAngle=0){
   const gait=sampleLocomotion(pose,t,motionSeed(o.id??o.seed));
   const {phase,run}=gait,stride=gait.step*gait.pace,lift=gait.bob*50;
   const sx=height/(animal==='rabbit'?106:100);
-  const firing=Number(pose.fire)||0,react=Math.min(1,Math.abs(Number(pose.impact)||0));
+  const selected=heldWeapon(pose),weapon=selected?weaponPose(selected,pose):null;
+  const react=Math.min(1,Math.abs(Number(pose.impact)||0));
   function faceAndHat(){
   if(animal!=='human'){ear(c,-1,animal,fur,rear,stride);ear(c,1,animal,fur,rear,-stride);}
   panel(c,animal==='fox'||animal==='cat'?foxHead:roundHead,fur,[-32,-85,64,49]);
@@ -223,11 +225,13 @@ export function drawCanvasPuppet(c,o,x,groundY,height,time=0,viewAngle=0){
   if(pose.stunned){c.rotate(-.85);c.scale(1.12,.78);}
   const foreshorten=1-Math.abs(profile)*.34;
   const screen=([forward,up,side])=>[side*foreshorten+forward*profile,-up-rear*forward*.22];
+  const handScreen=([a,h,z])=>screen([a*56.18,h*56.18,z*56.18]);
   const leg=s=>{
     const l=s<0?gait.left:gait.right;
     const length=1+(l.legStretch||0);
     const [hip,knee,foot]=posedLimb([0,22+lift,s*7.5],l.thigh,l.shin,8*length,9.5*length,s,1.2).map(screen);
-    hose(c,hip,knee,foot,5.8,'#4c4856');
+    hose(c,hip,knee,foot,5.8,type==='medic'?'#2f686b':type==='firefighter'?'#63444a':type==='police'?'#303d59':'#4c4856');
+    if(type==='firefighter'||type==='medic')stitch(c,[[knee[0]-2.2,knee[1]+3],[knee[0]+2.2,knee[1]+3]],1.8,type==='firefighter'?trim:'#a6ded1');
     const [toe,endY]=foot;
     bead(c,toe+profile*2,endY,6.4,3.2,'#4b4546',outline,1.3,profile*.08);
     stitch(c,[[toe-4,endY+2],[toe+3.6,endY+2]],1.2,'#ac896d');
@@ -241,18 +245,27 @@ export function drawCanvasPuppet(c,o,x,groundY,height,time=0,viewAngle=0){
   const tailSide=profile>.2?-1:1;
   if(animal==='fox' && rear<.20)drawTail(c,fur,phase,rear,tailSide);
   const chest=()=>{
-    panel(c,'M-12 -44 Q-15 -37 -15 -26 Q-14 -20 -9 -18 Q1 -15 12 -20 Q17 -27 12 -40 Q9 -45 1 -46 Z',dress,[-18,-48,37,34]);
+    const body=type==='firefighter'?'M-13 -44 L-17 -36 L-17 -19 Q-2 -14 17 -19 L16 -36 L11 -45 Z':
+      'M-12 -44 Q-15 -37 -15 -26 Q-14 -20 -9 -18 Q1 -15 12 -20 Q17 -27 12 -40 Q9 -45 1 -46 Z';
+    panel(c,body,dress,[-20,-48,41,35]);
     shape(c,'M-12 -39 Q0 -35 12 -39',null,trim,1.65);
     if(type==='medic'&&rear<=.2){
       shape(c,'M-10 -41 L-6 -42 L10 -23 L7 -21 Z',trim,outline,.7,true);
       shape(c,'M3 -31 Q8 -33 13 -31 L12 -24 Q9 -22 4 -24 Z','#b0aaa0',outline,.8);
       stitch(c,[[8,-30],[8,-25]],1.2,trim);stitch(c,[[5.8,-27.5],[10.2,-27.5]],1.2,trim);
     }else if(type==='medic'&&rear>.2){ // The medic carries a stitched first-aid satchel.
-      shape(c,'M-9 -34 Q-10 -38 -4 -38 H6 Q10 -37 10 -33 L9 -23 Q2 -20 -8 -24 Z','#dbc8a7',outline,1.2,true);
-      stitch(c,[[-.2,-34],[-.2,-26]],2.2,trim);
-      stitch(c,[[-4,-30],[3.5,-30]],2.2,trim);
+      shape(c,'M-11 -37 Q-10 -40 -5 -40 H7 Q12 -39 12 -34 L11 -22 Q1 -18 -10 -22 Z','#258681',outline,1.2,true);
+      stitch(c,[[0,-36],[0,-25]],2.6,'#f7edda');
+      stitch(c,[[-5.5,-30.5],[5.5,-30.5]],2.6,'#f7edda');
     }else if(type==='firefighter'){
-      shape(c,'M-13 -26 Q0 -21 13 -26',null,trim,2.6);
+      shape(c,'M-16 -28 Q0 -24 16 -28 M-16 -22 Q0 -18 16 -22',null,trim,2.4);
+      if(rear>.2)for(const side of [-1,1]){
+        bead(c,side*6,-33,4.7,11,'#51404b');
+        stitch(c,[[side*6-3.5,-32],[side*6+3.5,-32]],2,trim);
+      }
+    }else if(type==='police'){
+      stitch(c,[[-14,-40],[-7,-40]],2.8,trim);stitch(c,[[7,-40],[14,-40]],2.8,trim);
+      if(rear>.2)stitch(c,[[-8,-34],[8,-34]],4.6,trim);else bead(c,-6,-34,2.5,2.7,gold);
     }else if(rear<.2){
       stitch(c,[[profile*3,-35],[profile*3,-22]],.9,'#78636b');
       for(const yy of [-32,-26]){bead(c,profile*3,yy,1.35,1.35,trim,outline,.45);}
@@ -262,11 +275,15 @@ export function drawCanvasPuppet(c,o,x,groundY,height,time=0,viewAngle=0){
   };
   function arm(s){
     const l=s<0?gait.left:gait.right,free=1-gait.effort;
-    const wave=s>0&&pose.emote?free:0,fire=s>0?firing*free:0;
-    const raised=l.arm+wave*(2.38+.14*Math.sin(t*12))+fire*1.12;
+    const wave=s>0&&pose.emote?free:0;
+    const armed=weapon&&(s>0||weapon.supporting);
+    const raised=l.arm+wave*(2.38+.14*Math.sin(t*12));
     const reach=gait.effort*Math.max(0,Math.sin(raised*.5));
     const length=1+(l.armStretch||0);
-    const [a,b,h]=posedLimb([s*12*Math.sin(gait.twist),39,s*12*Math.cos(gait.twist)],raised,l.elbow,(7.6+2.7*reach)*length,(7+2.4*reach)*length,s,3.6+10*l.splay+wave*2).map(screen);
+    const [a,b,h]=armed?
+      [handScreen([0,.872,s*.224]),handScreen([.081,.748,s*.239]),handScreen(s>0?weapon.grip:weapon.support)]:
+      posedLimb([s*12*Math.sin(gait.twist),39,s*12*Math.cos(gait.twist)],raised,l.elbow,
+        (7.6+2.7*reach)*length,(7+2.4*reach)*length,s,3.6+10*l.splay+wave*2).map(screen);
     hose(c,a,b,h,4.5,dress);
     bead(c,h[0],h[1]-1.1,4.7,2.6,trim,outline,1);
     bead(c,h[0],h[1]+1,4.8,4.6,ivory,outline,1.2);
@@ -294,6 +311,14 @@ export function drawCanvasPuppet(c,o,x,groundY,height,time=0,viewAngle=0){
   c.save();c.translate(profile*.8,-60+Math.sin(phase+.15)*gait.pace*.7);c.rotate(stride*(.023+.016*run)-gait.lean*profile*.33);c.translate(0,60);
   faceAndHat();
   c.restore();if(gait.effort>=.1){if(coveredArm!==-nearArm)arm(-nearArm);if(coveredArm!==nearArm)arm(nearArm);}
+  if(weapon){
+    const hand=handScreen(weapon.grip),tip=handScreen(weapon.muzzle),size=weapon.bulk*42;
+    const body=[hand[0],hand[1]-2.8];
+    stitch(c,[body,tip],size+1.4,outline);
+    stitch(c,[body,tip],size,weapon.palette.cloth);
+    stitch(c,[[body[0],body[1]-size*.26],[tip[0],tip[1]-size*.12]],Math.max(1,size*.32),weapon.palette.thread);
+    bead(c,...tip,size*.34,size*.35,weapon.palette.accent,outline,.8);
+  }
   c.restore();if(frontFoot)leg(frontFoot);c.restore();
 }
 function colorGrade(value,n){const hex=String(value).replace('#','');if(!/^[0-9a-f]{6}$/i.test(hex))return '#a38b89';const rgb=parseInt(hex,16);return 'rgb('+[16,8,0].map(v=>Math.max(0,Math.min(255,Math.round(((rgb>>v)&255)*n)))).join(',')+')';}
