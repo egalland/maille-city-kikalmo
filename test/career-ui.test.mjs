@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {setTimeout as wait} from 'node:timers/promises';
+import {incidentDepot,incidentObjectives,incidentPeriod,incidentKinds} from '../public/district-events.js';
 import {createCareerUI} from '../public/career-ui.js';
 import {careerPlaces,careerContracts} from '../public/career-catalog.js';
 import {localDatabase} from '../scripts/local-db.mjs';
@@ -18,7 +19,7 @@ class Element {
 test('career controls start and replay a delivery, validate arrivals, credit cash and recover progress after reloading',async t=>{
   const DB=localDatabase();t.after(()=>DB.close());
   const saved={},account=new Map(),fields=new Map();
-  let tickUI,clock=Date.now(),requests=[],vehicle=null,pos=careerPlaces.market;
+  let sceneIncident,wakeEvent,tickUI,clock=Date.now(),requests=[],vehicle=null,pos=careerPlaces.market;
   const replace=(key,value)=>{
     saved[key]=Object.getOwnPropertyDescriptor(globalThis,key);
     Object.defineProperty(globalThis,key,{value,writable:true,configurable:true});
@@ -41,7 +42,7 @@ test('career controls start and replay a delivery, validate arrivals, credit cas
   const sync=(events=[])=>call('sync',{...who,state:pose(),events});
   const join=()=>call('join',{...who,state:pose()});
   function makeUI(){
-    return createCareerUI({game:{getPosition:()=>pos},net:{getTransferIdentity:()=>who,status:'online',serverTime:()=>clock},
+    return createCareerUI({game:{getPosition:()=>pos,setDistrictIncident(value){sceneIncident=value;}},net:{onEvent(fn){wakeEvent=fn;},getTransferIdentity:()=>who,status:'online',serverTime:()=>clock},
       getState:()=>({inVehicle:!!vehicle}),notify:text=>notices.push(text),
       modalOpen:()=>open,open:()=>{sheet.isConnected=open=true;ui.renderPanel(sheet);},
       close:()=>{sheet.isConnected=open=false;}});
@@ -100,5 +101,34 @@ test('career controls start and replay a delivery, validate arrivals, credit cas
   assert.equal(fields.get('careerAction').textContent,'Remettre (G)');
   await fields.get('careerAction').onclick();
   assert.equal(fields.get('careerBalance').textContent,(45+careerContracts.delivery.reward-55+woolReward)+' ₣');
+  // A world incident selected on the server reaches the ordinary contract journal,
+  // HUD action and scene props. A second player's update arrives over the world feed.
+  clock=(Math.floor(clock/incidentPeriod)+1)*incidentPeriod+1000;
+  await join();tickUI();
+  await settle(()=>sceneIncident?.slot===Math.floor(clock/incidentPeriod));
+  const incident=sceneIncident,spec=incidentKinds[incident.kind],first=incidentObjectives(incident,clock)[0];
+  const originalCash=parseInt(fields.get('careerBalance').textContent);
+  fields.get('careerBadge').onclick();assert.ok(sheet.find(spec.title));
+  sheet.find('Suivre l’événement').onclick();assert.equal(open,false);
+  pos=first.point;await sync();tickUI();
+  assert.equal(fields.get('careerAction').textContent,first.verb+' (G)');
+  await fields.get('careerAction').onclick();
+  if(incident.kind==='parcels'){
+    pos=incidentDepot;clock+=20000;await join();tickUI();
+    assert.equal(fields.get('careerAction').textContent,'Livrer le ballot (G)');
+    await fields.get('careerAction').onclick();
+  }
+  assert.equal(fields.get('careerBalance').textContent,(originalCash+spec.pay)+' ₣');
+  assert.equal(sceneIncident.tasks.filter(t=>t.done).length,1);
+  const next=incidentObjectives(sceneIncident,clock)[0];
+  const other={...identity(),profile:crypto.randomUUID()};
+  await call('join',{...other,state:{...next.point,health:100}});
+  await call('career',{...other,action:'state'});
+  const otherAction=await (await call('career',{...other,action:'incident',slot:incident.slot,task:next.task,operation:'work'})).json();
+  assert.ok(otherAction.ok);
+  const feed=await (await call('sync',{...who,state:pose(),cursor:0})).json();
+  wakeEvent(feed.events.find(e=>e.player===other.id&&e.type==='districtUpdate'));
+  clock+=1250;tickUI();
+  await settle(()=>sceneIncident.tasks[next.task].done||sceneIncident.tasks[next.task].heldUntil>clock);
 
 });
