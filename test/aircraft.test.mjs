@@ -137,11 +137,15 @@ test('a second client receives flight-height, heading and attitude and can only 
     assert.ok(body.players.every(p=>!p.passenger));
     await post(pilot,'sync',fly(0));body=await ask('ground');
     assert.deepEqual(body.players.find(p=>p.id===rider.id).passenger,{car:craft.id,driver:pilot.id});
-    await post(pilot,'sync',fly(28));body=await post(rider,'sync');
-    assert.equal(body.players.find(p=>p.id===rider.id).lift,28);
+    const height=field.type==='helicopter'?71:28;
+    await post(pilot,'sync',fly(height));body=await post(rider,'sync');
+    assert.equal(body.players.find(p=>p.id===rider.id).lift,height);
     body=await post(rider,'sync',{events:[{type:'seat',op:'exit-in-air',data:{leave:true}}]});
     if(field.type==='helicopter'){
       assert.ok(!body.players.find(p=>p.id===rider.id).passenger);
+      body=await post(rider,'sync',{state:{...pose,lift:69,motion:'fall'}});
+      assert.equal(body.players.find(p=>p.id===rider.id).lift,69);
+      await post(rider,'sync',{state:{...pose,lift:0,motion:'land'}});
       await post(pilot,'sync',fly(0));await ask('ground-again');
       const sky={...pose,lift:70,verticalSpeed:1,vx:300/3.6,vehicle:{...craft,speed:300/3.6},speed:300/3.6};
       await post(pilot,'sync',{state:sky});body=await post(rider,'sync');
@@ -157,6 +161,9 @@ test('a second client receives flight-height, heading and attitude and can only 
       const watching=await post(observer,'join',{state:pose});
       assert.deepEqual(watching.world.vehicles[craft.id].flightPath,path);
       assert.equal(watching.players.find(p=>p.id===pilot.id).lift,70);
+      await post(pilot,'sync',{state:{...sky,lift:67,vehicle:null,motion:'fall'}});
+      const falling=await post(observer,'sync');
+      assert.equal(falling.players.find(p=>p.id===pilot.id).lift,67);
       const midairTake=await post(observer,'sync',{state:pose,events:[{type:'vehicle',op:'take-midair',data:{...craft,occupied:true}}]});
       assert.equal(midairTake.denied[0]?.owner,'autorotation');
       body=await post(rider,'sync',{events:[{type:'seat',op:'jump-too',data:{leave:true}}]});

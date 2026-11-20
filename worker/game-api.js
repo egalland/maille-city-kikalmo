@@ -120,15 +120,18 @@ function vitalityFields(source,now,longRecovery=false) {
   return result;
 }
 const locomotionModes=new Set(['idle','crouch','walk','run','jump','fall','land','vault','climb','swim']);
-function movementFields(s,now){
+function movementFields(s,now,previous){
   if(!Number.isFinite(s.lift))return {};
   if(isAircraft(s.vehicle?.type))return {lift:num(s.lift,0,0,flightCeiling),motion:s.lift>0?'carAir':'idle',verticalSpeed:num(s.verticalSpeed,0,-8,8)};
-  const lift=num(s.lift,0,0,flightCeiling+3);
+  const falling=!s.vehicle&&(s.motion==='fall'||s.motion==='jump');
+  const aircraftFallUntil=falling&&(previous?.vehicle?.type==='helicopter'&&previous.lift>.18?now+6000:previous?.aircraftFallUntil)||0;
+  const inFlight=aircraftFallUntil>now;
+  const lift=num(s.lift,0,0,inFlight?flightCeiling+3:64);
   if(s.vehicle)return s.motion==='carAir'&&lift>0
     ?{lift:Math.min(lift,12),motion:'carAir',verticalSpeed:num(s.verticalSpeed,0,-30,12)}
     :{lift:0,motion:'idle'};
   if(s.downUntil>now||s.health===0)return {lift,motion:'idle'};
-  return {lift,verticalSpeed:num(s.verticalSpeed,0,-50,20),motion:locomotionModes.has(s.motion)?s.motion:'idle',
+  return {lift,...(inFlight?{aircraftFallUntil}:{}),verticalSpeed:num(s.verticalSpeed,0,-50,20),motion:locomotionModes.has(s.motion)?s.motion:'idle',
     motionPhase:num(s.motionPhase,0,0,1),stride:num(s.stride,0,0,1),slope:num(s.slope,0,-1,1),turn:num(s.turn,0,-1,1)};
 }
 const isMeleeKind=kind=>typeof kind==='string'&&Object.hasOwn(meleeMoves,kind);
@@ -152,8 +155,8 @@ function impactFields(type,d,now){
   if(type!=='destroy')Object.assign(fields,{damage:meleeMoves[kind].damage,force:meleeMoves[kind].force});
   return fields;
 }
-function playerState(raw,now,room) {
-  const s=dict(raw), result={...pose(s),...vitalityFields(s,now,room===worldKeys.enfer),...movementFields(s,now),...meleeState(s,now)};
+function playerState(raw,now,room,previous) {
+  const s=dict(raw), result={...pose(s),...vitalityFields(s,now,room===worldKeys.enfer),...movementFields(s,now,previous),...meleeState(s,now)};
   const appearance=normalizeAppearance(s.appearance);if(appearance)result.appearance=appearance;
   if (!Number.isFinite(s.x) || !Number.isFinite(s.y)) return {};
   const traffic=cleanTrafficPacket(s.traffic,now);if(traffic)result.traffic=traffic;
@@ -499,9 +502,10 @@ async function sync(db,b,now,room) {
   });
   if (!member) return json({error:'rejoin'},401);
   const name=clean(b.name,24)||member.name;
-  const rawState=playerState(b.protocol===2?restoreStateFields(b.state,b.keepState,priorState):b.state,now,room);
+  const rawState=playerState(b.protocol===2?restoreStateFields(b.state,b.keepState,priorState):b.state,now,room,priorState);
   const gliding=member.glidingCraft&&JSON.parse(member.glidingCraft);
-  if((member.seatedDriver||gliding?.flightPath)&&Number.isFinite(rawState.x)){
+  if(member.seatedDriver||gliding?.flightPath){
+    if(!Number.isFinite(rawState.x))Object.assign(rawState,priorState);
     const driver=member.seatedDriver?JSON.parse(member.seatedDriver):sampleAutorotation(gliding,now);
     for(const field of ['x','y','angle','vx','vy','speed','moving','lift','verticalSpeed'])
       if(driver[field]!==undefined)rawState[field]=driver[field];
@@ -541,6 +545,7 @@ async function sync(db,b,now,room) {
       if(packet)recordFire(stmts,q,room,id,name,packet,fireHistories,actor,now);
       continue;
     }
+    if((driver.vehicle?.type==='helicopter'||gliding?.flightPath)&&driver.lift>.18)rawState.aircraftFallUntil=now+6000;
     if(type==='pickup'&&key(op)){
       const {id:item,weapon}=dict(input.data);
       if(key(item)&&recordPickup(stmts,q,{room,id,token,name,op,item,weapon,now,state:actor}))
