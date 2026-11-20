@@ -370,15 +370,17 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
       const venues=[...Object.values(careerPlaces),...airfields,...parkingLots,...neighborhoodShops,...parking,...heritageWaypoints];
       const lots=node('optgroup','');lots.label='Stationnements habituels';
       const shops=node('optgroup','');shops.label='Commerces';
+      const montRenaud=node('optgroup','');montRenaud.label='Zone commerciale du Mont Renaud';
       const publicLots=node('optgroup','');publicLots.label='Parkings publics';
       const monuments=node('optgroup','');monuments.label='Églises et mairies';
       for(const place of venues){
         const mark=placeSymbols[place.id];
         const option=node('option','',mark?mark+' · '+place.name:place.name);
-        const group=place.symbol?monuments:parkingLots.includes(place)?publicLots:neighborhoodShops.includes(place)?shops:mark?selector:lots;
+        const group=place.footprint||place.id==='parking-galerie'?montRenaud:place.symbol?monuments:
+          parkingLots.includes(place)?publicLots:neighborhoodShops.includes(place)?shops:mark?selector:lots;
         option.value=place.id;group.append(option);
       }
-      selector.append(shops,publicLots);
+      selector.append(montRenaud,shops,publicLots);
       if(parking.length)selector.append(lots);
       if(monuments.children.length)selector.append(monuments);
       const focus=button('Voir le quartier des missions','mc-secondary',()=>{

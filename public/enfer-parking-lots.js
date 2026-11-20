@@ -4,7 +4,7 @@ import {isAircraft} from './airfield.js';
 export const parkingLots=[
   {id:'parking-parvis',name:'Parking du Parvis',road:'39413741',x:43.87,y:-299.56,angle:-2.71342,colors:['#aa695e','#629490']},
   {id:'parking-teinturiers',name:'Parking des Teinturiers',road:'39413423',x:111.42,y:-195.82,angle:2.32949,colors:['#8195aa','#c59b68']},
-  {id:'parking-galerie',name:'Parking de la Galerie des Bobines',road:'39413651',x:-46.14,y:-328.95,angle:-.64964,colors:['#90a3ae','#c29572']}
+  {id:'parking-galerie',name:'Parking d’Auchan · Mont Renaud',road:'39413651',x:-46.14,y:-328.95,angle:-.64964,colors:['#90a3ae','#c29572']}
 ];
 export const parkingWidth=14.2,parkingDepth=9.8,parkingBayWidth=3.3;
 export function lotPoint(lot,along,across){

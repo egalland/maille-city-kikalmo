@@ -6,7 +6,7 @@ import {drawBoundary} from './residential-boundaries.js';
 import {vehicleSpec} from './vehicle-types.js';
 import {nearbySignals,nearbyEnclosures,nearbyParkedCars} from './paris-world.js';
 import {pavementRuns} from './curb-clearance.js';
-import {frontageSigns,frontageStyle,namedFronts} from './enfer-frontage.js';
+import {frontageSigns,frontageStyle,namedFronts,montRenaudPaving} from './enfer-frontage.js';
 import {parkingLots,lotPoint,parkingWidth,parkingDepth,parkingMarkings,parkingSign,parkingDriveways} from './enfer-parking-lots.js';
 import {workshopId,workshopEdge,bayDoor,headroom} from './workshop.js';
 import {storeByBuilding,shopHeadroom,shopOpening,shopFixture} from './enfer-retail.js';
@@ -1038,6 +1038,10 @@ export function createCity3D(scene,{software=false}={}){
     b.road=null;
     if(isEnfer && !target.skyline){
       b.base=0;b.foundation=false;b.drape=true;
+      for(const {a,b:d,width} of montRenaudPaving){
+        if(key((a[0]+d[0])/2,(a[1]+d[1])/2)===target.key)
+          strip(b,'pave',a,d,width,.10,'#c7b39d',streetFabric.paving.meters);
+      }
       for(const lot of parkingLots){
         if(key(lot.x,lot.y)!==target.key)continue;
         const at=(u,v)=>lotPoint(lot,u,v);

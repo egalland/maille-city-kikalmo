@@ -26,6 +26,16 @@ test('retail checks the correct counter, debits once and retains purchases acros
   assert.equal(state.goods.pommes,1);
   const used=await post('career',next,{action:'eatProduct',product:'pommes',revision:state.revision});
   assert.equal(used.food,10);assert.deepEqual(used.state.goods,{});
+  let revision=used.state.revision;
+  for(const [id,product,price] of [['action-noyon','bougie',6],['kiabi-noyon','bonnet',8]]){
+    const store=retailStores.find(s=>s.id===id);
+    await post('sync',next,{state:drive({x:store.buyerX,y:store.buyerY},{vehicle:null})});
+    const result=await post('career',next,{action:'buyProduct',product,revision});
+    assert.equal(result.state.revision,revision+1);
+    assert.equal(result.state.goods[product],1);
+    assert.equal(result.state.cash,id==='action-noyon'?40-price:34-price);
+    revision=result.state.revision;
+  }
 });
 
 test('a parked vehicle keeps its pose and can only be reclaimed by its profile before expiry',async t=>{

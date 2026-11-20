@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {vehicleSpec,vehicleDoorways} from '../public/vehicle-types.js';
 import {careerPlaces} from '../public/career-catalog.js';
 import {parkingLots,lotPoint,lotSpaces,parkingBay} from '../public/enfer-parking-lots.js';
-import {neighborhoodShops,namedFronts} from '../public/enfer-frontage.js';
+import {neighborhoodShops,namedFronts,montRenaudPoint} from '../public/enfer-frontage.js';
 import {atShopCounter,retailStores} from '../public/enfer-retail.js';
 
 test('street parking is sparse, clear of traffic, accessible and stationary between visits',async t=>{
@@ -47,6 +47,10 @@ test('street parking is sparse, clear of traffic, accessible and stationary betw
   for(const shop of neighborhoodShops){
     assert.equal(namedFronts.get(shop.building),shop);
     assert.equal(contactAt(shop.x,shop.y,{radius:.48}),null,shop.name);
+  }
+  for(let along=0;along<=28;along+=.25){
+    const [x,y]=montRenaudPoint(along,5.65);
+    assert.equal(contactAt(x,y,{radius:.42,footZ:0,bodyHeight:1.55}),null,'Mont Renaud sidewalk '+along);
   }
   for(const store of retailStores){
     const counterDistance=store.booth.at-.9;

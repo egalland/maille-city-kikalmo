@@ -1,5 +1,5 @@
 import {createWorldCamera} from './world-camera.js';
-import {frontageSigns,namedFronts,paintFrontageSign} from './enfer-frontage.js';
+import {frontageSigns,namedFronts,paintFrontageSign,montRenaudPaving} from './enfer-frontage.js';
 import {storeByBuilding,shopOpening,shopHeadroom,shopFixture} from './enfer-retail.js';
 import {parkingLots,lotPoint,parkingWidth,parkingDepth,parkingMarkings,parkingSign} from './enfer-parking-lots.js';
 import {heritageByFootprint,heritagePlinth} from './enfer-heritage.js';
@@ -995,6 +995,11 @@ export function createCanvasView(canvas,spawn,onNotice){
       ellipseGround(arc.x,arc.y,35.2,.025,'#c4b5a6');
     }
     groundTexture();
+    if(isEnfer)for(const {a,b,width} of montRenaudPaving){
+      if(!seen({x:(a[0]+b[0])/2,y:(a[1]+b[1])/2,r:22},streetViewRange))continue;
+      const dx=b[0]-a[0],dy=b[1]-a[1],k=width/(2*Math.hypot(dx,dy)),u=-dy*k,v=dx*k;
+      poly3([[a[0]+u,a[1]+v,.10],[b[0]+u,b[1]+v,.10],[b[0]-u,b[1]-v,.10],[a[0]-u,a[1]-v,.10]],'#c7b39d');
+    }
     if(isEnfer)for(const lot of parkingLots){
       if(!seen({...lot,r:13},streetViewRange))continue;
       const rect=(l,r,a,b,h,tint)=>poly3([[...lotPoint(lot,l,a),h],[...lotPoint(lot,r,a),h],
