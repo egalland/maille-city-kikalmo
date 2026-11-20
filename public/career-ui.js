@@ -1,3 +1,4 @@
+import {incidentKinds,incidentObjectives,incidentRadius} from './district-events.js';
 import {lostWool,woolReward,woolRadius} from './lost-wool.js';
 import {browserProfile} from './ammunition.js';
 import {careerPlaces,careerContracts,careerGarage,careerRadius} from './career-catalog.js';
@@ -25,7 +26,14 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
   badge.hidden=false;
   badge.onclick=open;
   let state=null,pending=false,lastRead=-Infinity,lastIssue='',manual=null,lastPanelKey='',panelBody=null,staged=null;
-  let nextAction=null,transferAmount=25;
+  let nextAction=null,transferAmount=25,incident=null,incidentReadDue=0;
+  net.onEvent?.(e=>{if(e.type==='districtUpdate')incidentReadDue=0;});
+  function eventObjective(){
+    if(state?.mission||manual&&manual!=='district-event')return null;
+    const pos=game.getPosition();
+    const targets=incidentObjectives(incident,net.serverTime()).sort((a,b)=>reach(a.point,pos)-reach(b.point,pos));
+    return targets[0]&&(manual==='district-event'||reach(targets[0].point,pos)<incidentRadius+.7)?targets[0]:null;
+  }
   const contract=()=>careerContracts[state?.mission?.contract];
   const stage=()=>contract()?.stages[state.mission.stage];
   const wool=()=>lostWool(net.serverTime(),state?.wool);
@@ -34,7 +42,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     if(!state||state.mission||!['find','carrying'].includes(e.phase))return false;
     return manual==='wool'||!manual&&(e.phase==='carrying'||reach(game.getPosition(),e.point)<5);
   };
-  const goal=()=>showWool()?wool().goal:stage()?careerPlaces[stage().place]:typeof manual==='object'?manual:careerPlaces[manual];
+  const goal=()=>eventObjective()?.point??(showWool()?wool().goal:stage()?careerPlaces[stage().place]:typeof manual==='object'?manual:careerPlaces[manual]);
   function nearby(){
     const self=game.getPosition();
     return Object.values(careerPlaces).find(p=>reach(p,self)<=careerRadius);
@@ -43,16 +51,28 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     if(state?.mission){notify('Termine ou quitte le contrat en cours pour changer de destination.');return;}
     manual=id;close();update();
   }
-  async function send(which,{contract:job,amount,dye,slot}={}){
+  async function send(which,{contract:job,amount,dye,slot,task,operation}={}){
     if(pending||net.status!=='online'){if(which!=='state')notify('La connexion au monde est nécessaire.');return;}
     const before=state;
-    pending=true;lastRead=Date.now();update();
+    pending=true;lastRead=Date.now();
+    if(which==='state'||which==='incident')incidentReadDue=Infinity;
+    update();
     const {id,token}=net.getTransferIdentity();
     const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),8000);
     try{
       const response=await fetch('/api/world/career',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',
-        body:JSON.stringify({map:'enfer',id,token,profile,action:which,revision:before?.revision,contract:job,amount,dye,slot,wear:game.getArmorWear?.()}),signal:abort.signal});
+        body:JSON.stringify({map:'enfer',id,token,profile,action:which,revision:before?.revision,contract:job,amount,dye,slot,task,operation,wear:game.getArmorWear?.()}),signal:abort.signal});
       const data=await response.json();
+      if(data.incident){
+        const incoming=data.incident,newDraw=incident?.slot!==incoming.slot;
+        incident=incoming;
+        const now=net.serverTime();
+        const expiry=[incoming.ends,incoming.next,...incoming.tasks.map(t=>t.heldUntil)].filter(t=>t>now);
+        incidentReadDue=Math.min(incidentReadDue,...expiry);
+        if(newDraw&&incoming.ends>now&&!incoming.tasks.every(t=>t.done))
+          notify('Événement de quartier · '+incidentKinds[incoming.kind].title+' · Missions');
+        if(incoming.tasks.every(t=>t.done)&&manual==='district-event')manual=null;
+      }
       if(data.state){
         state=data.state;
         game.setCareerOutfit?.(state);
@@ -91,7 +111,9 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
   action.onclick=act;
   function update(){
     const now=net.serverTime(),pos=game.getPosition(),life=getState(),s=stage(),point=goal(),place=nearby();
-    const ev=wool(),eventGoal=showWool();
+    const ev=wool(),eventGoal=showWool(),localEvent=eventObjective();
+    game.setDistrictIncident?.(incident?.ends>now?incident:null);
+    if(manual==='district-event'&&incident?.ends<=now)manual=null;
     game.setLostWool?.(state&&ev.phase==='find'?ev.point:null);
     if(manual==='wool'&&!eventGoal)manual=null;
     setCareerGoal(point);
@@ -112,7 +134,16 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       instruction.textContent=s?s.label:target.name;
       detail.textContent=[s?target.name:'',dist>=1000?(dist/1000).toFixed(1).replace('.',',')+' km':Math.round(dist)+' m',remaining===null?'':clock(remaining)].filter(Boolean).join(' · ');
       let verb='';
-      if(eventGoal){
+      if(localEvent){
+        const publicJob=incidentKinds[incident.kind];
+        instruction.textContent=localEvent.verb;
+        detail.textContent=target.name+' · '+Math.round(dist)+' m · '+incident.tasks.filter(t=>t.done).length+'/3 · '+clock(until(incident.ends,now));
+        if(dist<=incidentRadius){
+          if(life.inVehicle)detail.textContent+=' · Descends du véhicule';
+          else{verb=localEvent.verb;nextAction=()=>send('incident',{slot:incident.slot,task:localEvent.task,operation:localEvent.operation});}
+        }
+        if(!verb&&dist>incidentRadius)instruction.textContent=publicJob.title;
+      }else if(eventGoal){
         const collect=ev.phase==='find';
         instruction.textContent=collect?'Retrouver la pelote':'Rapporter la pelote';
         detail.textContent=target.name+' · '+Math.round(dist)+' m · '+clock(until(ev.ends,now));
@@ -133,14 +164,14 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       const projected=dist<95&&game.projectPlace?.(target.x,target.y);
       pin.hidden=!projected||Boolean(modalOpen());
       if(projected&&!pin.hidden){
-        pin.textContent=eventGoal?'●':placeSymbols[target.id]||'V';pin.style.left=(projected.x*100)+'%';pin.style.top=(projected.y*100)+'%';
+        pin.textContent=localEvent?'!':eventGoal?'●':placeSymbols[target.id]||'V';pin.style.left=(projected.x*100)+'%';pin.style.top=(projected.y*100)+'%';
         pin.setAttribute('aria-label',target.name);
       }
     }else pin.hidden=true;
     if(panelBody?.isConnected)renderPanel(panelBody);
     if(!document.hidden&&net.status==='online'&&!pending){
       const interval=game.getArmorWear?.()?900:(!state||state.mission&&(until(state.mission.deadline,now)===0||life.lifeState==='down'))?4000:30000;
-      if(Date.now()-lastRead>=interval)void send('state');
+      if(Date.now()-lastRead>=interval||now>=incidentReadDue&&Date.now()-lastRead>=900)void send('state');
     }
   }
   function renderPanel(body){
@@ -148,7 +179,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     const pos=game.getPosition(),here=reach(pos,careerPlaces.garage)<=careerRadius,car=getState();
     const inBank=['garage','market','police'].includes(nearby()?.id);
     const market=nearby()?.id==='market';
-    const key=JSON.stringify([wool().phase,wool().slot,market,inBank,car.armor,state?.leaders,state?.revision,state?.cash,state?.mission,nowOnline(),here,car.inVehicle,car.vehicleHealth,pending,lastIssue,staged]);
+    const key=JSON.stringify([incident,incident?.ends>net.serverTime(),wool().phase,wool().slot,market,inBank,car.armor,state?.leaders,state?.revision,state?.cash,state?.mission,nowOnline(),here,car.inVehicle,car.vehicleHealth,pending,lastIssue,staged]);
     if(key===lastPanelKey&&body.childNodes.length)return;
     lastPanelKey=key;
     body.dataset.transferFocus=document.activeElement?.id==='career-amount'?'1':'0';
@@ -165,6 +196,20 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     const job=contract();
     function jobsPage(){
       const list=make('div','career-jobs');
+      if(incident&&incident.ends>net.serverTime()&&!job){
+        const spec=incidentKinds[incident.kind],complete=incident.tasks.filter(t=>t.done).length;
+        const card=make('article','career-job career-public-event'),head=make('div','career-job-head'),title=make('div','');
+        title.append(make('small','','Événement de ville · Monde partagé'),make('h3','',spec.title));
+        head.append(title,make('strong','career-reward','+'+money(spec.pay)+' / étape'));
+        const foot=make('div','career-job-foot');
+        foot.append(make('span','',complete+' / 3 '+spec.unit));
+        if(complete<3){
+          const follow=control('Suivre l’événement',()=>guide('district-event'),'mc-primary');
+          foot.append(follow);
+        }
+        card.append(head,make('p','',complete===3?'Le quartier a terminé cet événement.':spec.description),foot);
+        list.append(card);
+      }
       if(job){
         const current=make('article','career-active'),objective=stage();
         current.append(make('h3','',job.title),make('p','',objective.label+' · '+careerPlaces[objective.place].name));

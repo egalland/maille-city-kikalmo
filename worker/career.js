@@ -1,3 +1,4 @@
+import {districtEventsSchema,districtState,workDistrictEvent} from './district-events.js';
 import {woolSchema,woolProgress,woolAction} from './lost-wool.js';
 import {careerContracts,careerPlaces,careerRadius,careerGarage} from '../public/career-catalog.js';
 import {outfitShop} from '../public/outfit-shop.js';
@@ -5,7 +6,7 @@ import {abandonedFor,wreckFor} from '../public/vehicle-lifecycle.js';
 import {isVehicleType,vehicleSpec} from '../public/vehicle-types.js';
 
 export const careerSchema=[
-  woolSchema,
+  woolSchema,...districtEventsSchema,
   `CREATE TABLE IF NOT EXISTS mc_careers (
     profile TEXT PRIMARY KEY, revision INTEGER NOT NULL DEFAULT 0, cash INTEGER NOT NULL DEFAULT 45,
     reputation INTEGER NOT NULL DEFAULT 0, completed INTEGER NOT NULL DEFAULT 0,
@@ -41,7 +42,7 @@ async function hashProfile(profile){
   return Array.from(bytes,v=>v.toString(16).padStart(2,'0')).join('');
 }
 const near=(actor,place)=>Math.hypot(actor.x-place.x,actor.y-place.y)<=careerRadius;
-const allowed=new Set(['woolPick','woolReturn','state','start','cancel','advance','repair','buy','collect','license','collectRent','deposit','withdraw','publishLap','hideLap','buyArmor','buyDye','equipDye']);
+const allowed=new Set(['incident','woolPick','woolReturn','state','start','cancel','advance','repair','buy','collect','license','collectRent','deposit','withdraw','publishLap','hideLap','buyArmor','buyDye','equipDye']);
 export async function runCareer(db,b,room,now){
   if(room!=='enfer:public'||!profileId.test(b.profile)||!allowed.has(b.action))
     return {ok:false,error:'Demande de carrière invalide.'};
@@ -64,6 +65,11 @@ export async function runCareer(db,b,room,now){
     q(readCareer,profile)
   ]);
   const row=result.at(-1).results[0],actor=parse(member.state)||{},previous=parse(row.mission);
+  if(b.action==='incident'){
+    const outcome=await workDistrictEvent(db,b,room,now,profile);
+    const current=outcome.ok?await q(readCareer,profile).first():row;
+    return {...outcome,state:publicState(current,b.id)};
+  }
   const fail=error=>({ok:false,error,state:publicState(row,b.id)});
   const down=actor.health===0||actor.downUntil>now;
   // Use one CAS plus a transaction marker for all dependent writes. A retry
@@ -97,7 +103,7 @@ export async function runCareer(db,b,room,now){
   if(previous&&(now>previous.deadline||down)){
     mission=null;notice=down?'Contrat interrompu lors de la mise hors combat.':'Délai dépassé. Le contrat est de nouveau disponible.';
   }else if(b.action==='state'){
-    return {ok:true,state:publicState(row,b.id)};
+    return {ok:true,state:publicState(row,b.id),incident:await districtState(db,now,profile)};
   }else if(!Number.isSafeInteger(b.revision)||b.revision!==row.revision){
     return fail('La progression a changé. Les données ont été actualisées.');
   }else if(down||!Number.isFinite(actor.x+actor.y)){

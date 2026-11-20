@@ -1,3 +1,4 @@
+import {districtEventDisplay} from './district-event-models.js';
 import {woolDisplay} from './lost-wool-model.js';
 import {cameraFieldOfView} from './camera-options.js';
 import {createDriverView} from './driver-view.js';
@@ -82,7 +83,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     const sun=new THREE.DirectionalLight(0xffe2ad,1.92);sun.position.set(Math.cos(sunBearing),1.06,Math.sin(sunBearing));scene.add(sun);
     const fill=new THREE.DirectionalLight(0xd8ebea,.69);fill.position.set(-.6,.47,-.9);scene.add(fill);
   }
-  const wool=woolDisplay(scene);
+  const wool=woolDisplay(scene),incidents=districtEventDisplay(scene);
   const city=createCity3D(scene,{software:renderer.software}), pickupDisplay=createPickupDisplay(scene);
   const camera=new THREE.PerspectiveCamera(51,1,.12,6300);
   const driverView=createDriverView(scene);
@@ -223,7 +224,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     atmosphere?.update(epoch,camera);
     if(time-lastPropTick>.30 || snap){props=nearbyProps(p.x,p.y,320);lastPropTick=time;}
     city.update(p,time,{epoch,props,destroyed,propHealth:state.propHealth,propDamageRevision:state.propDamageRevision});
-    pickupDisplay.update(state.pickups,p,time);wool.update(state.lostWool,p);
+    pickupDisplay.update(state.pickups,p,time);wool.update(state.lostWool,p);incidents.update(state.districtIncident,p,epoch);
     const candidates=state.entities.filter(e=>Number.isFinite(e.x)&&Number.isFinite(e.y)).sort((a,b)=>distance(a,p)-distance(b,p));
     const lowPower=renderer.software||scale<.81;
     const carLimit=lowPower?5:touch?7:10, pedestrianLimit=lowPower?8:touch?11:14;
@@ -291,7 +292,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   return {available:true,get drawCalls(){return renderer.info?.render?.calls;},mode:renderer.software?'mesh':'webgl',render,aim,projectTarget,effect,dispose(){
     active=false;canvas.removeEventListener('webglcontextlost',contextLost);labels.remove();
     for(const item of models.values())item.object.dispose?.();
-    wool.dispose();driverView.dispose();bloodMesh.dispose();pickupDisplay.dispose();city.dispose?.();
+    incidents.dispose();wool.dispose();driverView.dispose();bloodMesh.dispose();pickupDisplay.dispose();city.dispose?.();
     atmosphere?.dispose();lighting?.dispose();shadows.geometry.dispose();shadows.material.map.dispose();shadows.material.dispose();
     sky.geometry.dispose();sky.material.map.dispose();sky.material.dispose();renderer.dispose();
   }};

@@ -77,7 +77,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   }});
   const view=buildView(canvas,SPAWN,onNotice),keys=new Set(),destroyed=new Set(),peers=new Map(),carsShared=new Map(),npcShared=new Map(),incidents=new Map(),bubbles=new Map();
   let passengerSeat=null,seatPending=null;
-  let woolPoint=null;
+  let woolPoint=null,districtIncident=null;
   const cabinPassengers=new Map(),openedDoors=new Map();
   let lampMode='auto',fareCar=null,seatBaseline=false;
   const lightsOn=()=>lampMode==='auto'?automaticLights(cityClimate(epoch)):lampMode==='on';
@@ -1642,7 +1642,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       recoil:recoilPhase(selfRecoil,epoch),id:'self',self:true,appearance,bleeding:life.bleeding,stunned:incapacitated(),down:life.down,ragdoll:ragdollPose(life.ragdoll,p.angle,epoch),moving:p.moving,move:p.moving,sprinting:p.sprinting,walk:p.walk,turn,impact,fire:shootPose,steer,
       vehicleId:car?.id,carPitch:suspension?.pitch,driverSkin:p.color,brake:braking,emote:bubbles.get(net?.id||'self')?.symbol,bubble:bubbles.get(net?.id||'self')?.symbol,speed:car?speed:Math.hypot(vx,vy),isCar:!!car};
     const renderStart=measure?performance.now():0;
-    const presented=view.render({p,lostWool:woolPoint,car:car||passengerSeat,speed,yaw,pitch,cameraConfig,passengerView:!!passengerSeat,steering:steer,vehiclePitch:suspension?.pitch,epoch,snap:cameraSnap,destroyed,propHealth,propDamageRevision,pickups,entities:[...(passengerSeat?[]:[self]),...remotes,...cars,...actors].map(e=>e.isCar?{...e,chassisHp:vehicleHealth(e),parts:vehicleWear.get(vehicleId(e))?.parts||0,
+    const presented=view.render({p,lostWool:woolPoint,districtIncident,car:car||passengerSeat,speed,yaw,pitch,cameraConfig,passengerView:!!passengerSeat,steering:steer,vehiclePitch:suspension?.pitch,epoch,snap:cameraSnap,destroyed,propHealth,propDamageRevision,pickups,entities:[...(passengerSeat?[]:[self]),...remotes,...cars,...actors].map(e=>e.isCar?{...e,chassisHp:vehicleHealth(e),parts:vehicleWear.get(vehicleId(e))?.parts||0,
       wrecked:exploded.has(vehicleId(e))||burnProgress(vehicleWear.get(vehicleId(e)),epoch)===1,
       burning:!!vehicleWear.get(vehicleId(e))?.fireAt&&(vehicleWear.get(vehicleId(e)).explodeAt||Infinity)>epoch,
       burnProgress:burnProgress(vehicleWear.get(vehicleId(e)),epoch),
@@ -1887,6 +1887,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     },
     setAimAssist(enabled){aimAssist=!!enabled;if(!aimAssist)clearAimLock();},
     setLostWool(point){woolPoint=point;},
+    setDistrictIncident(incident){districtIncident=incident;},
     setFarePassenger(id){if(fareCar!==id){fareCar=id||null;publish();}},
     setRadio(v){audio.setRadio(v);},
     setSound(v){audio.toggle(!!v);if(v)unlock();},
