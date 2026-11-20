@@ -24,3 +24,5 @@
 .career-garage .career-bank-balance{margin:5px 0 15px;font-size:25px;color:#f7d699;font-weight:750}
 .career-transfer-label{display:block;color:#d3dfd3;font-size:14px;margin:6px 0}.career-garage input{display:block;width:100%;margin-bottom:9px}
 .career-ranking{margin-top:12px;border-top:1px dashed #718276;padding-top:9px}.career-ranking summary{cursor:pointer;font-size:14px;color:#f5d89f}.career-ranking ol{padding-left:20px;font-variant-numeric:tabular-nums}.career-ranking li+li{margin-top:4px}.career-ranking button{margin:3px 6px 2px 0}
+.career-dye{display:flex;align-items:center;gap:8px;min-height:44px}.career-dye-swatch{width:18px;height:18px;border-radius:50%;border:1px solid #eee3c7}.career-dye button{margin-left:auto}.career-armor{display:flex;align-items:center;gap:5px;width:max-content;margin-top:3px;padding:2px 5px;border-radius:4px;color:#c3e8e1;background:#283f42;font:700 10px var(--ui)}.career-armor[hidden]{display:none}
+@media(max-width:370px){.career-tabs .career-tab{font-size:12px}}

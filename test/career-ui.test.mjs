@@ -12,6 +12,7 @@ class Element {
   setAttribute(key,value){this[key]=value;}
   replaceChildren(...els){this.childNodes=els;}
   contains(el){return this===el||this.childNodes.some(c=>c.contains(el));}
+  reportValidity(){return true;}
   find(label){return this.textContent===label?this:this.childNodes.map(c=>c.find(label)).find(Boolean);}
 }
 test('career controls start and replay a delivery, validate arrivals, credit cash and recover progress after reloading',async t=>{
@@ -71,4 +72,17 @@ test('career controls start and replay a delivery, validate arrivals, credit cas
   fields.clear();ui=makeUI();tickUI();await settle(()=>requests.filter(x=>x==='state').length>=2&&fields.get('careerBalance').textContent===expected);
   assert.equal(fields.get('careerInstruction').textContent,'Charger les ballots');
   assert.ok(fields.get('careerDetail').textContent.includes('Halles'));
+
+  fields.get('careerBadge').onclick();sheet.find('Banque').onclick();
+  assert.ok(sheet.find('Les guichets sont aux Halles, au garage et au commissariat.'));
+  pos=careerPlaces.market;await sync();tickUI();
+  await sheet.find('Déposer').onclick();
+  assert.equal(fields.get('careerBalance').textContent,(45+careerContracts.delivery.reward-25)+' ₣');
+  await sheet.find('Retirer').onclick();
+  assert.equal(fields.get('careerBalance').textContent,expected);
+  sheet.find('Boutique').onclick();
+  const vest=sheet.find('Équiper un gilet · 55 ₣');
+  assert.equal(vest.disabled,false);await vest.onclick();
+  assert.equal(fields.get('careerArmor').textContent,'Protection · 40');
+  assert.equal(fields.get('careerBalance').textContent,(45+careerContracts.delivery.reward-55)+' ₣');
 });
