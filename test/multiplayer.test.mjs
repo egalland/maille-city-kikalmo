@@ -110,7 +110,10 @@ test('More than sixteen players coexist, old public clients see them and reconne
   try {
     const crowd=Array.from({length:24},(_,i)=>({...session('Joueur '+i),state:{x:1000*i,y:-40*i}}));
     const joined=await Promise.all(crowd.map(c=>accepted(api(DB,'/api/world/join',c))));
-    assert.equal(joined.at(-1).players.length,24);
+    // Concurrent joins each see the roster as of their own transaction. Ask for
+    // a fresh snapshot once all 24 have completed, regardless of arrival order.
+    const roster=await accepted(api(DB,'/api/world/sync',crowd.at(-1)));
+    assert.deepEqual(new Set(roster.players.map(p=>p.id)),new Set(crowd.map(p=>p.id)));
     const reconnect=await accepted(api(DB,'/api/paris/join',{...crowd[5],state:undefined,room:'public'}));
     assert.equal(reconnect.players.length,24);
     const again=reconnect.players.find(p=>p.id===crowd[5].id);
