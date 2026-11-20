@@ -225,3 +225,31 @@ test('the live shooting controls, HTTP netcode and world database agree on a sin
   assert.equal(hits[0].data.target,b.net.id);
   assert.ok(b.hud.bleeding);
 });
+
+test('two playable clients board one car, follow the same drive and release the seat on exit',async t=>{
+  const {clients:[driver,rider],tick}=street(t,2,localDatabase());
+  const poll=(fn,why)=>tickUntil(tick,fn,why);
+  const {parkedCars}=await import('../public/paris-world.js');
+  const car=parkedCars.find(v=>v.type==='car'||v.type==='sedan');
+  stand(driver,car.x,car.y+2.3,car.angle);
+  stand(rider,car.x+5,car.y+4,car.angle);
+  tick(5);
+  await Promise.all([driver.net.start(),rider.net.start()]);
+  await poll(()=>driver.hud.nearVehicle&&rider.net.peers().length===1,'connect near a parked car');
+  driver.game.action('vehicle');
+  await poll(()=>driver.hud.inVehicle&&rider.net.peers().some(e=>e.vehicle),'driver claim');
+  const driven=rider.net.peers().find(e=>e.vehicle);
+  const side=vehicleSpec(driven.vehicle.type).halfWidth+1.0;
+  stand(rider,driven.x-Math.sin(driven.angle)*side,driven.y+Math.cos(driven.angle)*side,driven.angle);
+  await poll(()=>rider.hud.nearPassengerSeat,'driver offers an available seat');
+  rider.game.action('vehicle');
+  await poll(()=>rider.hud.passenger&&driver.scene.entities.find(e=>e.self)?.passenger,'both clients see the rider seated');
+  assert.equal(rider.scene.entities.filter(e=>e.vehicle?.id===driven.vehicle.id).length,1);
+  assert.ok(!driver.scene.entities.some(e=>e.id===rider.net.id));
+  driver.game.setDrive(0,1);
+  await poll(()=>Math.hypot(rider.scene.p.x-driven.x,rider.scene.p.y-driven.y)>1.4,'rider follows driver motion');
+  driver.game.setDrive(0,0);
+  // Driver exits. Both controls and shared occupancy must return to the on-foot state.
+  driver.game.action('vehicle');
+  await poll(()=>!driver.hud.inVehicle&&!rider.hud.inVehicle&&driver.scene.entities.some(e=>e.id===rider.net.id),'driver exit releases both seats');
+});

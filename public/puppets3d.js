@@ -23,6 +23,7 @@ const colors={ink:yarnPalette.ink,boot:'#543f45',sole:'#392f3b',glove:'#fbe3b5',
 
 const surfaces={
   yarn:new THREE.MeshLambertMaterial({color:0xffffff,vertexColors:true,map:puppetKnit()}),
+  glass:new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.17,depthWrite:false,side:THREE.DoubleSide}),
   plain:new THREE.MeshLambertMaterial({color:0xffffff,vertexColors:true}),
   glow:new THREE.MeshBasicMaterial({color:0xffffff,vertexColors:true}),
 };
@@ -527,12 +528,15 @@ function carChassis(g,paint,service,variant){
     [.20,.41,1.02,.85],[.85,.42,.99,.83],[1.58,.43,.96,.76],[1.84,.49,.90,.67],[1.96,.56,.81,.49]
   ]);
   carPart(g,body,0,0,0,1,1,1,paint);
-  const shell=carLoft('sport-cabin',[
-    [-1.32,.89,1.06,.64],[-1.13,.91,1.25,.70],[-.74,.94,1.62,.69],[-.42,.94,1.70,.70],
-    [.18,.94,1.72,.70],[.45,.94,1.65,.68],[.78,.94,1.33,.69],[1.01,.94,1.08,.67]
-  ],.77);
   const capColor=service==='police'?'#e8dfc8':service==='taxi'||variant%3===0?carCloth:paint;
-  carPart(g,shell,0,0,0,1,1,1,capColor);
+  carPart(g,carLoft('hollow-cabin-roof',[[-.86,1.555,1.59,.57],[-.66,1.595,1.68,.63],
+    [.18,1.61,1.72,.64],[.48,1.56,1.63,.58]],.42),0,0,0,1,1,1,capColor);
+  for(const side of [-1,1]){
+    for(const [from,to] of [[[-1.23,1.03,.69],[-.77,1.60,.59]],[[.92,1.04,.70],[.45,1.60,.59]],[[-.11,1.02,.73],[-.11,1.63,.60]]]){
+      carTrim(g,[from[0],from[1],side*from[2]],[to[0],to[1],side*to[2]],.045,capColor);
+    }
+    carTrim(g,[-1.22,1.052,side*.69],[.94,1.052,side*.70],.044,capColor);
+  }
   for(const k of ['front','rear'])trimmedGlass(g,carWindshield('glass-'+k,k),k==='front'?carYarn.frontPane:carYarn.pane);
   for(const s of [-1,1]){
     for(const front of [true,false])trimmedGlass(g,carSideWindow(front,s),front?carYarn.pane:carYarn.shadePane);
@@ -576,8 +580,15 @@ function carPanel(g,points,color){
     }
     for(const i of outward?[0,1,2,0,2,3]:[0,2,1,0,3,2])indices.push(offset+i);
   }
-  patch([[0,0],[1,0],[1,1],[0,1]],carYarn.shadePane,0);
-  patch([[.03,.06],[.97,.06],[.95,.95],[.05,.95]],color,.003);
+  if(g.userData.seats3D){
+    const pane=new THREE.BufferGeometry();
+    pane.setAttribute('position',new THREE.Float32BufferAttribute(points.flat(),3));
+    pane.setIndex(outward?[0,1,2,0,2,3]:[0,2,1,0,3,2]);pane.computeVertexNormals();
+    carPart(g,pane,0,0,0,1,1,1,color,0,0,0,'glass');
+  }else{
+    patch([[0,0],[1,0],[1,1],[0,1]],carYarn.shadePane,0);
+    patch([[.03,.06],[.97,.06],[.95,.95],[.05,.95]],color,.003);
+  }
   patch([[.08,.08],[.18,.08],[.45,.93],[.33,.93]],carYarn.gleam,.006);
   patch([[.23,.10],[.255,.10],[.52,.92],[.495,.92]],'#b6ccba',.006);
   patch([[.06,.025],[.94,.025],[.92,.055],[.08,.055]],carYarn.binding,.006);
@@ -614,9 +625,6 @@ function townCar(g,type,paint){
   carPart(g,shell,0,0,0,1,1,1,paint);
   // A tall, short greenhouse on the hatch and a swept, low canopy on the coupé.
   const lower=belt-.014;
-  const canopy=carLoft(type+'-canopy',[[rear,lower,lower+.065,glass],[rearTop,lower,roof,top],
-    [frontTop,lower,roof-.012,top],[front,lower,lower+.065,glass]],.3);
-  carPart(g,canopy,0,0,0,1,1,1,'#456977');
   const wind=(bottom,end,sign)=>carPanel(g,[[bottom+sign*.017,lower+.036,-glass*.84],[bottom+sign*.017,lower+.036,glass*.84],
     [end+sign*.016,roof-.046,top*.83],[end+sign*.016,roof-.046,-top*.83]],sign>0?'#98c3c6':'#6b949e');
   wind(front,frontTop,1);wind(rear,rearTop,-1);
@@ -785,6 +793,10 @@ function createCarBody(type='car',color,seed=0){
   const group=new THREE.Group(),frame=new THREE.Group(),body=new THREE.Group();
   group.name='Maille véhicule '+type;body.name='Carrosserie';
   group.add(frame);frame.add(body);
+  if(!bus&&!isVan){
+    const low=type==='sport',compact=type==='compact';
+    body.userData.seats3D={x:low?-.32:compact?-.31:.02,y:low?.71:compact?.91:1.01,spacing:low?.38:compact?.31:.335,scale:low?.70:compact?.89:.94};
+  }
   if(bus)cityBus(body,paint);
   else if(shaped)townCar(body,type,paint);
   else if(isVan)carVan(body,type,paint);
@@ -792,6 +804,16 @@ function createCarBody(type='car',color,seed=0){
   if(!bus&&!shaped){
     const sourceLength=isVan?2.54:2.06,sourceWidth=isVan?1.10:.97;
     frame.scale.set(spec.halfLength/sourceLength,spec.height/(isVan?2.30:type==='taxi'||type==='police'?1.93:1.72),spec.halfWidth/sourceWidth);
+  }
+  if(body.userData.seats3D){
+    const {x,y,spacing,scale}=body.userData.seats3D;
+    for(const side of [-1,1]){
+      carBox(body,x-.20*scale,y+.17*scale,side*spacing,.105*scale,.38*scale,.41*scale,'#524952',0,0,-.11);
+      carBall(body,x-.21*scale,y+.36*scale,side*spacing,.073*scale,.089*scale,.132*scale,'#786368');
+    }
+    carBox(body,x+.4*scale,y+.11*scale,0,.21*scale,.12*scale,spacing*3.4,'#4a4247');
+    const rim=carPart(body,spoolWelt,x+.225*scale,y+.22*scale,-spacing,.130*scale,.130*scale,.13*scale,'#3a3336',0,1.2,0);
+    carTrim(body,[rim.position.x,y+.17*scale,-spacing],[x+.4*scale,y+.12*scale,-spacing],.026,'#504648');
   }
   const beacon=carServiceDetails(body,type,isVan);
   batchGroup(body);
@@ -843,13 +865,60 @@ function createCarBody(type='car',color,seed=0){
   }};
 }
 
+// Cabin figures share fixed, batched wool geometry across the traffic fleet.
+const cabinFigures=new Map();
+function seatedFigure(role,skin,seed,atWheel){
+  const dye=puppetAppearance(role,skin,seed),{pelt,coat}=dye;
+  const key=[role,pelt.fur,coat,atWheel].join('/');
+  if(!cabinFigures.has(key)){
+    const g=new THREE.Group(),fox=role==='fox',face=.385;
+    carBall(g,-.042,.14,0,.123,.173,.171,coat);
+    carBall(g,0,face,0,.149,.154,.156,pelt.fur);
+    if(fox){
+      for(const side of [-1,1]){
+        carPart(g,geo.cone,-.038,.539,side*.090,.065,.148,.060,pelt.fur,side*.10,0,.08);
+        carBall(g,.033,.488,side*.085,.026,.039,.034,pelt.inner);
+      }
+      carBall(g,.123,.354,0,.091,.064,.102,pelt.cream);
+      carBall(g,.204,.367,0,.026,.028,.039,'#392e39');
+    }else{
+      carBall(g,-.026,.461,0,.149,.091,.154,pelt.shade);
+      carBall(g,.146,.372,0,.035,.038,.038,pelt.fur);
+    }
+    for(const side of [-1,1]){
+      carBall(g,.126,.409,side*.079,.022,.025,.021,'#302b36');
+      const hand=[atWheel?.201:.079,atWheel?.218:.082,side*(atWheel?.099:.085)];
+      carTrim(g,[-.02,.224,side*.134],hand,.044,coat);
+      carBall(g,...hand,.046,.044,.045,pelt.fur);
+    }
+    batchGroup(g);cabinFigures.set(key,g);
+  }
+  return cabinFigures.get(key).clone();
+}
+function updateSeatedFigures(host,pose,occupants,seed){
+  const mount=host.userData.seats3D;
+  for(const [index,active] of [pose.driver,pose.passenger].entries()){
+    const seat=occupants[index],player=index?!!pose.passengerSkin:!!(pose.peer||pose.self);
+    const skin=index?pose.passengerSkin:pose.driverSkin,identity=player?'fox/'+skin:'human';
+    if(!active){if(seat.figure)seat.figure.visible=false;continue;}
+    if(seat.identity!==identity){
+      seat.figure?.removeFromParent();
+      seat.figure=seatedFigure(player?'fox':'human',skin,seed+index,index===0);
+      seat.figure.name=index?'Passager assis':'Conducteur assis';
+      seat.figure.position.set(mount.x,mount.y,(index?1:-1)*mount.spacing);
+      seat.figure.scale.setScalar(mount.scale);host.add(seat.figure);seat.identity=identity;
+    }
+    seat.figure.visible=true;
+  }
+}
+
 const frayedChassis=new THREE.MeshLambertMaterial({color:'#493940'});
 const flameYarn=new THREE.MeshBasicMaterial({color:'#f8a451'});
 const cottonSmoke=new THREE.MeshBasicMaterial({color:'#82747e',transparent:true,opacity:.42,depthWrite:false});
 export function createCar(type='car',color,seed=0){
   const body=createCarBody(type,color,seed),spec=vehicleSpec(type?.type??type);
   let wear=null,cabin=null,door=null,wreck=null,hiddenIntact=null;
-  const intact=[...body.group.children];
+  const intact=[...body.group.children],seated=[{},{}];
   function updateWreck(damaged){
     if(!damaged){
       if(wreck)wreck.visible=false;
@@ -895,6 +964,10 @@ export function createCar(type='car',color,seed=0){
   }
   function updateCabin(pose){
     if(spec.openSeat)return;
+    if(body.windowHost?.userData.seats3D){
+      updateSeatedFigures(body.windowHost,pose,seated,seed);
+      return;
+    }
     if(!pose.driver&&!(pose.parts&1)){if(cabin)cabin.group.visible=false;return;}
     const identity=[pose.driver?appearanceKey(pose.appearance)||pose.id:'',pose.driverSkin,pose.passengerSkin,pose.passenger?1:0,pose.parts&1].join('/');
     if(!cabin){
@@ -996,5 +1069,5 @@ export function createCar(type='car',color,seed=0){
       puff.scale.setScalar(.075+.34*age);
     });
   }
-  return {...body,update,dispose(){if(door)for(const part of door.children)part.geometry.dispose();if(wreck)for(const part of wreck.children)part.geometry.dispose();if(cabin){cabin.group.removeFromParent();for(const pane of cabin.group.children)pane.geometry.dispose();for(const picture of cabin.pictures){picture.map.dispose();picture.material.dispose();}}body.dispose();}};
+  return {...body,update,dispose(){for(const seat of seated)seat.figure?.removeFromParent();if(door)for(const part of door.children)part.geometry.dispose();if(wreck)for(const part of wreck.children)part.geometry.dispose();if(cabin){cabin.group.removeFromParent();for(const pane of cabin.group.children)pane.geometry.dispose();for(const picture of cabin.pictures){picture.map.dispose();picture.material.dispose();}}body.dispose();}};
 }
