@@ -1,3 +1,5 @@
+import {isAircraft} from './airfield.js';
+import {drawCanvasAircraft} from './aircraft-canvas.js';
 import {drawCabinDriver} from './cabin-art.js';
 import {chassisStage,wheelPart} from './vehicle-damage.js';
 import {yarnPalette,paintKnit} from './wool-art.js';
@@ -295,6 +297,7 @@ function carFace(c,pts,fill,stroke,width,woven,curve=.055){
 }
 
 export function drawCanvasCar(c,o,x,groundY,height,time=0,viewAngle=0){
+  if(isAircraft(o?.type))return drawCanvasAircraft(c,o,x,groundY,height,time,viewAngle);
   drawCarBody(c,o,x,groundY,height,time,viewAngle);
   const stage=chassisStage(o?.chassisHp);
   if(!stage||height<8)return;
