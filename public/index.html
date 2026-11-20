@@ -15,6 +15,7 @@
 <link rel="modulepreload" href="/paris-data.js">
 <link rel="stylesheet" href="/paris.css">
 <link rel="stylesheet" href="/hud-editor.css">
+<link rel="stylesheet" href="/career-ui.css">
 <script type="module" src="/entry.js"></script>
 <link rel="stylesheet" href="/kikalmo-link.css">
 </head>
@@ -37,6 +38,7 @@
 </header>
 <main class="scene" id="scene" aria-label="Ville jouable">
   <canvas id="city" tabindex="0" aria-label="Enfer en laine, monde 3D à la troisième personne"></canvas>
+  <span id="careerPin" class="career-pin" hidden></span>
   <div class="scene-shade" aria-hidden="true"></div>
   <span id="touchAimMarker" aria-hidden="true" hidden><svg viewBox="0 0 28 28" focusable="false">
     <path d="M3 10V7a4 4 0 0 1 4-4h3m8 0h3a4 4 0 0 1 4 4v3m0 8v3a4 4 0 0 1-4 4h-3m-8 0H7a4 4 0 0 1-4-4v-3"/>
@@ -44,12 +46,15 @@
   <section data-hud="district" class="district" aria-label="Position actuelle">
     <button type="button" class="district-line map-world-entry" data-panel="map" aria-label="Ouvrir le plan"><i data-icon="pin"></i><span id="activeWorldLabel">ENFER · VILLE EN LAINE</span></button>
     <h2 id="district">Enfer</h2><span id="street" class="street"></span>
+    <button class="career-badge" id="careerBadge" aria-haspopup="dialog" title="Missions et garage (N)" hidden><i data-icon="pack"></i><b>Missions</b><span id="careerBalance">— ₣</span></button>
+    <div class="career-target" id="careerTarget" hidden><strong id="careerInstruction"></strong><small id="careerDetail"></small><button id="careerAction" type="button" hidden></button></div>
   </section>
   <section data-hud="vitals" class="player-panel hud" aria-label="État du personnage">
     <button type="button" class="portrait" id="openAvatar" title="Tenue du renard" aria-label="Choisir la tenue du renard"><canvas id="portrait" width="96" height="96" role="img" aria-label="Renard Kikalmo"></canvas></button>
     <div class="vitals">
       <div class="name-row"><strong id="playerName">Renard</strong><span class="you">VOUS</span></div>
       <div class="health-row"><button id="healHud" title="Utiliser une trousse (H)" aria-label="Utiliser une trousse de secours"><i data-icon="heart"></i></button><div class="health-track" id="healthMeter" role="progressbar" aria-label="Vie" aria-valuemin="0" aria-valuemax="100"><div id="hpBar"></div></div><span id="hpNum">100</span></div>
+      <span id="careerArmor" class="career-armor" hidden></span>
       <span id="bleedStatus" class="bleed-status" role="status" aria-live="polite" hidden></span>
       <div class="alert-row">
         <div class="wanted" id="stars" role="img" aria-label="Aucune étoile de recherche"><span aria-hidden="true">★★★★★</span><div aria-hidden="true">★★★★★</div></div>
@@ -88,6 +93,8 @@
         <button type="button" data-drive="right" aria-label="Braquer à droite"><strong aria-hidden="true">›</strong><span>Droite</span></button>
       </div>
       <div class="drive-utilities">
+        <button type="button" id="driveLamps" aria-label="Changer le mode des phares"><span>Phares</span></button>
+        <button type="button" id="driveHorn" aria-label="Klaxonner"><i data-icon="volume"></i><span>Klaxon</span></button>
         <button type="button" id="driveCamera" aria-label="Recentrer la caméra"><i data-icon="camera"></i></button>
         <button type="button" id="driveExit"><i data-icon="car"></i><span>Sortir</span></button>
       </div>
@@ -96,6 +103,7 @@
         <button type="button" data-drive="throttle"><strong aria-hidden="true">↑</strong><span>Accélérer</span></button>
       </div>
     </div>
+    <button type="button" data-hud="guard" id="guard" aria-label="S’accroupir et parer" aria-pressed="false" title="S’accroupir et parer"><i aria-hidden="true" data-icon="fist"></i><span>Garde</span></button>
     <div class="touch-actions">
       <button type="button" data-hud="jump" id="jump" data-action="jump" aria-label="Sauter" title="Sauter"><i data-icon="jump"></i><span>Sauter</span></button>
       <button data-hud="heal" id="heal" aria-label="Utiliser une trousse de secours" title="Soins"><svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="14" rx="3"/><path d="M8 7V4h8v3m-7 7h6m-3-3v6"/></svg><small id="kitCount">1</small></button><button data-hud="recenter" id="recenter" title="Recentrer la caméra" aria-label="Recentrer la caméra"><i data-icon="camera"></i></button><button data-hud="ride" id="ride" aria-label="Monter ou descendre du véhicule"><i data-icon="car"></i></button><button type="button" data-hud="melee" id="melee" aria-label="Frapper" title="Frapper"><i data-icon="fist"></i><span>Frapper</span></button>

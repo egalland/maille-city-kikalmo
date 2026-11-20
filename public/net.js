@@ -1,3 +1,4 @@
+import {browserProfile} from './ammunition.js';
 import {parkingExpired,wreckExpired,disconnectedFor,abandonedFor} from './vehicle-lifecycle.js';
 import {matchesPickup} from './drop-id.js';
 import {createRosterWire} from './roster-wire.js';
@@ -5,10 +6,10 @@ import {createStateEncoder} from './state-wire.js';
 
 // Each tab is a separate player. State snapshots may coalesce; actions have stable IDs and are retried.
 const actionPoses=new Set(['jump','fall','vault','climb','land','carAir']);
-const cosmeticQueue=new Set(['emote','alert','shot']);
+const cosmeticQueue=new Set(['emote','alert','shot','horn']);
 const socialQueue=new Set(['chat','emote']);
 const combatActions=new Set(['fire','shot','hit','melee']);
-const onlineOnly=new Set([...combatActions,'chat','alert','emote','seat']);
+const onlineOnly=new Set([...combatActions,'chat','alert','horn','emote','seat']);
 const COMBAT_WINDOW=1400;
 const MAX_BATCH=20, MAX_QUEUE=120;
 const blankWorld=()=>({destroyed:[],vehicles:{},npcs:{},pickups:{},propHealth:{},vehicleDamage:{}});
@@ -21,7 +22,7 @@ export function createNet(options={}) {
   const uid=()=>crypto.randomUUID();
   const saved=options.identity, resume=uuid.test(saved?.id)&&uuid.test(saved?.token)&&Number.isSafeInteger(saved?.op)&&saved.op>=0;
   const id=resume?saved.id:uid(), token=resume?saved.token:uid();
-  let name=cleanName(options.name);
+  let name=cleanName(options.name),requestCount=0,lastRtt=null;
   const rosterWire=createRosterWire(),stateEncoder=createStateEncoder();
   const clockSamples=[];
   let timerDue=Infinity,poseDue=false,leaving=null;
@@ -31,6 +32,7 @@ export function createNet(options={}) {
   let rosterKey='', lifetimeChats=new Set();
   const listeners=new Set();
   const pickupRequests=new Map(),claimingItems=new Set();
+  let lastAmmoSync=0;
   let lastPickupPrune=0,combatUntil=0,lastReply=-Infinity;
   const serverTime=()=>Date.now()+offset;
   function sampleClock(serverAt,sent,received){
@@ -98,7 +100,8 @@ export function createNet(options={}) {
     }
     if(e.type==='vehicleDamage'){
       const prior=context.vehicleDamage[d.id];
-      if(prior&&!wreckExpired(prior,serverTime())&&prior.hp<=d.hp)return;
+      const repaired=d.repairedAt||0,priorRepair=prior?.repairedAt||0;
+      if(prior&&!wreckExpired(prior,serverTime())&&(repaired<priorRepair||(repaired===priorRepair&&prior.hp<=d.hp)))return;
       if(wreckExpired(d,serverTime()))return;
       context.vehicleDamage[d.id]=d;
     }
@@ -162,6 +165,8 @@ export function createNet(options={}) {
     if(joining)rosterWire.reset();
     const batch=joining?[]:chooseBatch();
     const payload={protocol:2,id,token,name,map,...stateEncoder.packet(state,joining),cursor,rosterBase:rosterWire.baseline()};
+    if(joining)payload.ammoKey=options.ammoKey??(typeof window==='undefined'?token:browserProfile());
+    else if(Date.now()-lastAmmoSync>6500||batch.some(i=>i.type==='pickup'||i.type==='fire'))payload.ammoSync=true;
     // A burst of multi-ray weapons can reach the Worker's 32 KB body limit
     // before reaching its event-count limit. Leave overflow for the next flush.
     const encode=()=>JSON.stringify({...payload,events:batch.map(({op,type,data})=>({op,type,data}))});
@@ -177,10 +182,11 @@ export function createNet(options={}) {
     const deadline=setTimeout(()=>controller.abort(),8500);
     const sent=Date.now();
     try {
+      requestCount++;
       const response=await fetcher(joining?'/api/world/join':'/api/world/sync',{
         method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',signal:controller.signal,body
       });
-      const received=Date.now();
+      const received=Date.now();lastRtt=received-sent;
       if (attempt!==run) return false;
       if (response.status===401 && !joining) {stateEncoder.ack(null);discardSessionActions(true);joined=false;rosterWire.reset();delay=0;updateStatus('connecting');return false;}
       if (!response.ok) throw new Error('network');
@@ -225,6 +231,12 @@ export function createNet(options={}) {
           for (const fn of listeners) fn({type:'vehicleDenied',data:denied,at:data.now,player:denied.owner});
         }
         if (data.more || data.events?.length===160) delay=0;
+      }
+      if(data.ammo){
+        lastAmmoSync=received;
+        const rounds={...data.ammo};
+        for(const item of pending)if(item.type==='fire'&&rounds[item.data.kind]>0)rounds[item.data.kind]--;
+        for(const fn of listeners)fn({type:'armory',data:{rounds,joining},at:data.now,player:id});
       }
       if(Number.isSafeInteger(data.cursor))cursor=joining?data.cursor:Math.max(cursor,data.cursor);
       if(data.now-lastPickupPrune>5000){
@@ -297,6 +309,7 @@ export function createNet(options={}) {
     const body=JSON.stringify({id,token,map});
     // Same-origin keepalive also works when a player closes the tab.
     const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),2500);
+    requestCount++;
     const result=fetcher('/api/world/leave',{method:'POST',headers:{'Content-Type':'application/json'},body,keepalive:true,signal:controller.signal})
       .catch(()=>{}).finally(()=>{clearTimeout(timeout);if(leaving===result)leaving=null;});
     leaving=result;
@@ -305,6 +318,7 @@ export function createNet(options={}) {
   function wake() {if (started && !busy && !leaving && (typeof document==='undefined' || !document.hidden)) schedule(0);}
   const net={
     get id(){return id;}, get name(){return name;}, get status(){return status;},
+    get requestCount(){return requestCount;},get lastRtt(){return lastRtt;},
     get rosterRevision(){return rosterRevision;},
     players:()=>roster.slice(),
     peers:()=>roster.filter(p=>p.id!==id && Number.isFinite(p.x) && Number.isFinite(p.y)),
@@ -335,6 +349,11 @@ export function createNet(options={}) {
       onStatus(status);
       const attempt=run;
       return leaving?leaving.then(()=>started&&run===attempt?tick():false):tick();
+    },
+    async report(subject,reason){
+      if(status!=='online'||subject===id)return false;
+      const response=await fetcher('/api/world/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,token,map,subject,reason})});
+      return response.ok&&(await response.json()).ok;
     },
     getTransferIdentity(){return {id,token,op};},
     stop({preservePresence=false}={}){

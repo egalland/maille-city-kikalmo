@@ -1,3 +1,5 @@
+import {armorySchema,openArmory,readArmory,privateAmmo} from './armory.js';
+import {reportSchema,reportPlayer} from './social.js';
 import {withJacket} from '../public/outfit-shop.js';
 import {seatSchema,seatedRosterSQL,attachPassengers,requestSeat} from './vehicle-seats.js';
 import {abandonedFor,disconnectedFor,wreckFor,wreckExpired} from '../public/vehicle-lifecycle.js';
@@ -5,13 +7,14 @@ import {hitSeverity, woundDuration, activeBleeding} from '../public/bleeding.js'
 import {weaponCatalog} from '../public/weapon-catalog.js';
 import {propMaxHealth, vehiclePropDamage} from '../public/prop-damage.js';
 import {isVehicleType,vehicleSpec} from '../public/vehicle-types.js';
-import {chassisDamage,partMask,vehicleBurnDelay,blastRadius,blastDamage} from '../public/vehicle-damage.js';
+import {chassisDamage,partMask,incendiaryImpact,vehicleBurnDelay,blastRadius,blastDamage} from '../public/vehicle-damage.js';
 import {meleeMoves} from '../public/melee-moves.js';
 import {cleanTrafficPacket} from '../public/traffic-sync.js';
 import {normalizeAppearance} from '../public/kikalmo-schema.js';
 import {encodeRoster} from '../public/roster-wire.js';
 import {stateReferences,restoreStateFields} from '../public/state-wire.js';
 import { decodeDropId, matchesPickup, decodeOfficerDrop, officerLootWindow } from '../public/drop-id.js';
+import {partnerSchema,runPartners} from './partners.js';
 import {careerSchema,runCareer} from './career.js';
 import {prepareFire,readFireSession,rememberFirePose,recordFire} from './fire-netcode.js';
 
@@ -24,6 +27,7 @@ const SCHEMA = [
     PRIMARY KEY (room,id))`,
   'CREATE INDEX IF NOT EXISTS mc_members_seen ON mc_members (seen)',
   ...careerSchema,
+  ...partnerSchema,
   `CREATE TABLE IF NOT EXISTS mc_events (
     seq INTEGER PRIMARY KEY AUTOINCREMENT, room TEXT NOT NULL, player TEXT NOT NULL,
     op TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL,
@@ -49,6 +53,8 @@ const SCHEMA = [
   'CREATE INDEX IF NOT EXISTS mc_pickup_item ON mc_pickup_claims (room,item,available DESC) WHERE ok=1',
   'CREATE INDEX IF NOT EXISTS mc_pickup_active ON mc_pickup_claims (room,available) WHERE ok=1',
   'CREATE INDEX IF NOT EXISTS mc_pickup_age ON mc_pickup_claims (at)',
+  ...armorySchema,
+  ...reportSchema,
   ...seatSchema
 ];
 // Keep the public Paris records in place. Earlier named games remain isolated in storage.
@@ -62,7 +68,7 @@ const PICKUP_REQUEST_AGE = 30_000;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const KEY = /^[\w:-]{1,68}$/;
 const ITEM_TYPES = new Set(['propDamage','destroy','vehicle','vehicleDamage','npc']);
-const EVENTS = new Set(['propDamage','destroy','vehicle','vehicleDamage','npc','emote','shot','melee','alert','hit','chat']);
+const EVENTS = new Set(['propDamage','destroy','vehicle','vehicleDamage','npc','emote','horn','shot','melee','alert','hit','chat']);
 const MEMBERS_SQL = seatedRosterSQL;
 function ready(db) {
   if (!schemaReady.has(db)) {
@@ -111,7 +117,7 @@ function vitalityFields(source,now,longRecovery=false) {
   }
   return result;
 }
-const locomotionModes=new Set(['idle','walk','run','jump','fall','land','vault','climb','swim']);
+const locomotionModes=new Set(['idle','crouch','walk','run','jump','fall','land','vault','climb','swim']);
 function movementFields(s,now){
   if(!Number.isFinite(s.lift))return {};
   const lift=num(s.lift,0,0,64);
@@ -148,7 +154,10 @@ function playerState(raw,now,room) {
   const appearance=normalizeAppearance(s.appearance);if(appearance)result.appearance=appearance;
   if (!Number.isFinite(s.x) || !Number.isFinite(s.y)) return {};
   const traffic=cleanTrafficPacket(s.traffic,now);if(traffic)result.traffic=traffic;
-  if (s.vehicle && key(s.vehicle.id)) result.vehicle={...pose(s.vehicle),id:key(s.vehicle.id)};
+  if (s.vehicle && key(s.vehicle.id)){
+    result.vehicle={...pose(s.vehicle),id:key(s.vehicle.id)};
+    for(const k of ['brake','headlamps','fare'])if(typeof s.vehicle[k]==='boolean')result.vehicle[k]=s.vehicle[k];
+  }
   else result.vehicle=null;
   return result;
 }
@@ -156,6 +165,7 @@ function eventData(type,raw,now) {
   const d=dict(raw), result=pose(d);
   switch(type) {
     case 'chat': return clean(d.text,240) ? {text:clean(d.text,240)} : null;
+    case 'horn': return {};
     case 'emote': return clean(d.symbol,24) ? {symbol:clean(d.symbol,24)} : null;
     case 'destroy': {
       if(!key(d.id)||/^g.+-[dg]-\d+$/.test(d.id)||d.id.startsWith('terrace-'))return null;
@@ -300,12 +310,13 @@ async function join(db,b,now,room) {
       LEFT JOIN mc_members m ON i.room=m.room AND i.owner=m.id WHERE i.room=?`,room),
     q('SELECT item,available FROM mc_pickup_claims WHERE room=? AND ok=1 AND available>?',room,now),
     q('DELETE FROM mc_pickup_claims WHERE at<?',now-EVENT_RETENTION),
-    q('DELETE FROM mc_fire_poses WHERE at<?',now-5000)
+    q('DELETE FROM mc_fire_poses WHERE at<?',now-5000),
+    ...await openArmory(q,room,id,token,UUID.test(b.ammoKey)?b.ammoKey:token)
   ]);
   if (!results[4].results.length) return json({error:'session'},403);
   const world=shared(results[8].results,now);
   for(const pickup of results[9].results)world.pickups[pickup.item]=pickup.available;
-  return json({now,...(b.protocol===2?{stateRefs:stateReferences(playerState(b.state,now,room))}:{}),...rosterPacket(results[5].results,id,{protocol:b.protocol}),history:events(results[6].results.reverse()),
+  return json({now,ammo:privateAmmo(results.at(-1).results),...(b.protocol===2?{stateRefs:stateReferences(playerState(b.state,now,room))}:{}),...rosterPacket(results[5].results,id,{protocol:b.protocol}),history:events(results[6].results.reverse()),
     cursor:results[7].results[0].last,world});
 }
 const airbornePickup=new Set(['jump','fall','climb','vault','swim']);
@@ -406,9 +417,10 @@ function vehicleImpact(raw,actor,previous){
     if(!Object.hasOwn(weaponCatalog,weapon)||distance>weaponCatalog[weapon].range+12)return null;
   }else if(cause!=='crash'||distance>15||!(actor.vehicle||previous.vehicle))return null;
   const damage=chassisDamage(type,{cause,speed,weapon,part});
-  return damage?{id,type,cause,x:num(x),y:num(y),angle:num(angle,0,-7,7),part,damage}:null;
+  return damage?{id,type,cause,x:num(x),y:num(y),angle:num(angle,0,-7,7),part,damage,...(cause==='crash'?{speed:num(speed,0,0,42)}:{})}:null;
 }
-function vehicleDamageStatement(q,{room,id,op,name,data,now}){
+function vehicleDamageStatement(q,{room,id,op,name,data,now},guard){
+  const ignite="(coalesce(json_extract(old,'$.fireAt'),0)>0 OR (next_hp<=32 AND ignition=1))";
   const blastGuard=data.cause==='blast'?` AND EXISTS (
       SELECT 1 FROM mc_items source
       LEFT JOIN mc_items pos ON pos.room=source.room AND pos.kind='vehicle' AND pos.item=source.item
@@ -423,18 +435,19 @@ function vehicleDamageStatement(q,{room,id,op,name,data,now}){
   const blastArgs=data.cause==='blast'?[room,data.blast,now-4200,now+250,data.x,blastRadius+3,data.y,blastRadius+3,room,now-5800,data.blast,data.id]:[];
   return q(`WITH prior AS (
     SELECT (SELECT data FROM mc_items WHERE room=? AND kind='vehicleDamage' AND item=?
-      AND coalesce(json_extract(data,'$.explodeAt'),0) NOT BETWEEN 1 AND ?) AS old
+      AND coalesce(nullif(json_extract(data,'$.explodeAt'),0),json_extract(data,'$.disabledAt'),0) NOT BETWEEN 1 AND ?) AS old
   ), item AS (
     SELECT old,coalesce(json_extract(old,'$.hp'),100) AS hp,
-      max(0,coalesce(json_extract(old,'$.hp'),100)-?) AS next_hp FROM prior
+      max(0,coalesce(json_extract(old,'$.hp'),100)-?) AS next_hp,? AS ignition FROM prior
   ) INSERT OR IGNORE INTO mc_events (room,player,op,name,type,data,at)
   SELECT ?,?,?,?,'vehicleDamage',json_set(?,'$.hp',next_hp,'$.damage',hp-next_hp,
     '$.parts',coalesce(json_extract(old,'$.parts'),0)|?,'$.repairedAt',coalesce(json_extract(old,'$.repairedAt'),0),
-    '$.fireAt',CASE WHEN next_hp<=32 THEN coalesce(nullif(json_extract(old,'$.fireAt'),0),?) ELSE 0 END,
-    '$.explodeAt',CASE WHEN next_hp<=32 THEN
+    '$.disabledAt',CASE WHEN next_hp=0 AND NOT ${ignite} THEN ? ELSE 0 END,
+    '$.fireAt',CASE WHEN ${ignite} THEN coalesce(nullif(json_extract(old,'$.fireAt'),0),?) ELSE 0 END,
+    '$.explodeAt',CASE WHEN ${ignite} THEN
       coalesce(nullif(json_extract(old,'$.explodeAt'),0),coalesce(nullif(json_extract(old,'$.fireAt'),0),?)+?) ELSE 0 END),?
-  FROM item WHERE hp>0`+blastGuard,room,data.id,now-wreckFor,data.damage,room,id,op,name,JSON.stringify(data),
-    partMask[data.part]||0,now,now,vehicleBurnDelay,now,...blastArgs);
+  FROM item ${guard.clause||'WHERE 1'} AND hp>0`+blastGuard,room,data.id,now-wreckFor,data.damage,Number(incendiaryImpact(data)),room,id,op,name,JSON.stringify(data),
+    partMask[data.part]||0,now,now,now,vehicleBurnDelay,now,...guard.args,...blastArgs);
 }
 function contactGuard(type,data,actor,room,id,now){
   const kind=data.swingKind||data.kind,range=meleeMoves[kind].reach+.5+1.75;
@@ -527,6 +540,16 @@ async function sync(db,b,now,room) {
       if(!guard)continue;
       op='contact-'+data.swingAt.toString(36);
     }
+    if(data.cause==='weapon'&&['propDamage','npc','vehicleDamage'].includes(type)&&(room===worldKeys.enfer||input.data?.shotId)){
+      const shotId=input.data?.shotId,kind=input.data?.weapon;
+      if(!key(shotId)||!Object.hasOwn(weaponCatalog,kind)||kind==='fist'||!Number.isFinite(data.x+data.y))continue;
+      if(Math.hypot(data.x-actor.x,data.y-actor.y)>weaponCatalog[kind].range+15)continue;
+      if(type==='npc'){data.weapon=kind;data.damage=Math.min(data.damage||0,weaponCatalog[kind].damage);}
+      data.shotId=shotId;
+      guard={clause:`WHERE EXISTS (SELECT 1 FROM mc_events WHERE room=? AND player=? AND op=? AND type='shot' AND at>=?
+        AND json_extract(data,'$.kind')=?) AND NOT EXISTS (SELECT 1 FROM mc_events WHERE room=? AND player=? AND type=? AND at>=?
+        AND json_extract(data,'$.shotId')=? AND json_extract(data,'$.id')=?)`,args:[room,id,'fire:'+shotId,now-2600,kind,room,id,type,now-2600,shotId,data.id]};
+    }
     if(type==='propDamage'){
       if(!Number.isFinite(actor.x)||!Number.isFinite(actor.y))continue;
       const distance=Math.hypot(actor.x-data.x,actor.y-data.y);
@@ -538,6 +561,10 @@ async function sync(db,b,now,room) {
       }
       if(data.cause==='weapon' && distance>weaponCatalog[data.weapon].range+20)continue;
       propOps.set(op,data.impactId);
+    }
+    if(type==='horn'){
+      if(!actor.vehicle||!Number.isFinite(actor.x+actor.y))continue;
+      data.x=actor.x;data.y=actor.y;op='horn-'+Math.floor(now/800);
     }
     const requiresCar=type==='vehicle';
     if(requiresCar&&data.eject&&(!Number.isFinite(actor.x+actor.y)||actor.health===0||actor.vehicle||
@@ -555,8 +582,10 @@ async function sync(db,b,now,room) {
         WHERE i.room=? AND i.kind='vehicle' AND i.item=? AND i.owner<>? AND m.seen>?
           AND (json_extract(m.state,'$.vehicle.id')=i.item OR i.at>?))`,
         ...values,room,data.id,id,now-GONE,now-6500));
+    } else if(type==='chat'){
+      stmts.push(q(accept+" WHERE (SELECT count(*) FROM mc_events WHERE room=? AND player=? AND type='chat' AND at>?)<6",...values,room,id,now-5000));
     } else if(type==='vehicleDamage'){
-      stmts.push(vehicleDamageStatement(q,{room,id,op,name,data,now}));
+      stmts.push(vehicleDamageStatement(q,{room,id,op,name,data,now},guard));
     } else if(type==='propDamage'){
       stmts.push(propDamageStatement(q,{room,id,op,name,data,now},guard));
       // Older open tabs understand the final break, but only the durability transaction can produce it.
@@ -593,6 +622,7 @@ async function sync(db,b,now,room) {
   const propIndex=stmts.length;
   if(propOps.size)stmts.push(q(`SELECT op,json_extract(data,'$.impactId') AS impact FROM mc_events
     WHERE room=? AND player=? AND type='propDamage' AND op IN (${[...propOps].map(()=>'?').join(',')})`,room,id,...propOps.keys()));
+  if(b.ammoSync===true)stmts.push(readArmory(q,room,id));
   const result=await db.batch(stmts);
   const propAccepted=propOps.size?result[propIndex].results.filter(r=>propOps.get(r.op)===r.impact).map(r=>r.impact):[];
   const feed=events(result[membersIndex+1].results);
@@ -602,12 +632,12 @@ async function sync(db,b,now,room) {
   // Always advance beyond scanned effects, including an entirely distant page. Hits, chat,
   // ownership and durable world changes keep their original global ordering.
   const delivered=b.protocol===2?feed.filter(event=>visibleCombatEvent(event,actor)):feed;
-  return json({now,...(b.protocol===2?{stateRefs:stateReferences(actor)}:{}),...rosterPacket(result[membersIndex].results,id,b),events:delivered,denied,pickupResults,propAccepted,
+  return json({now,...(b.ammoSync===true?{ammo:privateAmmo(result.at(-1).results)}:{}),...(b.protocol===2?{stateRefs:stateReferences(actor)}:{}),...rosterPacket(result[membersIndex].results,id,b),events:delivered,denied,pickupResults,propAccepted,
     ...(b.protocol===2&&feed.length===160?{more:true}:{}),cursor:feed.at(-1)?.seq??cursor});
 }
 export async function handleApi(request, env) {
   const pathname=new URL(request.url).pathname;
-  const match=/^\/api(?:\/(world|paris))?\/(join|sync|leave|career)$/.exec(pathname);
+  const match=/^\/api(?:\/(world|paris))?\/(join|sync|leave|career|report|partners)$/.exec(pathname);
   if(!match)return json({error:'route'},404);
   const [,generation,operation]=match;
   if(!generation)return json({error:'update_required'},410);
@@ -624,6 +654,8 @@ export async function handleApi(request, env) {
   if (!UUID.test(b.id) || !UUID.test(b.token)) return json({error:'session'},400);
   if (!env.DB) return json({error:'storage'},503);
   await ready(env.DB);
+  if(operation==='partners')return json(await runPartners(env.DB,b,room,Date.now(),GONE));
+  if(operation==='report')return json(await reportPlayer(env.DB,b,room,Date.now()));
   if (operation==='career') return json(await runCareer(env.DB,b,room,Date.now()));
   if (operation==='join') return join(env.DB,b,Date.now(),room);
   if (operation==='leave') {

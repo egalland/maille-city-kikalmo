@@ -39,6 +39,9 @@ export function sampleLocomotion(e={},time=0,seed=0){
     stretch=.085*(1-p)-.04*crest;pitch=.16*crest;
     drop=-.055*crest;thigh=.24+.51*crest;stagger=.32*crest;
     shin=-.26-.77*crest;arm=-.43+.58*descending;reach=.43*crest;elbow=.51+.42*crest;splay=.08+.39*descending;
+  }else if(motion==='crouch'){
+    effort=.84;drop=-.20;pitch=.22;thigh=.85;shin=-1.40;stagger=.30*step*pace;
+    arm=.65;elbow=1.39;reach=.12;splay=.09;
   }else if(motion==='land'){
     const hit=1-smooth((p-.23)/.77),compress=hit*smooth(p/.23);
     effort=1-smooth((p-.38)/.62);drop=-.095*compress;stretch=-.18*compress;

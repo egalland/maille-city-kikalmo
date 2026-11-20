@@ -1,11 +1,13 @@
 import {lampState,pedestrianGreen} from './street-signals.js';
 import {nearbySignals} from './paris-world.js';
 import {pavementRuns} from './curb-clearance.js';
-import {frontageSigns,frontageStyle} from './enfer-frontage.js';
+import {frontageSigns,frontageStyle,careerFronts} from './enfer-frontage.js';
+import {workshopId,workshopEdge,bayDoor,headroom} from './workshop.js';
 import {canopyDyes} from './street-props-art.js';
 import {cityViewRange,streetViewRange} from './view-range.js';
 import {streetFabric} from './street-fabric.js';
 import {feltSlate as slates,shopCloths as stripMaterials} from './paris-applique.js';
+import {cityClimate} from './city-climate.js';
 import {terrainHeight,buildingGround,waterLevel} from './terrain-height.js';
 import {terracePanels} from './street-terraces.js';
 import {propWearProfile,propWearStage,trackPropWear} from './prop-wear.js';
@@ -338,6 +340,8 @@ function addEnferBuilding(b,building,poly,detail,skyline,h){
     const q=poly[(i+1)%poly.length],score=Math.hypot(p[0]-q[0],p[1]-q[1])-.024*Math.hypot((p[0]+q[0])*.5+3,(p[1]+q[1])*.5+282);
     if(score>bestFront){bestFront=score;shopEdge=i;}
   });
+  const venue=careerFronts.get(String(building.id)), garage=String(building.id)===workshopId;
+  if(venue&&detail)shopEdge=venue.edge;
   const outward=Math.sign(poly.reduce((sum,[x,z],i)=>{const d=poly[(i+1)%poly.length];return sum+x*d[1]-z*d[0];},0))||1;
   for(const ring of sections){
     for(let i=0;i<ring.length;i++){
@@ -345,6 +349,16 @@ function addEnferBuilding(b,building,poly,detail,skyline,h){
       if(len<.15)continue;
       const bays=Math.max(1,Math.round(len/bay)),floors=index===4?1:Math.max(1,Math.round(eaves/2.75));
       const entry=detail&&ring===poly&&index<3&&len>3.1&&(i+hash(building.id))%3===0;
+      if(garage&&ring===poly&&i===workshopEdge&&!skyline){
+        const {left,right}=bayDoor(poly);
+        b.wall('felt',a,left,0,eaves,'#9d6655');
+        b.wall('felt',right,d,0,eaves,'#9d6655');
+        b.wall('felt',left,right,headroom,eaves,'#59817b');
+        const nx=(d[1]-a[1])*outward/len,nz=(a[0]-d[0])*outward/len;
+        const signPoint=(p,h)=>[p[0]+nx*.12,h,p[1]+nz*.12];
+        b.face('sign5',signPoint(left,headroom),signPoint(right,headroom),signPoint(right,headroom+.66),signPoint(left,headroom+.66),white,outward>0?[[0,0],[1,0],[1,1],[0,1]]:[[1,0],[0,0],[0,1],[1,1]]);
+        continue;
+      }
       if(entry){
         const split=[a[0]+(d[0]-a[0])/bays,a[1]+(d[1]-a[1])/bays],bottom=eaves/floors;
         b.wall('enferEntry'+index,a,split,0,bottom,white);
@@ -363,6 +377,16 @@ function addEnferBuilding(b,building,poly,detail,skyline,h){
         if(Math.max(topU,topV)-eaves>.018)
           b.face('felt',vertex(u,eaves),vertex(v,eaves),vertex(v,topV),vertex(u,topU),wall);
       }
+    }
+  }
+  if(garage&&!skyline){
+    const oldDrape=b.drape;b.drape=true;b.flat('pave',poly,.045,'#a09783',3);b.drape=oldDrape;
+    b.flat('plain',poly,headroom,'#b6a68f');
+    // Floor markings lead inward from the rolled-up shutter.
+    const {left,right}=bayDoor(poly),dx=right[0]-left[0],dz=right[1]-left[1],n=Math.hypot(dx,dz);
+    for(const t of [.15,.85]){
+      const x=left[0]+t*dx,z=left[1]+t*dz,ex=x-dz/n*outward*4.8,ez=z+dx/n*outward*4.8;
+      b.drape=true;b.quad('plain',[[x,z],[x+dx/n*.10,z+dz/n*.10],[ex+dx/n*.10,ez+dz/n*.10],[ex,ez]],.06,'#e3bd62');b.drape=oldDrape;
     }
   }
   if(!roofShape){flatWithHoles(b,skyline?'plain':'roof',poly,building.holes,h,roof,3.4);return;}
@@ -673,7 +697,7 @@ function decoration(kind,variant,stage,distant=false) {
     for(const y of [.39,.96,3.58,3.93])b.tube([0,y,0],[0,y+.09,0],.145,.135,brass,8);
     const yy=4.0;
     b.tube([0,yy,0],[0,yy+.18,0],.13,.24,metal,4);
-    b.tube([0,yy+.18,0],[0,yy+.72,0],.245,.362,stage===2?'#958b81':'#ffdc98',4);
+    b.tube([0,yy+.18,0],[0,yy+.72,0],.245,.362,stage===2?'#958b81':'#ffdc98',4,isEnfer&&stage<2?'lantern':'felt');
     for(let i=0;i<4;i++){const a=i*tau/4;b.tube([.245*Math.cos(a),yy+.17,.245*Math.sin(a)],[.362*Math.cos(a),yy+.72,.362*Math.sin(a)],.027,.025,metal,5);}
     b.tube([0,yy+.72,0],[0,yy+.97,0],.43,.066,metal,4);
     b.ball(0,yy+1.03,0,.075,.12,.075,brass,6,3);
@@ -992,7 +1016,12 @@ export function createCity3D(scene,{software=false}={}){
   const update=(pos,time,worldState={})=>{
     if(!pos||!Number.isFinite(pos.x+pos.y))return;
     const initial=lastX===Infinity;distant.update(pos.x,pos.y);
-    if(isEnfer)materials.water.map.offset.set(time*.018,time*.009);
+    if(isEnfer){
+      const weather=cityClimate(worldState.epoch??Date.now());
+      materials.lantern.emissiveIntensity=weather.lamps*1.4;
+      materials.road.roughness=.94-.38*weather.rain;
+      materials.water.map.offset.set(time*.018,time*.009);
+    }
     if(initial||Math.hypot(lastX-pos.x,lastZ-pos.y)>38)setTargets(pos);
     const start=performance.now();let count=0;
     while(targets.length&&count<(initial?2:3)&&(count===0||performance.now()-start<(initial?26:4))){buildChunk(targets.shift());count++;}

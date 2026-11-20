@@ -1,3 +1,4 @@
+import {recentErrors} from './runtime-errors.js';
 // Budgets are targets for the WebGL path. Rendering time measures CPU submission,
 // and draw calls provide a GPU workload indicator where the renderer reports it.
 export const frameBudgets=Object.freeze({
@@ -57,7 +58,7 @@ export function createDiagnosticsToggle(game){
           'PNJ '+s.actors+' · véhicules '+s.cars+' · joueurs distants '+s.peers,
           'Synchro '+s.requests+' requêtes · latence '+(s.rtt!=null?Math.round(s.rtt)+' ms':'n.d.'),
           'Mémoire JS '+(Number.isFinite(mem)?Math.round(mem/1048576)+' Mio':'n.d.')+' / '+budget.heap+' Mio'
-        ].join('\n');
+        ].concat(recentErrors().slice(-2).map(e=>'Erreur · '+e.text)).join('\n');
       }
       setTimeout(refresh,1000);
     }

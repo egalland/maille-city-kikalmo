@@ -1,3 +1,7 @@
+import {containsPoint as inRing,edgeContact} from './collision-ring.js';
+import {teammate} from './partners.js';
+import {careerPlaces} from './career-catalog.js';
+import {paintCareerNavigation} from './career-navigation.js';
 import {cityClimate} from './city-climate.js';
 import {junctionSignals,crossingWalker,sidewalkRoutine} from './street-signals.js';
 import {yarnPalette} from './wool-art.js';
@@ -6,6 +10,7 @@ import { buildings, streets, water, green, metadata } from './paris-data.js';
 
 import {enferStops,enferDistrict,enferStreet} from './enfer-places.js';
 import { terrainHeight, buildingGround, waterLevel } from './terrain-height.js';
+import {workshopId,workshopColliders} from './workshop.js';
 import { terraceProfiles } from './street-terraces.js';
 import { authoredWeaponDrops } from './drop-id.js';
 import { vehicleSpec, vehicleDoorways } from './vehicle-types.js';
@@ -31,14 +36,6 @@ function lineDist2(x,y,a,b) {
   const dx=b[0]-a[0],dy=b[1]-a[1],aX=x-a[0],aY=y-a[1];
   const t=clamp((aX*dx+aY*dy)/(dx*dx+dy*dy || 1),0,1);
   return sq(aX-dx*t)+sq(aY-dy*t);
-}
-function inRing(x,y,ring) {
-  let inside=false;
-  for(let i=0,j=ring.length-1;i<ring.length;j=i++) {
-    const a=ring[i],b=ring[j];
-    if((a[1]>y)!==(b[1]>y) && x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0]) inside=!inside;
-  }
-  return inside;
 }
 function inShape(x,y,item) {
   return inRing(x,y,item.poly) && !item.holes?.some(r=>inRing(x,y,r));
@@ -128,6 +125,10 @@ const eiffelFeet=new Set(['162158','162159','162160','162699']);
 const pyramidIds=new Set(['245184969','253248239','253248246','253248248']);
 for(const b of buildings){
   if(!b.poly?.length || !isEnfer&&(eiffelFeet.has(String(b.id)) || importedMonument(b)))continue;
+  if(isEnfer&&String(b.id)===workshopId){
+    for(const wall of workshopColliders(b))terrain.insert(wall,bounds(wall.poly));
+    continue;
+  }
   const item={...b,type:'building'};
   if(!isEnfer&&pyramidIds.has(String(b.id))){
     item.h=String(b.id)==='245184969'?21.6:21.6*Math.hypot(b.poly[0][0]-b.poly[1][0],b.poly[0][1]-b.poly[1][1])/35;
@@ -189,9 +190,7 @@ function isBridge(x,y,r=0){
   return false;
 }
 function ringTouchesCircle(x,y,r,ring){
-  for(let i=0,j=ring.length-1;i<ring.length;j=i++)
-    if(lineDist2(x,y,ring[j],ring[i])<r*r)return true;
-  return false;
+  return edgeContact(ring,x-r,y-r,x+r,y+r,(a,b)=>lineDist2(x,y,a,b)<r*r);
 }
 function shapeCircle(x,y,r,b){
   return inShape(x,y,b) || (r>0 && (ringTouchesCircle(x,y,r,b.poly)||b.holes?.some(h=>ringTouchesCircle(x,y,r,h))));
@@ -212,14 +211,12 @@ function rectShape(x,y,c,s,l,w,poly){
   if(inShape(x,y,poly))return true;
   for(const h of [-l,l])for(const k of [-w,w])
     if(inShape(x+c*h-s*k,y+s*h+c*k,poly))return true;
-  for(const ring of [poly.poly,...(poly.holes||[])]){
-    let last=ring[ring.length-1];let a=[(last[0]-x)*c+(last[1]-y)*s,-(last[0]-x)*s+(last[1]-y)*c];
-    for(const t of ring){
-      const b=[(t[0]-x)*c+(t[1]-y)*s,-(t[0]-x)*s+(t[1]-y)*c];
-      if(segmentIntersectsRect(a,b,l,w))return true;
-      a=b;
-    }
-  }
+  const rx=Math.abs(c)*l+Math.abs(s)*w,ry=Math.abs(s)*l+Math.abs(c)*w;
+  const touches=ring=>edgeContact(ring,x-rx,y-ry,x+rx,y+ry,(a,b)=>{
+    const ax=a[0]-x,ay=a[1]-y,bx=b[0]-x,by=b[1]-y;
+    return segmentIntersectsRect([ax*c+ay*s,ay*c-ax*s],[bx*c+by*s,by*c-bx*s],l,w);
+  });
+  if(touches(poly.poly)||poly.holes?.some(touches))return true;
   return false;
 }
 function rectCircle(x,y,c,s,l,w,px,py,r){
@@ -1034,7 +1031,11 @@ function ensureAtlas(){
   c.setTransform(atlasRatio,0,0,atlasRatio,-landBounds.minX*atlasRatio,-landBounds.minY*atlasRatio);
   drawBaseMap(c,(landBounds.minX+landBounds.maxX)/2,(landBounds.minY+landBounds.maxY)/2,Math.max(dx,dy),atlasRatio,true);
 }
-function mapView(w,h,player,full){
+function mapView(w,h,player,full,districtZoom){
+  if(districtZoom&&isEnfer){
+    const places=Object.values(careerPlaces),box=bounds(places.map(p=>[p.x,p.y]),45);
+    return {x:(box.minX+box.maxX)/2,y:(box.minY+box.maxY)/2,scale:Math.min(w/(box.maxX-box.minX),h/(box.maxY-box.minY))};
+  }
   if(full){
     const mx=landBounds.maxX-landBounds.minX,my=landBounds.maxY-landBounds.minY;
     const scale=Math.min((w-16)/mx,(h-22)/my);
@@ -1042,20 +1043,36 @@ function mapView(w,h,player,full){
   }
   return {x:player.x,y:player.y,scale:Math.max(w/275,h/175)};
 }
-export function paintMap(canvas,player,{full=false,peers=[],vehicles=[],pickups=[],tracked=null,dpr=Math.min(2,globalThis.devicePixelRatio||1)}={}){
+// A padded local terrain tile only needs repainting after leaving its margin.
+const localMapTiles=new WeakMap();
+function drawLocalMap(context,canvas,view,w,h,dpr){
+  const pad=48,scale=view.scale;
+  let tile=localMapTiles.get(canvas);
+  if(!tile||tile.w!==w||tile.h!==h||tile.dpr!==dpr||tile.scale!==scale||
+     Math.abs(tile.x-view.x)*scale>pad-1||Math.abs(tile.y-view.y)*scale>pad-1){
+    const width=w+2*pad,height=h+2*pad,source=makeMapCanvas(Math.ceil(width*dpr),Math.ceil(height*dpr));
+    const g=source.getContext('2d');
+    g.setTransform(dpr*scale,0,0,dpr*scale,(width/2-view.x*scale)*dpr,(height/2-view.y*scale)*dpr);
+    drawBaseMap(g,view.x,view.y,Math.max(width,height)/(2*scale)+20,scale,false);
+    tile={source,x:view.x,y:view.y,w,h,dpr,scale};localMapTiles.set(canvas,tile);
+  }
+  const left=tile.x-(w/2+pad)/scale,top=tile.y-(h/2+pad)/scale;
+  context.drawImage(tile.source,left,top,tile.source.width/(dpr*scale),tile.source.height/(dpr*scale));
+}
+export function paintMap(canvas,player,{full=false,districtZoom=false,peers=[],vehicles=[],pickups=[],tracked=null,dpr=Math.min(2,globalThis.devicePixelRatio||1)}={}){
   if(!canvas||!player)return;
   const rect=canvas.getBoundingClientRect?.(),w=Math.round(rect?.width||canvas.width),h=Math.round(rect?.height||canvas.height);
   if(!w||!h)return;
   const outW=Math.round(w*dpr),outH=Math.round(h*dpr);
   if(canvas.width!==outW||canvas.height!==outH){canvas.width=outW;canvas.height=outH;}
-  const c=canvas.getContext('2d');const v=mapView(w,h,player,full);
+  const c=canvas.getContext('2d');const v=mapView(w,h,player,full,districtZoom);
   const ux=w*.5-v.x*v.scale,uy=h*.5-v.y*v.scale,px=x=>x*v.scale+ux,py=y=>y*v.scale+uy;
   c.setTransform(dpr,0,0,dpr,0,0);
   c.fillStyle=mapPalette.land;c.fillRect(0,0,w,h);
   c.save();c.translate(ux,uy);c.scale(v.scale,v.scale);
-  if(full){
+  if(full&&!districtZoom){
     ensureAtlas();c.drawImage(atlas,landBounds.minX,landBounds.minY,atlas.width/atlasRatio,atlas.height/atlasRatio);
-  }else drawBaseMap(c,v.x,v.y,Math.max(w,h)/(2*v.scale)+20,v.scale,false);
+  }else drawLocalMap(c,canvas,v,w,h,dpr);
   c.restore();
   const circle=(x,y,r,color,stroke)=>{
     c.beginPath();c.arc(x,y,r,0,TAU);c.fillStyle=color;c.fill();
@@ -1079,6 +1096,7 @@ export function paintMap(canvas,player,{full=false,peers=[],vehicles=[],pickups=
     const labels=destinations.filter(d=>isEnfer||['etoile','maillot','neuilly','arche','concorde','louvre','sector'].includes(d.key));
     c.font='600 '+(w>450?11:9)+'px system-ui';c.textBaseline='middle';
     for(const d of labels){
+      if(districtZoom)continue;
       const x=px(d.x),y=py(d.y),j=['etoile','neuilly','louvre'].includes(d.key)?15:-14;
       circle(x,y,3.2,'#ffd49e','#3e3442');
       const label=isEnfer?d.label:d.key==='sector'?d.label:d.key==='arche'?'La Défense':d.key==='etoile'?'Étoile':d.key==='maillot'?'Maillot':d.key==='neuilly'?'Neuilly':d.key==='concorde'?'Concorde':'Louvre';
@@ -1092,9 +1110,17 @@ export function paintMap(canvas,player,{full=false,peers=[],vehicles=[],pickups=
       c.fillStyle='#f3ccb0';c.save();c.translate(x,y);c.rotate(vcar.angle||0);c.fillRect(-2,-1,4,2);c.restore();
     }
   }
+  if(isEnfer)paintCareerNavigation(c,player,streets,{px,py,w,h,full});
   for(const p of peers){
     const x=px(p.x),y=py(p.y);
     if(x>=0&&x<=w&&y>=0&&y<=h)circle(x,y,3.5,'#f2a89a',yarnPalette.ink);
+  }
+  const buddy=teammate();
+  if(buddy&&Number.isFinite(buddy.x+buddy.y)){
+    let x=px(buddy.x),y=py(buddy.y);
+    if(!full){x=clamp(x,7,w-7);y=clamp(y,7,h-7);}
+    circle(x,y,6,'#6fe6f0','#173c48');
+    c.save();c.fillStyle='#183841';c.textAlign='center';c.textBaseline='middle';c.font='bold 9px system-ui';c.fillText('D',x,y+.5);c.restore();
   }
   c.save();c.translate(px(player.x),py(player.y));c.rotate(player.angle||0);c.beginPath();c.moveTo(7,0);c.lineTo(-5,5);c.lineTo(-2,0);c.lineTo(-5,-5);c.closePath();
   c.fillStyle='#a6ecd0';c.fill();c.strokeStyle='#1f423f';c.lineWidth=1.7;c.stroke();c.restore();

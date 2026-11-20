@@ -26,3 +26,6 @@
 .career-ranking{margin-top:12px;border-top:1px dashed #718276;padding-top:9px}.career-ranking summary{cursor:pointer;font-size:14px;color:#f5d89f}.career-ranking ol{padding-left:20px;font-variant-numeric:tabular-nums}.career-ranking li+li{margin-top:4px}.career-ranking button{margin:3px 6px 2px 0}
 .career-dye{display:flex;align-items:center;gap:8px;min-height:44px}.career-dye-swatch{width:18px;height:18px;border-radius:50%;border:1px solid #eee3c7}.career-dye button{margin-left:auto}.career-armor{display:flex;align-items:center;gap:5px;width:max-content;margin-top:3px;padding:2px 5px;border-radius:4px;color:#c3e8e1;background:#283f42;font:700 10px var(--ui)}.career-armor[hidden]{display:none}
 @media(max-width:370px){.career-tabs .career-tab{font-size:12px}}
+.mc-duo-actions{display:flex;flex-wrap:wrap;gap:5px;grid-column:1/-1}.mc-duo-actions button{padding:5px 8px;font-size:13px;min-height:33px}.mc-partner-dot{border-radius:50%;background:#6fe6f0}
+.mc-person:has(.mc-duo-actions){flex-wrap:wrap}.mc-person .mc-duo-actions{flex:1 1 auto;justify-content:flex-end}
+@media(max-width:520px){.mc-person .mc-duo-actions{order:3;flex-basis:100%;justify-content:flex-start;padding-left:38px}}

@@ -1,4 +1,8 @@
+import {woolDisplay} from './lost-wool-model.js';
+import {cameraFieldOfView} from './camera-options.js';
+import {createDriverView} from './driver-view.js';
 import {createMeshRenderer} from './mesh-renderer.js';
+import {createAtmosphere} from './city-atmosphere.js';
 import {enferLighting} from './enfer-lighting.js';
 import {isEnfer} from './paris-data.js';
 import {rendererFallback} from './renderer-fallback.js';
@@ -72,13 +76,16 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.00;
   const sky=makeSky();scene.add(sky);
   const lighting=isEnfer?enferLighting(scene,renderer,touch):null;
+  const atmosphere=isEnfer?createAtmosphere(scene,sky,renderer,renderer.software):null;
   if(!lighting){
     scene.add(new THREE.HemisphereLight(0xfff1d7,0x8a8294,1.44));
     const sun=new THREE.DirectionalLight(0xffe2ad,1.92);sun.position.set(Math.cos(sunBearing),1.06,Math.sin(sunBearing));scene.add(sun);
     const fill=new THREE.DirectionalLight(0xd8ebea,.69);fill.position.set(-.6,.47,-.9);scene.add(fill);
   }
+  const wool=woolDisplay(scene);
   const city=createCity3D(scene,{software:renderer.software}), pickupDisplay=createPickupDisplay(scene);
   const camera=new THREE.PerspectiveCamera(51,1,.12,6300);
+  const driverView=createDriverView(scene);
   const shadows=makeShadow();scene.add(shadows);
   const shadowTransform=new THREE.Object3D(), projection=new THREE.Vector3(), cameraAim=new THREE.Vector3();
   let width=0,height=0, cameraArm=5.6, camX=spawn.x,camY=spawn.y, lastPropTick=-100,props=[],inFrame=0,slowCount=0,scale=touch?.94:1, active=true;
@@ -87,12 +94,14 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   const labels=document.createElement('div');
   labels.style.cssText='position:absolute;inset:0;overflow:hidden;pointer-events:none;';
   canvas.after(labels);
-  function resize(){
+  let fieldOfView=80;
+  function resize(fov=80){
     const w=canvas.clientWidth||innerWidth,h=canvas.clientHeight||innerHeight;
-    if(w===width&&h===height)return;
+    if(w===width&&h===height&&fov===fieldOfView)return;
+    fieldOfView=fov;
     width=w;height=h;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,touch?1.15:1.4)*scale);
-    renderer.setSize(w,h,false);camera.aspect=w/h;camera.fov=w<h?62:Math.min(53,2*Math.atan(Math.tan(80*Math.PI/360)/(w/h))*180/Math.PI);camera.updateProjectionMatrix();
+    renderer.setSize(w,h,false);camera.aspect=w/h;camera.fov=cameraFieldOfView(w/h,fieldOfView);camera.updateProjectionMatrix();
   }
   function entity(e,dt,t){
     const vehicle=!!e.isCar,key=e.renderId||e.id;
@@ -176,14 +185,16 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   }
   let cpuFrame=-Infinity;
   function render(state,dt,time) {
-    if(!active || !canvas.isConnected)return;
-    if(renderer.software&&!state.snap&&time-cpuFrame<1/30-.002)return;
+    if(!active || !canvas.isConnected)return false;
+    if(renderer.software&&!state.snap&&time-cpuFrame<1/30-.002)return false;
     if(renderer.software){dt=Math.min(.10,Math.max(dt,time-cpuFrame));cpuFrame=time;}
-    resize();inFrame++;
+    resize(state.cameraConfig?.fov);inFrame++;
     const {p,car,yaw,pitch,destroyed}=state;
     // Tighten the boom immediately at walls, extend it gently after clearing a corner.
     const model=car?vehicleSpec(car.type):null;
-    const follow=car?8.15+Math.max(0,model.halfLength-2)*1.24:5.25;
+    const cockpit=!!car&&!state.passengerView&&state.cameraConfig?.mode==='driver';
+    const chase=state.cameraConfig?.mode==='near'?5.1:8.15;
+    const follow=car?chase+Math.max(0,model.halfLength-2)*1.24:5.25;
     const swimming=p.motion==='swim'&&!car;
     const followGround=swimming?swimGround:terrainHeight;
     const feet=(p.lift||0)-(swimming?.55:0);
@@ -199,18 +210,27 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     camera.position.set(camX+Math.cos(back)*cameraArm,armHeight+.12,camY+Math.sin(back)*cameraArm);
     const aimForward=car?6.3:4.15;
     cameraAim.set(camX+Math.cos(yaw)*aimForward,followGround(camX+Math.cos(yaw)*aimForward,camY+Math.sin(yaw)*aimForward)+focusY+pitch*.95,camY+Math.sin(yaw)*aimForward);
+    driverView.set(cockpit,model,p,ground,state.steering,state.vehiclePitch);
+    if(cockpit){
+      camera.position.copy(driverView.eye);
+      const sightPitch=pitch-.13+(state.vehiclePitch||0);
+      cameraAim.set(camera.position.x+Math.cos(yaw)*12,camera.position.y+Math.sin(sightPitch)*12,camera.position.z+Math.sin(yaw)*12);
+    }
     camera.lookAt(cameraAim);camera.updateMatrixWorld();
     sky.position.copy(camera.position);
-    lighting?.update(p,ground,time,snap,scale);
+    const epoch=state.epoch??Date.now();
+    lighting?.update(p,ground,time,snap,scale,epoch);
+    atmosphere?.update(epoch,camera);
     if(time-lastPropTick>.30 || snap){props=nearbyProps(p.x,p.y,320);lastPropTick=time;}
-    city.update(p,time,{props,destroyed,propHealth:state.propHealth,propDamageRevision:state.propDamageRevision});
-    pickupDisplay.update(state.pickups,p,time);
+    city.update(p,time,{epoch,props,destroyed,propHealth:state.propHealth,propDamageRevision:state.propDamageRevision});
+    pickupDisplay.update(state.pickups,p,time);wool.update(state.lostWool,p);
     const candidates=state.entities.filter(e=>Number.isFinite(e.x)&&Number.isFinite(e.y)).sort((a,b)=>distance(a,p)-distance(b,p));
     const lowPower=renderer.software||scale<.81;
     const carLimit=lowPower?5:touch?7:10, pedestrianLimit=lowPower?8:touch?11:14;
     let npcs=0,cars=0,index=0;
     blood.begin(time,state.epoch??Date.now());bloodMesh.begin();
     for(const e of candidates) {
+      if(cockpit&&e.self)continue;
       const d=distance(e,p),critical=e.self||e.peer;
       if(!critical && (d>(e.isCar?115:86) || (e.isCar?cars>=carLimit:npcs>=pedestrianLimit)))continue;
       if(critical && !e.self && d>210)continue;
@@ -243,9 +263,10 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
       e.mesh.material.opacity=Math.min(1,e.life*(e.fiber?10:5));
     }
     // The software view has already scheduled this frame before updating its scene.
-    renderer.render(scene,camera,snap||renderer.software);
+    const presented=renderer.render(scene,camera,snap||renderer.software);
     if(!renderer.software&&dt>.049)slowCount++;else slowCount=Math.max(0,slowCount-.5);
     if(slowCount>55 && scale>.68){scale=Math.max(.68,scale-.12);width=0;slowCount=0;}
+    return presented!==false;
   }
   // World (east, south, elevation) to the last drawn viewport; depth is along the camera axis in metres.
   function projectTarget(x,y,elevation=1){
@@ -267,11 +288,11 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   }
   function contextLost(event){event.preventDefault();if(active)onLost(new Error('Contexte WebGL interrompu.'));}
   canvas.addEventListener('webglcontextlost',contextLost);
-  return {available:true,mode:renderer.software?'mesh':'webgl',render,aim,projectTarget,effect,dispose(){
+  return {available:true,get drawCalls(){return renderer.info?.render?.calls;},mode:renderer.software?'mesh':'webgl',render,aim,projectTarget,effect,dispose(){
     active=false;canvas.removeEventListener('webglcontextlost',contextLost);labels.remove();
     for(const item of models.values())item.object.dispose?.();
-    bloodMesh.dispose();pickupDisplay.dispose();city.dispose?.();
-    lighting?.dispose();shadows.geometry.dispose();shadows.material.map.dispose();shadows.material.dispose();
+    wool.dispose();driverView.dispose();bloodMesh.dispose();pickupDisplay.dispose();city.dispose?.();
+    atmosphere?.dispose();lighting?.dispose();shadows.geometry.dispose();shadows.material.map.dispose();shadows.material.dispose();
     sky.geometry.dispose();sky.material.map.dispose();sky.material.dispose();renderer.dispose();
   }};
 }

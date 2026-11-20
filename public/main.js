@@ -1,3 +1,4 @@
+import {isMuted} from './social-controls.js';
 import {weaponList,starterWeapons,inventoryWeapons} from './weapon-catalog.js';
 import {installHudEditor} from './hud-editor.js';
 import {installTraversalControl} from './traversal-control.js';
@@ -10,6 +11,8 @@ import {readSectorTransfer} from './sector-transfer.js';
 import {createGame} from './game.js';
 import {isEnfer} from './paris-data.js';
 import {createNet} from './net.js';
+import {createPartners} from './partners.js';
+import {createCareerUI} from './career-ui.js';
 import {createPanels} from './panels.js';
 import {drawItemIcon} from './sprites.js';
 import {portrait} from './portrait.js';
@@ -79,8 +82,9 @@ function paintPortrait(){
 }
 function setSkin(id){chosenSkin=foxSkin(id);write('skin',chosenSkin.id);game?.setSkin(chosenSkin.id);paintPortrait();}
 paintPortrait();
-function appendChat({name,text,system=false}){
+function appendChat({name,text,player,system=false}){
   const log=$('#chatLog'),p=document.createElement('p');
+  if(player){p.dataset.author=player;p.hidden=isMuted(player);}
   if(system){p.className='system';const dot=document.createElement('b');dot.textContent='◆';p.append(dot,document.createTextNode(text));}
   else{const author=document.createElement('b');author.textContent=name+' ';p.append(author,document.createTextNode(text));}
   log.append(p);
@@ -115,7 +119,7 @@ function showEquipment(){
     lastEquipped=item.id;
   }
   $('#weaponLabel').textContent=item.name;
-  const ammo=item.id==='fist'?'Corps à corps':state.reloading?'Recharge…':state.ammo+' / '+item.mag;
+  const ammo=item.id==='fist'?'Corps à corps':state.reloading?'Recharge…':state.ammo+' / '+(state.reserve??item.mag*2);
   $('#equippedAmmo').textContent=ammo;
   wheelButton.setAttribute('aria-label','Ouvrir la roue d’armes · '+item.name+' · '+ammo);
   panels?.refresh('weapons');
@@ -128,7 +132,7 @@ function showWanted() {
   const detail=next ? points+' / '+next+' points' : 'Niveau maximal';
   $('#stars div').style.clipPath='inset(0 '+(100-20*stars)+'% 0 0)';
   $('#stars').setAttribute('aria-label',label);
-  $('#wantedRatio').textContent=next?points+'/'+next:'MAX';
+  $('#wantedRatio').textContent=state.policeContact||(next?points+'/'+next:'MAX');
   const meter=$('#wantedMeter');
   meter.title=next?detail+' pour la prochaine étoile':detail;
   meter.setAttribute('aria-valuemin','0');
@@ -192,7 +196,7 @@ function onState(next){
   const street=state.street||'';
   $('#street').textContent=street===state.district?'':street;
   $('#driveHud').hidden=!state.inVehicle;
-  $('#carSpeed').textContent=(state.speed||0)+' km/h';
+  $('#carSpeed').textContent=(state.speed||0)+' km/h'+(state.gear==null?'':' · '+(state.gear<0?'R':'D'+state.gear));
   $('#vehicleName').textContent=state.vehicleName||'Au volant';
   const condition=$('#chassisStatus'),integrity=Math.round(state.vehicleHealth??100);
   condition.textContent=integrity===0?'En panne':'Carrosserie · '+integrity+' %';
@@ -207,6 +211,9 @@ function onState(next){
   $('#rideShortcut span').textContent=rideVerb;
   traversal.update(state);
   combat.update(state);
+  const guard=$('#guard');
+  guard.hidden=Boolean(state.inVehicle||state.boarding||state.lifeState==='down');
+  guard.setAttribute('aria-pressed',String(!!state.crouched));
   $('#primaryVerb').textContent=state.weapon==='fist'?'Frapper':'Tirer';
   showLife();
   showWanted();
@@ -238,12 +245,15 @@ if(!sectorTransfer){
 }
 $('#openAvatar').onclick=()=>panels.open('settings');
 $('#healHud').onclick=()=>game.action('heal');
+$('#guard').onclick=()=>game.action('guard');
 $('#heal').onclick=()=>game.action('heal');
 editor=installHudEditor({scene:$('#scene'),onEdit:()=>{
   if(panels?.isOpen())panels.close();releaseTouchInputs();game.setPaused(true);
 },onFinish:()=>{game.setPaused(false);focusGame();}});
 $('#editHud').onclick=()=>editor.open();
-panels=createPanels({game,editLayout:()=>editor.open(),getSkin:()=>chosenSkin.id,setSkin,net,getState:()=>({...state,name:net.name}),selectWeapon,setName,setSound,getSound:()=>settingsSound,setTouchAim,getTouchAim:()=>touchAimEnabled,notify,returnFocus:focusGame});
+const career=isEnfer?createCareerUI({game,net,getState:()=>state,notify,open:()=>panels?.open('career'),close:()=>panels?.close(),modalOpen:()=>panels?.isOpen()||editor?.active}):null;
+const partners=createPartners(net,{map:isEnfer?'enfer':'paris',changed:()=>panels?.refresh('players'),notify});
+panels=createPanels({game,career,partners,editLayout:()=>editor.open(),getSkin:()=>chosenSkin.id,setSkin,net,getState:()=>({...state,name:net.name}),selectWeapon,setName,setSound,getSound:()=>settingsSound,setTouchAim,getTouchAim:()=>touchAimEnabled,notify,returnFocus:focusGame});
 onState(state);setSound(settingsSound);game.setAimAssist(touchAimEnabled);
 document.querySelectorAll('[data-panel]').forEach(b=>b.addEventListener('click',()=>{if(document.activeElement===entry)entry.blur();panels.open(b.dataset.panel);}));
 $('#playNav').onclick=()=>{if(panels.isOpen())panels.close();chat.classList.remove('mobile-open');focusGame();};
@@ -282,7 +292,10 @@ stick.onpointerup=stick.onpointercancel=stick.onlostpointercapture=stopStick;
 $('#recenter').onpointerdown=e=>{e.preventDefault();game.action('recenter');};
 $('#ride').onpointerdown=e=>{e.preventDefault();game.action('vehicle');};
 $('#driveExit').onclick=()=>{driving.release();game.action('vehicle');};
-$('#driveCamera').onclick=()=>game.action('recenter');
+$('#driveLamps').onclick=()=>game.action('headlamps');
+$('#driveHorn').onclick=()=>game.action('horn');
+$('#driveCamera').setAttribute('aria-label','Changer la caméra de conduite');
+$('#driveCamera').onclick=()=>game.action('carCamera');
 function releaseTouchInputs(){stopStick();combat.release();traversal.release();driving.release();}
 $('#panels').addEventListener('focusin',releaseTouchInputs);
 entry.addEventListener('focus',releaseTouchInputs);

@@ -1,3 +1,10 @@
+import {createDiagnosticsToggle} from './diagnostics.js';
+import {cameraSettingsControls} from './camera-options.js';
+import {teammate} from './partners.js';
+import {addSocialControls} from './social-controls.js';
+import {readRadio,storeRadio} from './car-radio.js';
+import {careerPlaces} from './career-catalog.js';
+import {placeSymbols} from './career-navigation.js';
 import {foxSkins} from './puppet-dyes.js';
 import {makeEmoteIcon} from './emote-art.js';
 import {drawItemIcon, drawAvatar} from './sprites.js';
@@ -22,11 +29,14 @@ const emotes = [
 const shortcuts = [
   ['Se déplacer', ['ZQSD', 'WASD', '↑↓←→']],
   ['Courir', ['Maj']],
+  ['Garde basse · s’accroupir et parer de face', ['X']],
   ['Sauter, franchir ou grimper', ['Espace']],
   ['Utiliser l’arme équipée', ['Clic gauche', 'F']],
   ['Frapper au corps à corps', ['V']],
   ['Tourner la caméra', ['Glisser clic droit']],
-  ['Recentrer la caméra', ['C']],
+  ['Klaxonner au volant', ['K']],
+  ['Changer le mode des phares', ['P']],
+  ['Recentrer à pied ou changer de vue au volant', ['C']],
   ['Recharger', ['R']],
   ['Utiliser une trousse de secours', ['H']],
   ['Entrer ou sortir d’un véhicule', ['E']],
@@ -34,9 +44,12 @@ const shortcuts = [
   ['Changer d’arme', ['Molette']],
   ['Émotes', ['B']],
   ['Ouvrir le chat', ['T']],
+  ['Missions et garage', ['N']],
+  ['Valider une étape à destination', ['G']],
   ['Plan de la ville', ['M']]
 ];
 const signs = {
+  career:'<rect x="3" y="8" width="18" height="12" rx="2"/><path d="M8 8V4h8v4M3 13h18m-10 0v2h2v-2"/>',
   close:'<path d="m6 6 12 12M18 6 6 18"/>',
   weapon:'<circle cx="12" cy="12" r="7"/><path d="M12 2v5m0 10v5M2 12h5m10 0h5"/>',
   emotes:'<path d="M3 4h18v13H10l-5 4v-4H3z"/><path d="M7 9h1m8 0h1m-9 3 2 2h4l2-2"/>',
@@ -95,7 +108,7 @@ function gameShareURL() {
   return coreDestinations.some(d=>d.key===halt)?historicURL(url.href,halt):url.href;
 }
 
-export function createPanels({game,net,editLayout,getSkin,setSkin,getState,selectWeapon,setName,setSound,getSound,setTouchAim,getTouchAim,notify,returnFocus}) {
+export function createPanels({game,net,career,partners,editLayout,getSkin,setSkin,getState,selectWeapon,setName,setSound,getSound,setTouchAim,getTouchAim,notify,returnFocus}) {
   const root=document.getElementById('panels');
   let current='', dialog=null, selected=0, choose=null, setSelected=null;
   let held=false, wheelDirty=false, openedAt=0, interval=0, renderCurrent=null;
@@ -109,7 +122,7 @@ export function createPanels({game,net,editLayout,getSkin,setSkin,getState,selec
   function gearAmmo(item){
     if(item.id==='fist')return item.hint;
     const current=state(),remaining=game.getWeaponAmmo?.(item.id)??(item.id===current.weapon?current.ammo:null);
-    return remaining==null?item.hint:remaining+' / '+item.mag;
+    return remaining==null?item.hint:remaining+' chargées · '+(game.getWeaponReserve?.(item.id)??0)+' en réserve';
   }
   function close(focus=true) {
     if(!current) return;
@@ -135,7 +148,7 @@ export function createPanels({game,net,editLayout,getSkin,setSkin,getState,selec
     const header=node('header','mc-header');
     const info=node('div','mc-heading');
     const iconWrap=node('span','mc-sign');
-    iconWrap.innerHTML=icon({weapons:'weapon',emotes:'emotes',map:'map',settings:'gear',players:'users',help:'help'}[kind]);
+    iconWrap.innerHTML=icon({career:'career',weapons:'weapon',emotes:'emotes',map:'map',settings:'gear',players:'users',help:'help'}[kind]);
     const words=node('div','mc-titlegroup');
     words.append(node('p','mc-eyebrow',label));
     const currentTitle=node('h2','mc-title',title);
@@ -273,6 +286,10 @@ export function createPanels({game,net,editLayout,getSkin,setSkin,getState,selec
     [['mc-me',you],['mc-other','Autres joueurs'],['mc-car','Véhicules'],['mc-drop','Arme à trouver']].forEach(([c,value])=>{
       const line=node('span','mc-map-legend');line.append(node('i',c),node('span','',value));legends.append(line);
     });
+    const buddy=teammate();
+    if(buddy){
+      const line=node('span','mc-map-legend');line.append(node('i','mc-partner-dot'),node('span','','Équipier · '+buddy.name));legends.append(line);
+    }
     const finder=node('details','mc-depot-search');
     const missing=weaponList.filter(it=>!it.starter&&!state().ownedWeapons?.includes(it.id));
     if(missing.length){
@@ -326,7 +343,19 @@ export function createPanels({game,net,editLayout,getSkin,setSkin,getState,selec
     const source=node('a','','IGN · BD TOPO®');source.href='https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_BD-TOPO';source.target='_blank';source.rel='noopener';
     credit.append(source,document.createTextNode(' · Licence Ouverte 2.0. Emprises et voirie réelles. Relief interpolé entre les altitudes routières. Façades en laine.'));
     detail.append(legends,finder,travel,credit);pad.append(detail,regional);sheet.append(pad);
-    let built=false,region=false;
+    let built=false,region=false,zoom=false;
+    if(career){
+      const tools=node('div','career-map-tools'),selector=node('select','mc-input');selector.id='venue-choice';
+      for(const place of Object.values(careerPlaces)){
+        const option=node('option','',placeSymbols[place.id]+' · '+place.name);
+        option.value=place.id;selector.append(option);
+      }
+      const focus=button('Voir le quartier des missions','mc-secondary',()=>{
+        zoom=!zoom;focus.textContent=zoom?'Voir toute la ville':'Voir le quartier des missions';renderCurrent?.();
+      });
+      tools.append(focus,fieldLabel('Lieux du quartier','venue-choice'),selector,button('Guider vers ce lieu','mc-secondary',()=>career.guide(selector.value)));
+      map.after(tools);
+    }
     function switchMap(mode){
       region=mode==='region';detail.hidden=region;regional.hidden=!region;
       localButton.setAttribute('aria-pressed',String(!region));regionButton.setAttribute('aria-pressed',String(region));
@@ -337,10 +366,10 @@ export function createPanels({game,net,editLayout,getSkin,setSkin,getState,selec
         }});
         built=true;
       }
-      if(!region)game.drawFullMap?.(canvas);
+      if(!region)game.drawFullMap?.(canvas,zoom);
     }
     switchMap('local');
-    renderCurrent=()=>{if(!region)game.drawFullMap?.(canvas);};
+    renderCurrent=()=>{if(!region)game.drawFullMap?.(canvas,zoom);};
     interval=setInterval(()=>renderCurrent?.(),300);
   }
   function keyRows() {
@@ -385,11 +414,13 @@ export function createPanels({game,net,editLayout,getSkin,setSkin,getState,selec
     const controls=node('details','mc-guide-details');
     controls.append(node('summary','','Commandes clavier et souris'),keyRows());
     const mobile=node('section','mc-guide-section');
-    mobile.append(node('h3','','Commandes tactiles'),node('p','','À pied, déplace légèrement le joystick pour marcher, puis pousse-le vers le bord pour courir. Glisse sur le décor pour tourner la caméra. Au volant, pousse vers le haut pour accélérer ou vers le bas pour freiner puis reculer.'));
+    mobile.append(node('h3','','Commandes tactiles'),node('p','','À pied, déplace légèrement le joystick pour marcher, puis pousse-le vers le bord pour courir. Glisse sur le décor pour tourner la caméra. Au volant, braque avec les flèches à gauche. À droite, utilise les pédales pour accélérer, freiner ou reculer.'));
     mobile.append(node('p','','Maintiens le bouton de tir pour accrocher une cible devant toi. Un réticule apparaît dessus. Glisse le pouce sur ce bouton pour ajuster la visée, puis relâche pour arrêter de tirer.'));
     const health=node('section','mc-guide-section');
     health.append(node('h3','','Vie et soins'),node('p','','Utilise une trousse avec H ou le bouton de soins. Un ambulancier peut te soigner et remplir ta trousse. À zéro point de vie, un compte à rebours indique quand tu reviens dans le jeu.'));
-    body.append(movement,combat,kit,health,alert,mobile,controls);sheet.append(body);
+    const guide=node('a','mc-secondary','Guide du quartier et carnet de version');
+    guide.href='/carnet.html';guide.target='_blank';guide.rel='noopener';
+    body.append(movement,combat,kit,health,alert,mobile,controls,guide);sheet.append(body);
   }
   function fieldLabel(text, id) {const l=node('label','mc-field-label',text);l.htmlFor=id;return l;}
   function settingsPanel() {
@@ -412,6 +443,7 @@ export function createPanels({game,net,editLayout,getSkin,setSkin,getState,selec
       }
       sync();row.append(label,toggle);return row;
     }
+    const radioRow=switchRow('Autoradio · Radio Bobine','car',readRadio,on=>{storeRadio(on);game.setRadio(on);},'Allumé','Éteint');
     const soundRow=switchRow('Effets sonores','speaker',sound,setSound,'Activés','Coupés');
     const aimRow=switchRow('Aide à la visée tactile','weapon',getTouchAim,setTouchAim,'Activée','Désactivée');
     const display=node('div','mc-option-row');
@@ -429,7 +461,9 @@ export function createPanels({game,net,editLayout,getSkin,setSkin,getState,selec
     for(const entry of foxSkins){const option=node('option','',entry.label);option.value=entry.id;skin.append(option);}
     skin.value=getSkin();
     wardrobe.append(fieldLabel('Tenue du renard',skin.id),skin);
-    actions.append(controls,confirm);form.append(group,wardrobe,custom,soundRow,aimRow,display,actions);
+    actions.append(controls,confirm);form.append(group,wardrobe,custom,soundRow,radioRow,aimRow,display,actions);
+    form.insertBefore(cameraSettingsControls(game),actions);
+    form.insertBefore(createDiagnosticsToggle(game),actions);
     form.addEventListener('submit',e=>{
       e.preventDefault();const name=username.value.trim();
       if(!name){username.setCustomValidity('Entre un nom de joueur.');username.reportValidity();return;}
@@ -472,7 +506,8 @@ export function createPanels({game,net,editLayout,getSkin,setSkin,getState,selec
       const total=players.length;
       const counter=online?total+' joueur'+(total===1?'':'s')+' en ligne':'Présence mondiale';
       if(count.textContent!==counter)count.textContent=counter;
-      const signature=status+JSON.stringify(players.map(p=>[p.id,p.name,p.variant]));
+      partners?.poll();
+      const signature=status+(partners?.revision||0)+JSON.stringify(players.map(p=>[p.id,p.name,p.variant]));
       if(signature===previous)return;
       previous=signature;roster.replaceChildren();
       if(!players.length){
@@ -485,6 +520,10 @@ export function createPanels({game,net,editLayout,getSkin,setSkin,getState,selec
         paintCanvas(face,(ctx,s)=>drawAvatar(ctx,0,0,s,person.variant||'fox'),30);
         entry.append(face,node('span','mc-person-name',person.name||'Joueur'));
         if(person.id===net.id)entry.append(node('small','mc-self','Vous'));
+        if(person.id!==net.id){
+          partners?.render(entry,person,()=>open('map'));
+          addSocialControls(entry,person,net,feedback);
+        }
         roster.append(entry);
       }
     };
@@ -492,13 +531,18 @@ export function createPanels({game,net,editLayout,getSkin,setSkin,getState,selec
   }
   function open(kind,id) {
     const kinds=['weapons','emotes','map','settings','players','help'];
+    if(career)kinds.push('career');
     if(!kinds.includes(kind))return;
     if(current===kind){close();return;}
     const activeFocus=current?previousFocus:document.activeElement;
     if(current)close(false);
     previousFocus=activeFocus;current=kind;root.hidden=false;game.setPaused?.(true);
     if(kind==='weapons' || kind==='emotes')wheel(kind,id);
-    else if(kind==='map')mapPanel();
+    else if(kind==='career'){
+      const sheet=frame(kind,'Les Vieilles Mailles','Missions et garage');
+      const body=node('div','mc-body career-body');sheet.append(body);
+      career.openPanel();renderCurrent=()=>career.renderPanel(body);renderCurrent();
+    }else if(kind==='map')mapPanel();
     else if(kind==='settings')settingsPanel();
     else if(kind==='help')helpPanel();
     else playersPanel();
@@ -514,7 +558,7 @@ export function createPanels({game,net,editLayout,getSkin,setSkin,getState,selec
     if(!current){
       if(up || editable || e.ctrlKey || e.metaKey || e.altKey || e.repeat)return false;
       if(lower==='tab' && (e.shiftKey || target?.closest?.('button,a,[role="button"]')))return false;
-      const kind=({tab:'weapons',b:'emotes',m:'map',f1:'help'})[lower];
+      const kind=({tab:'weapons',b:'emotes',m:'map',n:career?'career':null,f1:'help'})[lower];
       if(!kind)return false;
       open(kind);held=kind==='weapons' || kind==='emotes';openedAt=performance.now();return consume();
     }
@@ -541,7 +585,7 @@ export function createPanels({game,net,editLayout,getSkin,setSkin,getState,selec
       const slot=digit?(Number(digit[1])||10)-1:-1;
       if(slot>=0 && slot<items.length){setSelected(slot);choose();return consume();}
     }
-    if(!editable && current==='map' && lower==='m' && !e.repeat){close();return consume();}
+    if(!editable && ((current==='map' && lower==='m')||(current==='career' && lower==='n')) && !e.repeat){close();return consume();}
     if(lower==='tab' && !isWheel){
       const list=[...dialog.querySelectorAll('button:not([disabled]),input:not([hidden]),select:not([disabled]),summary,[tabindex="0"]')].filter(el=>el.getClientRects().length);
       const first=list[0],last=list[list.length-1];

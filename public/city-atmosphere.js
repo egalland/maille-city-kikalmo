@@ -35,7 +35,8 @@ export function createAtmosphere(scene, sky, renderer, software) {
         const off=i*6, y=12-((i*9.37+seconds*12)%24);
         const x=(((i*19.315+camera.position.x*-1+y*.16)%24)+24)%24-12;
         const z=(((i*8.743-camera.position.z)%24)+24)%24-12;
-        positions.set([x,y,z,x-.07,y-.43,z],off);
+        positions[off]=x;positions[off+1]=y;positions[off+2]=z;
+        positions[off+3]=x-.07;positions[off+4]=y-.43;positions[off+5]=z;
       }
       buf.needsUpdate=true;
     },
