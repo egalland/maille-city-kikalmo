@@ -2,12 +2,13 @@ import {fleetHandling} from './vehicle-handling.js';
 // Metres and seconds. steering is the peak yaw rate, cruise scales normal city traffic.
 const specs={};
 // Longitudinal seat anchors (metres forward of centre) for vehicles with a cab-over or saddle.
-const seatOffsets={helicopter:.54,airship:.70,cargo:-.74,scooter:-.24,motorbike:-.26,estate:.07,gt:-.56,supercar:.24,camper:1.32,flatbed:1.50};
+const cabEye={boxtruck:2.11,tipper:2.11};
+const seatOffsets={helicopter:.54,airship:.70,cargo:-.74,scooter:-.24,motorbike:-.26,estate:.07,gt:-.56,supercar:.24,camper:1.32,flatbed:1.50,boxtruck:2.67,tipper:2.22};
 // These powertrains keep their established low gears and rotor response. Only the
 // upper part of the range opens up to their new maximum speed.
 const powerBandKph={sport:240,gt:276,supercar:318,motorbike:232,helicopter:300};
 function define(type,label,length,width,height,forward,reverse,accel,brake,steering,cruise,openSeat=false){
-  specs[type]=Object.freeze({...fleetHandling(type),label,seatOffset:seatOffsets[type]??length*.08,halfLength:length/2,halfWidth:width/2,height,forward,powerBand:powerBandKph[type]?powerBandKph[type]/3.6:forward,reverse,accel,brake,steering,cruise,openSeat});
+  specs[type]=Object.freeze({...fleetHandling(type),label,eyeHeight:cabEye[type]??height*.80,seatOffset:seatOffsets[type]??length*.08,halfLength:length/2,halfWidth:width/2,height,forward,powerBand:powerBandKph[type]?powerBandKph[type]/3.6:forward,reverse,accel,brake,steering,cruise,openSeat});
 }
 define('car','Berline rétro',4.12,1.80,1.72,170/3.6,7,4.7,14,1.26,1.00);
 define('compact','Citadine',3.42,1.62,1.65,145/3.6,6.5,3.9,14.8,1.62,.94);
@@ -28,6 +29,8 @@ define('motorbike','Moto roadster',2.22,.83,1.26,255/3.6,2.4,9.6,15.7,1.91,1.08,
 define('estate','Break du Tisserand',4.59,1.89,1.78,181/3.6,6.9,4.65,14.4,1.22,1.02);
 define('camper','Combi des Saules',4.67,2.03,2.27,124/3.6,4.4,2.65,10.7,.96,.82);
 define('flatbed','Porte-bobines',5.50,2.14,2.20,119/3.6,4.3,2.45,11.7,.83,.78);
+define('boxtruck','Porteur des Filatures',7.35,2.34,3.22,100/3.6,3.7,1.64,9.1,.69,.74);
+define('tipper','Benne des Briqueteries',6.45,2.30,2.69,94/3.6,3.9,1.87,9.2,.77,.78);
 define('pickup','Camionnette de marché',4.84,1.98,1.86,163/3.6,5.8,3.8,12.7,1.06,.87);
 define('airship','Dirigeable · Navette Nuage',11.4,4.2,5.1,16,4,2.1,4.1,.46,.50);
 define('helicopter','Hélicoptère Libellule',6.9,1.80,2.68,360/3.6,12,7.2,10,1.14,.75);

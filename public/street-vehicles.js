@@ -168,6 +168,7 @@ function makePickup(paint){
 }
 
 const models=new Map();
+const freightSections=new WeakMap();
 function modelFor(type,color){
   const paint=typeof color==='string'&&/^#[a-f\d]{6}$/i.test(color)?color:colors[type],key=type+paint;
   if(!models.has(key)){
@@ -196,7 +197,14 @@ function advanceMotion(m,type,e,dt,time,seed){
 export function createStreetVehicle(THREE,art,type,color,seed=0){
   const model=modelFor(type,color),root=new THREE.Group(),suspension=new THREE.Group(),cached=[],up=new THREE.Vector3(0,1,0);
   root.name='Maille véhicule '+type;root.add(suspension);
+  const shared=new Map();
   function build(section){
+    const existing=model.distant&&freightSections.get(section);
+    if(existing){
+      existing.users++;
+      const instance=existing.template.clone(true);shared.set(instance,section);
+      return instance;
+    }
     const node=new THREE.Group();node.name=section.name;node.position.set(...section.p);
     const panelGeometry=[];
     for(const v of section.parts){
@@ -223,11 +231,27 @@ export function createStreetVehicle(THREE,art,type,color,seed=0){
         part.quaternion.setFromUnitVectors(up,d.normalize());
       }
     }
-    art.batchGroup(node);for(const g of panelGeometry)g.dispose();return node;
+    art.batchGroup(node);for(const g of panelGeometry)g.dispose();
+    if(model.distant){
+      freightSections.set(section,{template:node.clone(true),users:1});shared.set(node,section);
+    }
+    return node;
   }
-  function release(node){for(const m of node.children)m.geometry?.dispose();node.removeFromParent();}
+  function release(node){
+    node.removeFromParent();
+    const section=shared.get(node);
+    if(section){
+      shared.delete(node);
+      const entry=freightSections.get(section);
+      if(--entry.users>0)return;
+      freightSections.delete(section);
+    }
+    for(const m of node.children)m.geometry?.dispose();
+  }
   const body=build(model.chassis);suspension.add(body);cached.push(body);
   if(model.seats3D){body.userData.seats3D=model.seats3D;body.userData.townDoorHinge=model.seats3D.x+.66;}
+  const trim=model.distant?[...body.children]:null;
+  let distant,distantGlazing;
   const glazing=model.seats3D?body.children.find(mesh=>mesh.material?.transparent):null;
   const fork=model.fork&&build(model.fork);
   if(fork){suspension.add(fork);cached.push(fork);}
@@ -247,9 +271,21 @@ export function createStreetVehicle(THREE,art,type,color,seed=0){
     const {steering,roll,pitch,bob,phase}=motion;
     suspension.position.y=bob;
     suspension.rotation.set(roll,0,pitch);
-    if(glazing)glazing.visible=!(e.parts&1);
+    const far=!!model.distant&&e.signalDetail===false;
+    if(trim){
+      if(far&&!distant){
+        distant=build(model.distant);cached.push(distant);suspension.add(distant);
+        distantGlazing=distant.children.find(mesh=>mesh.material?.transparent);
+      }
+      for(const m of trim)m.visible=!far;
+      if(distant)distant.visible=far;
+      if(distantGlazing)distantGlazing.visible=!(e.parts&1);
+    }
+    if(glazing)glazing.visible=!far&&!(e.parts&1);
     if(fork)fork.rotation.y=-steering;
     for(const {pivot,spin,w} of wheels){
+      pivot.visible=!far;
+      if(far)continue;
       pivot.rotation.y=w.front?-steering:0;
       pivot.rotation.x=twoWheeler(type)?roll:0;
       const flat=(e.parts&wheelPart(w.front,w.p[2]>0))!==0||(w.p[2]===0&&(e.parts&wheelPart(w.front,true))!==0);
@@ -392,7 +428,8 @@ export function drawStreetVehicle(c,e,x,y,height,time=0,viewAngle=0,weave=null){
       }
     }
   }
-  build(model.chassis,0,0,true);
+  const far=model.distant&&height<34;
+  build(far?model.distant:model.chassis,0,0,true);
   if(model.seats3D){
     const {x:seatX,y:seatY,spacing,scale}=model.seats3D;
     for(const [index,active] of [e.driver,e.passenger,e.fare].entries()){
@@ -410,7 +447,7 @@ export function drawStreetVehicle(c,e,x,y,height,time=0,viewAngle=0,weave=null){
   if(model.fork)build(model.fork,-steer,0,true);
   const rider=model.mount&&riderIdentity(e);
   if(rider)build(sketchRider(model.mount,rider,steer),0,0,true);
-  for(const w of model.wheels)build(w,w.front?-steer:0,phase/w.r);
+  if(!far)for(const w of model.wheels)build(w,w.front?-steer:0,phase/w.r);
   c.save();c.translate(x,y);c.scale(size,size);c.lineJoin='round';c.lineCap='round';
   function yarn(o){
     if(pattern&&o.woven){c.save();c.scale(.014,.014);c.fillStyle=pattern;c.fill();c.restore();}

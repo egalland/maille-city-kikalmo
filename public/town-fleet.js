@@ -1,7 +1,8 @@
+import {freightPaint,createFreightRecipe} from './freight-bodies.js';
 import {cabinFit} from './cabin-rider.js';
 // Metre-scale patterns in the same coordinate system as the wheels and collision boxes.
 import {fleetFabric as yarn} from './vehicle-fabric.js';
-export const townFleetPaint=Object.freeze({estate:'#556f82',camper:'#719a83',flatbed:'#a05a46'});
+export const townFleetPaint=Object.freeze({estate:'#556f82',camper:'#719a83',flatbed:'#a05a46',...freightPaint});
 const wool='#e7d2a6',umber='#655347',wood='#b28051';
 
 function panel(parts,points,c,glass=false){parts.push({kind:'panel',points,c,glass});}
@@ -186,6 +187,7 @@ function flatbed(parts,art,paint){
 }
 const patterns={estate,camper,flatbed};
 export function createTownCarRecipe(type,paint,art){
+  if(Object.hasOwn(freightPaint,type))return createFreightRecipe(type,paint,{...art,hull,cabin,upholstery});
   const chassis=art.section('carrosserie');
   const shape=patterns[type](chassis.parts,art,paint);
   upholstery(chassis.parts,art,shape.seats3D,type);

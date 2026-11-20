@@ -50,6 +50,16 @@ export function vehiclePart(vehicle,point,height){
   const spec=vehicleSpec(vehicle.type),c=Math.cos(vehicle.angle||0),s=Math.sin(vehicle.angle||0);
   const dx=point.x-vehicle.x,dy=point.y-vehicle.y;
   const along=(dx*c+dy*s)/spec.halfLength,across=(dy*c-dx*s)/spec.halfWidth;
+  if(vehicle.type==='boxtruck'||vehicle.type==='tipper'){
+    const rear=along*spec.halfLength,tipper=vehicle.type==='tipper';
+    const axle=tipper?[2.18,-.85,-2.05]:[2.65,-2.09];
+    if(height*spec.height<.86&&Math.abs(across)>.52&&axle.some(x=>Math.abs(rear-x)<.54))
+      return (rear>0?'front':'rear')+(across>0?'Right':'Left');
+    const inCab=rear>spec.halfLength-2.16;
+    if(inCab&&height*spec.height>1.50&&height*spec.height<(tipper?2.57:2.46))return 'glass';
+    if(inCab&&height*spec.height<1.49&&height*spec.height>.44)return 'engine';
+    return 'body';
+  }
   if(height<.33&&Math.abs(along)>.39&&Math.abs(along)<1.2){
     return (along>0?'front':'rear')+(across>0?'Right':'Left');
   }

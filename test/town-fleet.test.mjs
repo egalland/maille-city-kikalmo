@@ -9,7 +9,7 @@ import {vehiclePart} from '../public/vehicle-damage.js';
 import {handleApi} from '../worker/game-api.js';
 import {localDatabase} from '../scripts/local-db.mjs';
 
-const closedFleet=['estate','camper','flatbed','gt','supercar'];
+const closedFleet=['estate','camper','flatbed','gt','supercar','tipper','boxtruck'];
 test('the town fleet and both sports cars carry the driver behind destructible glazing on steerable chassis',()=>{
   const contours=new Set();
   for(const type of closedFleet){
@@ -63,6 +63,46 @@ test('end-on and side impacts follow the engine and cabin of each sports car',()
     assert.equal(hit(seat,1,.79),'glass');
     assert.equal(hit(motor,0,.82),'glass');
     assert.equal(hit(.65,1,.23),'frontRight');
+  }
+});
+
+test('freight cab glazing, tyres, powertrain and seats are separate from a solid load',()=>{
+  for(const [type,axles] of [['boxtruck',[2.65,-2.09]],['tipper',[2.18,-.85,-2.05]]]){
+    const spec=vehicleSpec(type),car={type,x:3,y:-5,angle:-1.4},c=Math.cos(car.angle),s=Math.sin(car.angle);
+    const hit=(along,side,up)=>vehiclePart(car,{x:car.x+c*along-s*side,y:car.y+s*along+c*side},up/spec.height);
+    assert.ok(spec.mass>7000&&spec.eyeHeight>1.8&&spec.eyeHeight<2.35);
+    assert.ok(vehicleDoorways(car,.65).every(d=>Math.abs((d.x-car.x)*c+(d.y-car.y)*s-spec.seatOffset)<.001));
+    for(const side of [-1,1]){
+      assert.equal(hit(spec.seatOffset,side*spec.halfWidth,1.98),'glass');
+      assert.equal(hit(-.6,side*spec.halfWidth,1.98),'body');
+      for(const x of axles)assert.equal(hit(x,side*spec.halfWidth,.47),(x>0?'front':'rear')+(side>0?'Right':'Left'));
+    }
+    assert.equal(hit(spec.halfLength,0,1.10),'engine');
+    assert.equal(hit(-spec.halfLength,0,1.10),'body');
+  }
+});
+
+test('freight paint shares geometry while isolated damage, steering and lighter distant bodies follow the player',()=>{
+  for(const type of ['boxtruck','tipper']){
+    const a=createCar(type),b=createCar(type),cab=a.group.getObjectByName('carrosserie'),other=b.group.getObjectByName('carrosserie');
+    assert.equal(cab.children[0].geometry,other.children[0].geometry);
+    const wheel=a.group.getObjectByName('direction');
+    const triangles=(g)=>g.children.reduce((n,m)=>n+(m.isMesh?m.geometry.getAttribute('position').count/3:0),0);
+    const detailed=triangles(cab);
+    a.update({driver:true,parts:1},.016,1);
+    assert.ok(!cab.children.find(m=>m.material?.transparent).visible);
+    assert.ok(other.children.find(m=>m.material?.transparent).visible);
+    a.update({driver:true,signalDetail:false,parts:1,occupantDistance:75},.016,2);
+    const far=a.group.getObjectByName('Silhouette poids lourd');
+    assert.ok(far.visible&&!wheel.visible&&triangles(far)<detailed*.26);
+    assert.ok(!far.children.find(m=>m.material?.transparent).visible);
+    a.update({signalDetail:true},.016,3);
+    assert.ok(!far.visible&&wheel.visible&&cab.children.find(m=>m.material?.transparent).visible);
+    let disposed=0;
+    cab.children[0].geometry.addEventListener('dispose',()=>disposed++);
+    a.dispose();assert.equal(disposed,0);
+    b.update({driver:true,steer:1},.07,4);assert.ok(other.getObjectByName('Conducteur assis').visible);
+    b.dispose();assert.equal(disposed,1);
   }
 });
 

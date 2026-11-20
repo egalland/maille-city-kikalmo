@@ -1019,7 +1019,8 @@ function makeVehicleSignals(type,spec){
   front.name='Feux de croisement';rear.name='Feux stop';
   // Positions follow the lamps modelled into each family, accounting for frame scaling.
   const shaped=type==='compact'||type==='sport',bus=type==='bus',van=['van','firetruck','swat','ambulance'].includes(type);
-  const lamp=type==='gt'?[.960,.486,.610,1,.430,.527]:
+  const lamp=type==='boxtruck'?[.990,.370,.641,.995,.230,.735]:
+    type==='tipper'?[.990,.442,.652,.994,.275,.748]:type==='gt'?[.960,.486,.610,1,.430,.527]:
     type==='supercar'?[.931,.408,.592,.996,.526,.606]:
     shaped?[.99,.49,.66,.98,.50,.66]:bus?[1.00,.284,.65,1.0,.35,.76]:
     van?[.861,.467,.60,.969,.50,.70]:type==='motorbike'?[.57,.753,0,.91,.52,0]:

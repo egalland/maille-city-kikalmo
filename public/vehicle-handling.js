@@ -11,6 +11,7 @@ const tuning={
   swat:[3520,.53,'all',.91,5],scooter:[205,.43,'rear',.85,1],
   estate:[1530,.56,'front',1.01,5],camper:[2270,.43,'rear',.83,4],
   flatbed:[4190,.48,'rear',.87,5],motorbike:[229,.48,'rear',1.09,6],
+  boxtruck:[7540,.43,'rear',.84,6],tipper:[9120,.39,'rear',.88,6],
   cargo:[380,.47,'rear',.76,1],pickup:[2070,.57,'all',.95,5]
 };
 export function fleetHandling(type){
