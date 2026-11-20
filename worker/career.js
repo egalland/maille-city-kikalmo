@@ -3,6 +3,7 @@ import {woolSchema,woolProgress,woolAction} from './lost-wool.js';
 import {careerContracts,careerPlaces,careerRadius,careerGarage} from '../public/career-catalog.js';
 import {outfitShop} from '../public/outfit-shop.js';
 import {abandonedFor,wreckFor} from '../public/vehicle-lifecycle.js';
+import {isAircraft} from '../public/airfield.js';
 import {isVehicleType,vehicleSpec} from '../public/vehicle-types.js';
 
 export const careerSchema=[
@@ -41,7 +42,7 @@ async function hashProfile(profile){
   const bytes=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('maille-career-v1/'+profile)));
   return Array.from(bytes,v=>v.toString(16).padStart(2,'0')).join('');
 }
-const near=(actor,place)=>Math.hypot(actor.x-place.x,actor.y-place.y)<=careerRadius;
+const near=(actor,place)=>(actor.lift||0)<1.5&&Math.hypot(actor.x-place.x,actor.y-place.y)<=careerRadius;
 const allowed=new Set(['incident','woolPick','woolReturn','state','start','cancel','advance','repair','buy','collect','license','collectRent','deposit','withdraw','publishLap','hideLap','buyArmor','buyDye','equipDye']);
 export async function runCareer(db,b,room,now){
   if(room!=='enfer:public'||!profileId.test(b.profile)||!allowed.has(b.action))
@@ -93,7 +94,7 @@ export async function runCareer(db,b,room,now){
     JOIN mc_members m ON m.room=s.room AND m.id=s.rider
     WHERE s.room=? AND s.driver=? AND s.car=? AND m.seen>? AND cs.profile<>?`;
   const verifyCar=async()=>{
-    if(!actor.vehicle?.id||!isVehicleType(actor.vehicle.type))return false;
+    if(!actor.vehicle?.id||!isVehicleType(actor.vehicle.type)||isAircraft(actor.vehicle.type))return false;
     const driven=await q("SELECT owner FROM mc_items WHERE room=? AND kind='vehicle' AND item=?",room,actor.vehicle.id).first();
     if(driven?.owner!==b.id)return false;
     guard+=" AND EXISTS (SELECT 1 FROM mc_items WHERE room=? AND kind='vehicle' AND item=? AND owner=?)";

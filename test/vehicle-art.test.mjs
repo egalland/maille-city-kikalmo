@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Box3, Vector3 } from '../public/three.js';
+import {isAircraft} from '../public/airfield.js';
 import { createCar, createPuppet } from '../public/puppets3d.js';
 import { vehicleSpec, vehicleTypes, vehicleDoorways } from '../public/vehicle-types.js';
 import { destinations, parkedCars, routeAgents, contactAt } from '../public/paris-world.js';
@@ -12,14 +13,14 @@ test('the Paris fleet fits its drivable colliders, places accessible doors and u
     const {cars}=routeAgents(stop.x,stop.y,300,1780000121000+i*24000);
     cars.forEach(v=>observed.add(v.type));
   }
-  assert.deepEqual([...observed].sort(),[...vehicleTypes].sort());
+  assert.deepEqual([...observed].sort(),vehicleTypes.filter(type=>!isAircraft(type)).sort());
   for(const v of parkedCars){
     const spec=vehicleSpec(v.type);
     assert.equal(contactAt(v.x,v.y,{angle:v.angle,halfLength:spec.halfLength,halfWidth:spec.halfWidth}),null,v.id);
     const stop=destinations.find(d=>v.id==='car-'+d.key);
     assert.ok(vehicleDoorways(v).some(d=>Math.hypot(d.x-stop.x,d.y-stop.y)<4.4),v.id);
   }
-  for(const type of vehicleTypes){
+  for(const type of vehicleTypes.filter(type=>!isAircraft(type))){
     const spec=vehicleSpec(type),object=createCar(type),bounds=new Box3().setFromObject(object.group,true);
     const size=bounds.getSize(new Vector3());
     assert.ok(Math.abs(size.x-spec.halfLength*2)<.56,type+' length '+size.x);

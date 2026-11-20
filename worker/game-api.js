@@ -6,6 +6,7 @@ import {abandonedFor,disconnectedFor,wreckFor,wreckExpired} from '../public/vehi
 import {hitSeverity, woundDuration, activeBleeding} from '../public/bleeding.js';
 import {weaponCatalog} from '../public/weapon-catalog.js';
 import {propMaxHealth, vehiclePropDamage} from '../public/prop-damage.js';
+import {airfields,isAircraft,flightCeiling} from '../public/airfield.js';
 import {isVehicleType,vehicleSpec} from '../public/vehicle-types.js';
 import {chassisDamage,partMask,incendiaryImpact,vehicleBurnDelay,blastRadius,blastDamage} from '../public/vehicle-damage.js';
 import {meleeMoves} from '../public/melee-moves.js';
@@ -120,6 +121,7 @@ function vitalityFields(source,now,longRecovery=false) {
 const locomotionModes=new Set(['idle','crouch','walk','run','jump','fall','land','vault','climb','swim']);
 function movementFields(s,now){
   if(!Number.isFinite(s.lift))return {};
+  if(isAircraft(s.vehicle?.type))return {lift:num(s.lift,0,0,flightCeiling),motion:s.lift>0?'carAir':'idle',verticalSpeed:num(s.verticalSpeed,0,-8,8)};
   const lift=num(s.lift,0,0,64);
   if(s.vehicle)return s.motion==='carAir'&&lift>0
     ?{lift:Math.min(lift,12),motion:'carAir',verticalSpeed:num(s.verticalSpeed,0,-30,12)}
@@ -156,6 +158,8 @@ function playerState(raw,now,room) {
   const traffic=cleanTrafficPacket(s.traffic,now);if(traffic)result.traffic=traffic;
   if (s.vehicle && key(s.vehicle.id)){
     result.vehicle={...pose(s.vehicle),id:key(s.vehicle.id)};
+    if(isAircraft(result.vehicle.type))Object.assign(result.vehicle,{lift:result.lift||0,
+      bank:num(s.vehicle.bank,0,-.25,.25),carPitch:num(s.vehicle.carPitch,0,-.2,.2)});
     for(const k of ['brake','headlamps','fare'])if(typeof s.vehicle[k]==='boolean')result.vehicle[k]=s.vehicle[k];
   }
   else result.vehicle=null;
@@ -277,7 +281,8 @@ function shared(rows,now) {
         world.vehicles[r.item]={...vehicle,owner:r.owner,lastSeen:r.at};
       else{
         const expiresAt=r.owner?r.at+disconnectedFor:vehicle.expiresAt||r.at+abandonedFor;
-        if(expiresAt>now)world.vehicles[r.item]={...vehicle,occupied:false,owner:'',expiresAt};
+        const home=isAircraft(vehicle.type)&&vehicle.lift>.35?airfields.find(site=>site.type===vehicle.type):null;
+        if(expiresAt>now)world.vehicles[r.item]={...vehicle,...(home?{x:home.x,y:home.y,angle:home.angle,lift:0,bank:0,carPitch:0}:{}),occupied:false,owner:'',expiresAt};
       }
     }
     if(r.kind==='vehicleDamage'){
