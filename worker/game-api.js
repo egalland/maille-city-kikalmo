@@ -1,3 +1,4 @@
+import {withJacket} from '../public/outfit-shop.js';
 import {seatSchema,seatedRosterSQL,attachPassengers,requestSeat} from './vehicle-seats.js';
 import {abandonedFor,disconnectedFor,wreckFor,wreckExpired} from '../public/vehicle-lifecycle.js';
 import {hitSeverity, woundDuration, activeBleeding} from '../public/bleeding.js';
@@ -233,6 +234,7 @@ function eventData(type,raw,now) {
 }
 function roster(rows,viewerId) {
   const players=rows.map(r=>({...JSON.parse(r.state),id:r.id,name:r.name,joinedAt:r.joined,updatedAt:r.seen}));
+  for(const [i,p] of players.entries())if(p.type==='fox'&&p.color)p.color=withJacket(p.color.split('~')[0],rows[i].dye);
   attachPassengers(players,rows);
   const viewer=players.find(r=>r.id===viewerId);
   for(const r of players)if(r.id===viewerId||!viewer||Math.hypot(r.x-viewer.x,r.y-viewer.y)>290)delete r.traffic;

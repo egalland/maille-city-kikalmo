@@ -1,3 +1,4 @@
+import {outfitShop} from './outfit-shop.js';
 import {motionSeed} from './locomotion-pose.js';
 import {yarnPalette} from './wool-art.js';
 
@@ -33,4 +34,8 @@ export const foxSkins=Object.freeze([
   {id:'foret',label:'Forêt',coat:'#53734b',fur:'#a98059',cream:'#e8d2a5'},
   {id:'braise',label:'Braise',coat:'#994c44',fur:'#db9854',cream:'#ffe3b1'}
 ]);
-export const foxSkin=id=>foxSkins.find(skin=>skin.id===id)||foxSkins[0];
+export function foxSkin(value){
+  const [id,dye]=String(value||'').split('~');
+  const base=foxSkins.find(skin=>skin.id===id)||foxSkins[0];
+  return Object.hasOwn(outfitShop.dyes,dye)?{...base,coat:outfitShop.dyes[dye].color}:base;
+}

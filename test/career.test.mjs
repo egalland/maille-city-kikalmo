@@ -186,3 +186,30 @@ test('ranked lap uses server start gate, directed-road minima, anonymous-by-defa
   assert.equal(state.publicLapMs,null);assert.equal(state.bestLapMs,35000);assert.equal(state.leaders[0].ms,41001);
   assert.ok(!(await active(b,'publishLap',0)).ok);
 });
+
+test('Halles sells one durable armor layer to its active wearer and replicates only owned coat dyes',async t=>{
+  const {who,b,post,pose,drive,active,tick}=await harness(t);
+  let s=(await active(who,'start',0,'delivery')).state;
+  s=(await active(who,'advance',s.revision)).state;tick(12000);await pose(careerPlaces.quay);
+  s=(await active(who,'advance',s.revision)).state;
+  assert.ok(!(await active(who,'buyArmor',s.revision)).ok);
+  await pose(careerPlaces.market,{type:'fox',color:'foret'});
+  s=(await active(who,'buyArmor',s.revision)).state;
+  assert.equal(s.armor,40);assert.ok(s.wearable);assert.equal(s.cash,75);assert.ok(s.armorId);
+  assert.ok(!(await active(who,'buyArmor',s.revision)).ok);
+  assert.equal((await post('career',who,{action:'state',wear:{id:s.armorId,remaining:26}})).state.armor,26);
+  assert.equal((await post('career',who,{action:'state',wear:{id:s.armorId,remaining:33}})).state.armor,26,'late reports cannot restore an absorbed hit');
+  const other={...b,profile:who.profile};
+  let mirrored=await post('career',other,{action:'state',wear:{id:s.armorId,remaining:2}});
+  assert.equal(mirrored.state.armor,26);assert.ok(!mirrored.state.wearable);
+  const dye=async(action,value)=>post('career',who,{action,revision:s.revision,dye:value});
+  assert.ok(!(await dye('equipDye','indigo')).ok);
+  s=(await dye('buyDye','rubis')).state;
+  assert.deepEqual(s.dyes,['rubis']);assert.equal(s.cash,40);
+  const peer=await post('sync',b,{state:drive(careerPlaces.market,{vehicle:null})});
+  assert.equal(peer.players.find(p=>p.id===who.id).color,'foret~rubis');
+  assert.ok(!(await dye('buyDye','rubis')).ok);
+  s=(await dye('equipDye',null)).state;assert.equal(s.dye,null);
+  await post('leave',who,{});
+  mirrored=await post('career',other,{action:'state'});assert.ok(mirrored.state.wearable);assert.equal(mirrored.state.armor,26);
+});

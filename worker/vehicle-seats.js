@@ -17,8 +17,10 @@ export const seatSchema=[
      DELETE FROM mc_seats WHERE room=NEW.room AND car=NEW.item;
    END`
 ];
-export const seatedRosterSQL=`SELECT m.id,m.name,m.state,m.joined,m.seen,s.driver,s.car
+export const seatedRosterSQL=`SELECT m.id,m.name,m.state,m.joined,m.seen,s.driver,s.car,o.dye
   FROM mc_members m LEFT JOIN mc_seats s ON s.room=m.room AND s.rider=m.id
+  LEFT JOIN mc_career_sessions cs ON cs.room=m.room AND cs.id=m.id
+  LEFT JOIN mc_outfits o ON o.profile=cs.profile
   WHERE m.room=? AND m.seen>? ORDER BY m.joined,m.id`;
 
 export function attachPassengers(players, rows){

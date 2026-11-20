@@ -1,4 +1,5 @@
 import {careerContracts,careerPlaces,careerRadius,careerGarage} from '../public/career-catalog.js';
+import {outfitShop} from '../public/outfit-shop.js';
 import {abandonedFor,wreckFor} from '../public/vehicle-lifecycle.js';
 import {isVehicleType,vehicleSpec} from '../public/vehicle-types.js';
 
@@ -9,6 +10,8 @@ export const careerSchema=[
     mission TEXT, car TEXT, mutation TEXT NOT NULL DEFAULT '')`,
   `CREATE TABLE IF NOT EXISTS mc_enterprises (profile TEXT PRIMARY KEY, bank INTEGER NOT NULL DEFAULT 0,
     licensed INTEGER NOT NULL DEFAULT 0, revenue INTEGER NOT NULL DEFAULT 0)`,
+  `CREATE TABLE IF NOT EXISTS mc_outfits(profile TEXT PRIMARY KEY, armor INTEGER NOT NULL DEFAULT 0,
+      layer TEXT,wearer TEXT,dyes TEXT NOT NULL DEFAULT '[]',dye TEXT)`,
   `CREATE TABLE IF NOT EXISTS mc_laps(profile TEXT PRIMARY KEY,best INTEGER,public INTEGER,alias TEXT)`,
   'CREATE INDEX IF NOT EXISTS mc_ranked_laps ON mc_laps(public,alias) WHERE public IS NOT NULL',
   `CREATE TABLE IF NOT EXISTS mc_career_sessions (
@@ -19,15 +22,15 @@ export const careerSchema=[
 ];
 const profileId=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const maxPoseAge=25000;
-const readCareer=`SELECT c.*,e.bank,e.licensed,e.revenue,l.best,l.public,
+const readCareer=`SELECT c.*,e.bank,e.licensed,e.revenue,l.best,l.public,o.armor,o.layer,o.wearer,o.dyes,o.dye,
     (SELECT json_group_array(json_object('name',alias,'ms',public)) FROM
       (SELECT alias,public FROM mc_laps WHERE public IS NOT NULL ORDER BY public,alias,profile LIMIT 5)) AS leaders
     FROM mc_careers c JOIN mc_enterprises e ON c.profile=e.profile
-    LEFT JOIN mc_laps l ON c.profile=l.profile WHERE c.profile=?`;
+    LEFT JOIN mc_laps l ON c.profile=l.profile LEFT JOIN mc_outfits o ON o.profile=c.profile WHERE c.profile=?`;
 const parse=data=>data?JSON.parse(data):null;
-function publicState(row){
+function publicState(row,rider){
   const mission=parse(row.mission);
-  return {version:2,bestLapMs:row.best,publicLapMs:row.public,leaders:parse(row.leaders)||[],bank:row.bank,licensed:!!row.licensed,revenue:row.revenue,revision:row.revision,cash:row.cash,completed:row.completed,reputation:row.reputation,owned:!!row.car,
+  return {version:3,armor:row.armor||0,armorId:row.layer,wearable:row.wearer===rider,dyes:parse(row.dyes)||[],dye:row.dye,bestLapMs:row.best,publicLapMs:row.public,leaders:parse(row.leaders)||[],bank:row.bank,licensed:!!row.licensed,revenue:row.revenue,revision:row.revision,cash:row.cash,completed:row.completed,reputation:row.reputation,owned:!!row.car,
     mission:mission?{contract:mission.contract,stage:mission.stage,car:mission.car||null,started:mission.started,deadline:mission.deadline}:null};
 }
 async function hashProfile(profile){
@@ -35,7 +38,7 @@ async function hashProfile(profile){
   return Array.from(bytes,v=>v.toString(16).padStart(2,'0')).join('');
 }
 const near=(actor,place)=>Math.hypot(actor.x-place.x,actor.y-place.y)<=careerRadius;
-const allowed=new Set(['state','start','cancel','advance','repair','buy','collect','license','collectRent','deposit','withdraw','publishLap','hideLap']);
+const allowed=new Set(['state','start','cancel','advance','repair','buy','collect','license','collectRent','deposit','withdraw','publishLap','hideLap','buyArmor','buyDye','equipDye']);
 export async function runCareer(db,b,room,now){
   if(room!=='enfer:public'||!profileId.test(b.profile)||!allowed.has(b.action))
     return {ok:false,error:'Demande de carrière invalide.'};
@@ -46,12 +49,19 @@ export async function runCareer(db,b,room,now){
   const result=await db.batch([
     q('INSERT OR IGNORE INTO mc_careers(profile) VALUES(?)',profile),
     q('INSERT OR IGNORE INTO mc_enterprises(profile) VALUES(?)',profile),
+    q('INSERT OR IGNORE INTO mc_outfits(profile) VALUES(?)',profile),
+    q(`UPDATE mc_outfits SET wearer=? WHERE profile=? AND armor>0 AND wearer<>? AND NOT EXISTS
+      (SELECT 1 FROM mc_members WHERE room=? AND id=mc_outfits.wearer AND seen>?)`,
+      b.id,profile,b.id,room,now-maxPoseAge),
+    ...(profileId.test(b.wear?.id)&&Number.isInteger(b.wear.remaining)&&b.wear.remaining>=0&&b.wear.remaining<outfitShop.armorMax?[
+      q('UPDATE mc_outfits SET armor=min(armor,?) WHERE profile=? AND layer=? AND wearer=?',b.wear.remaining,profile,b.wear.id,b.id)
+    ]:[]),
     q(`INSERT INTO mc_career_sessions(room,id,profile) VALUES(?,?,?)
       ON CONFLICT(room,id) DO UPDATE SET profile=excluded.profile WHERE profile<>excluded.profile`,room,b.id,profile),
     q(readCareer,profile)
   ]);
   const row=result.at(-1).results[0],actor=parse(member.state)||{},previous=parse(row.mission);
-  const fail=error=>({ok:false,error,state:publicState(row)});
+  const fail=error=>({ok:false,error,state:publicState(row,b.id)});
   const down=actor.health===0||actor.downUntil>now;
   // Use one CAS plus a transaction marker for all dependent writes. A retry
   // or a second tab on the same profile can never spend or earn twice.
@@ -84,11 +94,29 @@ export async function runCareer(db,b,room,now){
   if(previous&&(now>previous.deadline||down)){
     mission=null;notice=down?'Contrat interrompu lors de la mise hors combat.':'Délai dépassé. Le contrat est de nouveau disponible.';
   }else if(b.action==='state'){
-    return {ok:true,state:publicState(row)};
+    return {ok:true,state:publicState(row,b.id)};
   }else if(!Number.isSafeInteger(b.revision)||b.revision!==row.revision){
     return fail('La progression a changé. Les données ont été actualisées.');
   }else if(down||!Number.isFinite(actor.x+actor.y)){
     return fail('Patiente jusqu’au retour de ton personnage en ville.');
+  }else if(['buyArmor','buyDye','equipDye'].includes(b.action)){
+    if(!near(actor,careerPlaces.market))return fail('Rejoins la mercerie aux Halles des Tisserands.');
+    if(b.action==='buyArmor'){
+      if(row.armor>0)return fail('Ton gilet est encore utilisable.');
+      if(cash<outfitShop.armorPrice)return fail('Solde insuffisant pour ce gilet.');
+      cash-=outfitShop.armorPrice;
+      effects.push(q(`UPDATE mc_outfits SET armor=?,layer=?,wearer=? WHERE profile=? AND ${hasMutation}`,
+        outfitShop.armorMax,crypto.randomUUID(),b.id,profile,profile,marker));
+    }else{
+      const dyes=parse(row.dyes)||[],dye=b.dye??null;
+      if(dye!==null&&!Object.hasOwn(outfitShop.dyes,dye))return fail('Teinture inconnue.');
+      if(b.action==='buyDye'){
+        if(!dye||dyes.includes(dye))return fail('Choisis une nouvelle teinture.');
+        if(cash<outfitShop.dyes[dye].price)return fail('Solde insuffisant pour cette teinture.');
+        cash-=outfitShop.dyes[dye].price;dyes.push(dye);
+      }else if(dye!==null&&!dyes.includes(dye))return fail('Cette teinture ne figure pas dans ta garde-robe.');
+      effects.push(q(`UPDATE mc_outfits SET dyes=?,dye=? WHERE profile=? AND ${hasMutation}`,JSON.stringify(dyes),dye,profile,profile,marker));
+    }
   }else if(b.action==='publishLap'||b.action==='hideLap'){
     if(!row.best)return fail('Termine d’abord un tour chronométré.');
     const visible=b.action==='publishLap';
@@ -185,7 +213,7 @@ export async function runCareer(db,b,room,now){
           if(existing.owner&&existing.seen>now-maxPoseAge&&driver?.vehicle?.id===car)return fail('La citadine est en circulation.');
           if(wear?.explodeAt&&wear.explodeAt+wreckFor>now)return fail('La dépanneuse récupère encore l’épave.');
           if(!wear?.explodeAt&&(parked.expiresAt||existing.at+abandonedFor)>now)
-            return {ok:true,state:publicState(row),vehicle:parked,notice:'Ta citadine est déjà en ville.'};
+            return {ok:true,state:publicState(row,b.id),vehicle:parked,notice:'Ta citadine est déjà en ville.'};
           guard+=" AND EXISTS (SELECT 1 FROM mc_items WHERE room=? AND kind='vehicle' AND item=? AND at=? AND seq=?)";
           guardArgs.push(room,car,existing.at,existing.seq);
           if(wear?.explodeAt)car='garage-'+crypto.randomUUID();
@@ -203,7 +231,7 @@ export async function runCareer(db,b,room,now){
     q(`UPDATE mc_enterprises SET bank=?,licensed=?,revenue=? WHERE profile=? AND ${hasMutation}`,bank,licensed,revenue,profile,profile,marker),
     ...effects,q(readCareer,profile)
   ]);
-  const state=publicState(updated.at(-1).results[0]);
+  const state=publicState(updated.at(-1).results[0],b.id);
   if(!updated[0].results.length)return {ok:false,error:'La situation a changé. Réessaie.',state};
   if(notice&&b.action!=='state')return {ok:false,state,error:notice};
   return {ok:true,state,...(vehicle?{vehicle}:{}),...(repaired?{repaired}:{}),...(notice?{notice}:{})};

@@ -256,3 +256,15 @@ test('two playable clients board one car, follow the same drive and release the 
   driver.game.action('vehicle');
   await poll(()=>!driver.hud.inVehicle&&!rider.hud.inVehicle&&driver.scene.entities.some(e=>e.id===rider.net.id),'driver exit releases both seats');
 });
+
+test('confirmed remote shots deplete purchased armor before the existing player health bar',t=>{
+  const {clients:[player],tick}=street(t);tick(2);
+  player.game.setCareerOutfit({armorId:'street-vest',armor:40,wearable:true,dye:'rubis'});
+  function shot(id){
+    const at=Math.round(player.net.serverTime());
+    player.receive({type:'hit',player:'other',at,seq:id,data:{target:player.id,damage:26,cause:'weapon',weapon:'pistol',shotId:'round-'+id,firedAt:at,angle:0}});
+  }
+  shot(1);assert.equal(player.hud.armor,14);assert.equal(player.hud.health,100);
+  shot(2);assert.equal(player.hud.armor,0);assert.equal(player.hud.health,88);
+  assert.equal(player.game.getArmorWear().remaining,0);
+});

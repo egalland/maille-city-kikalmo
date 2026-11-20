@@ -1,5 +1,6 @@
 import {officerKit} from './officer-kit.js';
 import {stepVehicleBody} from './vehicle-motion.js';
+import {createArmorLayer,withJacket} from './outfit-shop.js';
 import {foxSkin} from './puppet-dyes.js';
 import {abandonedFor,disconnectedFor,exitDriverFor,parkingExpired,wreckExpired} from './vehicle-lifecycle.js';
 import {officerDrop} from './drop-id.js';
@@ -57,7 +58,10 @@ function collisionBody(e){
 }
 
 export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},onAimLock=()=>{},initialPursuit=null,initialVitality=null,loadout=[],skin,onLoadoutChange=()=>{},buildView=createView}){
-  const p={...SPAWN,id:'local',type:'fox',color:foxSkin(skin).id,health:100,wanted:0,walk:0,angle:SPAWN.angle||0,moving:false};
+  let jacketDye=null,baseSkin=foxSkin(skin).id;
+  let wearStorage;try{wearStorage=globalThis.localStorage;}catch{}
+  const armorLayer=createArmorLayer(wearStorage);
+  const p={...SPAWN,id:'local',type:'fox',color:baseSkin,health:100,wanted:0,walk:0,angle:SPAWN.angle||0,moving:false};
   const traversal=createParkour(p,terrainHeight,terrainGradient,{onImpact:velocity=>{
     damage(Math.min(48,Math.round((velocity-8)*3)),p.angle,Math.min(.8,.18+(velocity-8.5)*.11),'fall');
   }});
@@ -128,7 +132,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       trafficSnapshot=packTraffic(drives,p,trafficPeers.followers,epoch);
     net?.publish?.({x:p.x,y:p.y,angle:p.angle,vx,vy,moving:p.moving,sprinting:p.sprinting,shooting:shootPose>.6,
       melee:swing?{kind:swing.kind,started:swing.started,angle:deltaAngle(0,swing.angle)}:undefined,recoil:recoilPhase(selfRecoil,epoch)?{at:selfRecoil.at,angle:selfRecoil.angle,force:selfRecoil.force}:undefined,
-      walk:p.walk,lift:p.lift,verticalSpeed:p.verticalSpeed,motion:car?(suspension?.lift>0?'carAir':'idle'):p.motion,motionPhase:p.motionPhase,stride:p.stride,slope:p.slope,turn,traffic:trafficSnapshot||undefined,type:'fox',color:p.color,health:Math.ceil(p.health),downUntil:life.downUntil,ragdoll:life.ragdoll,bleeding:life.bleeding,appearance,wanted:p.wanted,weapon,
+      walk:p.walk,lift:p.lift,verticalSpeed:p.verticalSpeed,motion:car?(suspension?.lift>0?'carAir':'idle'):p.motion,motionPhase:p.motionPhase,stride:p.stride,slope:p.slope,turn,traffic:trafficSnapshot||undefined,type:'fox',color:baseSkin,health:Math.ceil(p.health),downUntil:life.downUntil,ragdoll:life.ragdoll,bleeding:life.bleeding,appearance,wanted:p.wanted,weapon,
       speed:car?speed:Math.hypot(vx,vy),vehicle:car&&!travelClaim?{...car,x:p.x,y:p.y,angle:p.angle,moving:Math.abs(speed)>.2,speed}:null});
   }
   const {unlock,tone}=audio;
@@ -146,7 +150,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     const wanted=pursuit.state();
     const traversalReady=!paused&&!boarding&&!car&&!passengerSeat&&!incapacitated()&&(traversal.grounded||p.motion==='swim');
     const traversalAction=p.motion==='swim'?'swim':traversalReady?traversal.hint(p.angle,{destroyed,colliders:obstacles}):'jump';
-    const state={traversalReady,traversalAction,...life.state(epoch),health:Math.ceil(life.health),passenger:!!passengerSeat,nearPassengerSeat:!!nearCar?.peer,vehicleName:passengerSeat?'Passager · '+vehicleSpec(passengerSeat.type).label:car?vehicleSpec(car.type).label:'',vehicleHealth:passengerSeat?vehicleHealth({id:passengerSeat.car}):car?vehicleHealth(car):100,nearVehicleName:nearCar?vehicleSpec(nearCar.type).label:'',wanted:p.wanted,wantedPoints:wanted.points,wantedProgress:wanted.progress,wantedEvent,ownedWeapons:ownedWeapons(),nearPickup,trackedDrop:tracker(),district:district(),street:streetName,weapon,ammo:Number.isFinite(ammo[weapon])?ammo[weapon]:'∞',
+    const state={traversalReady,traversalAction,armor:armorLayer.armor,...life.state(epoch),health:Math.ceil(life.health),passenger:!!passengerSeat,nearPassengerSeat:!!nearCar?.peer,vehicleName:passengerSeat?'Passager · '+vehicleSpec(passengerSeat.type).label:car?vehicleSpec(car.type).label:'',vehicleHealth:passengerSeat?vehicleHealth({id:passengerSeat.car}):car?vehicleHealth(car):100,nearVehicleName:nearCar?vehicleSpec(nearCar.type).label:'',wanted:p.wanted,wantedPoints:wanted.points,wantedProgress:wanted.progress,wantedEvent,ownedWeapons:ownedWeapons(),nearPickup,trackedDrop:tracker(),district:district(),street:streetName,weapon,ammo:Number.isFinite(ammo[weapon])?ammo[weapon]:'∞',
       maxAmmo:Number.isFinite(weapons[weapon].mag)?weapons[weapon].mag:'∞',nearVehicle:!!nearCar,jackTarget:!!nearCar&&hasDriver(nearCar),boarding:!!boarding,inVehicle:!!(car||passengerSeat),speed:Math.round(Math.abs(speed)*3.6),score,
       reloading:reloading>0,ready,graphics:view.mode||(view.available?'webgl':'unavailable')};
     const packed=JSON.stringify(state);if(force||packed!==lastState){onState(state);lastState=packed;}
@@ -478,6 +482,12 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     routeClock=0;resetPopulation();resetInputs();publish();return true;
   }
   function damage(amount,angle=p.angle,force=0,cause='weapon',moveName=null){
+    if(life.down||epoch<life.snapshot().protectedUntil)return;
+    const absorbed=armorLayer.absorb(amount,cause);
+    if(absorbed){
+      amount=Math.max(0,amount-absorbed);impact=.5;tone(235,.10,'triangle',.04,125);sendHud(true);
+      if(!amount)return;
+    }
     const direction=(!car&&force>=.18)||amount>=life.health?fallDirection(p,angle):angle;
     if(!life.hurt(amount,{at:epoch,angle:direction,force,cause,weapon:cause==='weapon'?moveName:undefined,canFall:!car&&!passengerSeat,seed:nextSeed()}))return;
     if(!car&&!passengerSeat&&(cause==='melee'&&meleeMoves[moveName]||force>=.24)){
@@ -1689,7 +1699,9 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   ready=true;sendHud(true);
   if(view.available){receivePeerSnapshots();syncPeers();population(.016);publish();frame(previousFrame+.1);}
   return {available:view.available,destinations,travel,exportTravelState,restoreTravelState,getPursuitSnapshot:()=>pursuit.snapshot(time),getVitalitySnapshot:()=>life.snapshot(),
-    setSkin(value){p.color=foxSkin(value).id;publish();},
+    setSkin(value){baseSkin=foxSkin(value).id;p.color=withJacket(baseSkin,jacketDye);publish();},
+    setCareerOutfit(state){jacketDye=state.dye||null;p.color=withJacket(baseSkin,jacketDye);armorLayer.apply(state);sendHud(true);},
+    getArmorWear:()=>armorLayer.wear(),
     setAppearance(value){appearance=value&&typeof value==='object'&&!Array.isArray(value)?{...value}:null;publish();},emote,selectWeapon,action,setPaused(v){paused=!!v;if(paused)resetInputs();},
     setMove(x,y){if(incapacitated())return;stickX=clamp(Number(x)||0,-1,1);stickY=clamp(Number(y)||0,-1,1);if(stickX||stickY)unlock();},
     setDrive(x,y){mobileSteer=car&&!paused?clamp(Number(x)||0,-1,1):0;mobileThrottle=car&&!paused?clamp(Number(y)||0,-1,1):0;},
