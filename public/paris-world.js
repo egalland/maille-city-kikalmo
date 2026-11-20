@@ -926,6 +926,11 @@ export function trafficVehicleAt(originRouteId,index,routeId=originRouteId){
     const draw=hash(originRouteId+'/'+slot);
     if(draw%5<2)type=regionalFleet[(draw>>>7)%regionalFleet.length];
   }
+  if(type==='sport'){
+    const style=hash(originRouteId+'/sport/'+slot)%6;
+    if(style===0)type='supercar';
+    if(style===1||style===2)type='gt';
+  }
   const body=vehicleSpec(type);
   if((type==='bus'&&!canBus)||body.halfWidth*4+.12>route.availableWidth||body.halfWidth>route.clearance.halfWidth||body.halfLength>route.clearance.halfLength)type='compact';
   const cruiseSpeed=(4.7+(route.key%51)*.08)*vehicleSpec(type).cruise;

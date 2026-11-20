@@ -7,11 +7,12 @@ import {puppetAppearance} from './puppet-dyes.js';
 import {fleetFabric} from './vehicle-fabric.js';
 import {wheelPart} from './vehicle-damage.js';
 import {townFleetPaint,createTownCarRecipe} from './town-fleet.js';
+import {sportingPaint,createSportingCarRecipe} from './sporting-cars.js';
 import {vehicleSpec} from './vehicle-types.js';
 
 const {ink,thread:cream,tyre:rubber,brass,silver:iron}=fleetFabric;
 const seat='#694b46',wood='#b27b50';
-const colors={...townFleetPaint,motorbike:'#a95346',scooter:'#79a7a0',cargo:'#4f8886',pickup:'#a16458'};
+const colors={...townFleetPaint,...sportingPaint,motorbike:'#a95346',scooter:'#79a7a0',cargo:'#4f8886',pickup:'#a16458'};
 export const isStreetVehicle=type=>Object.hasOwn(colors,type);
 const bicycleWheel=new TorusGeometry(1,.15,6,28);
 const twoWheeler=type=>type==='scooter'||type==='motorbike';
@@ -170,7 +171,9 @@ const models=new Map();
 function modelFor(type,color){
   const paint=typeof color==='string'&&/^#[a-f\d]{6}$/i.test(color)?color:colors[type],key=type+paint;
   if(!models.has(key)){
-    const model=Object.hasOwn(townFleetPaint,type)?createTownCarRecipe(type,paint,{section,box,egg,rod,makeWheel}):
+    const art={section,box,egg,rod,makeWheel};
+    const model=Object.hasOwn(sportingPaint,type)?createSportingCarRecipe(type,paint,art):
+      Object.hasOwn(townFleetPaint,type)?createTownCarRecipe(type,paint,art):
       (type==='motorbike'?makeMotorbike:type==='scooter'?makeScooter:type==='cargo'?makeCargo:makePickup)(paint);
     models.set(key,model);if(models.size>80)models.delete(models.keys().next().value);
   }

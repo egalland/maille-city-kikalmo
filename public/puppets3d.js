@@ -1002,7 +1002,9 @@ function makeVehicleSignals(type,spec){
   front.name='Feux de croisement';rear.name='Feux stop';
   // Positions follow the lamps modelled into each family, accounting for frame scaling.
   const shaped=type==='compact'||type==='sport',bus=type==='bus',van=['van','firetruck','swat','ambulance'].includes(type);
-  const lamp=shaped?[.99,.49,.66,.98,.50,.66]:bus?[1.00,.284,.65,1.0,.35,.76]:
+  const lamp=type==='gt'?[.960,.486,.610,1,.430,.527]:
+    type==='supercar'?[.931,.408,.592,.996,.526,.606]:
+    shaped?[.99,.49,.66,.98,.50,.66]:bus?[1.00,.284,.65,1.0,.35,.76]:
     van?[.861,.467,.60,.969,.50,.70]:type==='motorbike'?[.57,.753,0,.91,.52,0]:
     type==='scooter'?[.76,.874,0,.90,.438,0]:spec.openSeat?[.89,.75,0,.86,.62,0]:
     type==='pickup'?[.96,.52,.67,.97,.53,.73]:[.922,.49,.658,.905,.49,.705];
@@ -1012,8 +1014,8 @@ function makeVehicleSignals(type,spec){
       mesh.scale.set(.057,scale,scale*1.23);
       mesh.position.set(x*spec.halfLength,y*spec.height,side*z*spec.halfWidth);group.add(mesh);
     }
-    lens(front,headLens,lamp[0],lamp[1],lamp[2],.083);
-    lens(rear,stopLens,-lamp[3],lamp[4],lamp[5],.080);
+    lens(front,headLens,lamp[0],lamp[1],lamp[2],type==='supercar'?.043:.083);
+    lens(rear,stopLens,-lamp[3],lamp[4],lamp[5],type==='supercar'?.042:.080);
     const pool=new THREE.Mesh(beamShape,lampPool);
     pool.position.set(spec.halfLength*.92,.085,side*.5*spec.halfWidth);
     pool.scale.set(6.8,1,1.25);pool.rotation.y=side*-.055;

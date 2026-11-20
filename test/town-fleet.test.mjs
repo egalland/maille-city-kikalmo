@@ -5,11 +5,12 @@ import {Box3,Vector3} from '../public/three.js';
 import {createCar} from '../public/puppets3d.js';
 import {drawCanvasCar} from '../public/canvas-puppets.js';
 import {vehicleDoorways,vehicleSpec} from '../public/vehicle-types.js';
+import {vehiclePart} from '../public/vehicle-damage.js';
 import {handleApi} from '../worker/game-api.js';
 import {localDatabase} from '../scripts/local-db.mjs';
 
-const closedFleet=['estate','camper','flatbed'];
-test('the estate, pop-top camper and spool carrier carry the actual driver and have steerable wheels and destructible glazing',()=>{
+const closedFleet=['estate','camper','flatbed','gt','supercar'];
+test('the town fleet and both sports cars carry the driver behind destructible glazing on steerable chassis',()=>{
   const contours=new Set();
   for(const type of closedFleet){
     const car=createCar(type),spec=vehicleSpec(type),physical=new Box3().setFromObject(car.group,true).getSize(new Vector3());
@@ -31,9 +32,38 @@ test('the estate, pop-top camper and spool carrier carry the actual driver and h
     assert.ok(lines.length>50&&lines.flat().every(Number.isFinite));contours.add(JSON.stringify(lines));
     car.dispose();
   }
-  assert.equal(contours.size,3);
+  assert.equal(contours.size,closedFleet.length);
   assert.ok(vehicleSpec('estate').steering>vehicleSpec('camper').steering);
   assert.ok(vehicleSpec('flatbed').mass>2*vehicleSpec('estate').mass);
+});
+
+test('both seated foxes fit below the roof lining while steering each low coupe',()=>{
+  for(const type of ['gt','supercar']){
+    const car=createCar(type),roof=new Box3().setFromObject(car.group,true).max.y-.11;
+    try{
+      for(const steer of [-1,0,1]){
+        car.update({id:'here',driver:true,self:true,driverSkin:'lagon',passenger:true,passengerSkin:'bruyere',steer},.03,1);
+        car.group.updateMatrixWorld(true);
+        for(const seat of ['Conducteur assis','Passager assis']){
+          const head=car.group.getObjectByName(seat).getObjectByName('head');
+          assert.ok(new Box3().setFromObject(head,true).max.y<roof,type+' '+seat+' clears the roof');
+        }
+      }
+    }finally{car.dispose();}
+  }
+});
+
+test('end-on and side impacts follow the engine and cabin of each sports car',()=>{
+  for(const [type,motor,seat] of [['gt',1,-.25],['supercar',-1,.15]]){
+    const spec=vehicleSpec(type),car={type,x:7,y:5,angle:Math.PI/2};
+    const hit=(length,side,height)=>vehiclePart(car,{x:car.x-side*spec.halfWidth,y:car.y+length*spec.halfLength},height);
+    assert.equal(hit(motor,0,.53),'engine');
+    assert.equal(hit(-motor,0,.53),'body');
+    assert.equal(hit(.66*motor,1,.54),'engine');
+    assert.equal(hit(seat,1,.79),'glass');
+    assert.equal(hit(motor,0,.82),'glass');
+    assert.equal(hit(.65,1,.23),'frontRight');
+  }
 });
 
 test('four new civilian vehicle types can be found parked on Enfer, entered through a clear doorway, and observed in moving traffic',async t=>{
@@ -42,7 +72,10 @@ test('four new civilian vehicle types can be found parked on Enfer, entered thro
   const {parkedCars,destinations,routeAgents,contactAt}=await import('../public/paris-world.js');
   const traffic=new Set();
   for(const stop of destinations)for(const time of [0,24,48]){
-    for(const car of routeAgents(stop.x,stop.y,300,1780000121000+time*1000).cars)traffic.add(car.type);
+    for(const car of routeAgents(stop.x,stop.y,300,1780000121000+time*1000).cars)if(car.moving)traffic.add(car.type);
+  }
+  for(const type of ['gt','supercar']){
+    assert.ok(traffic.has(type),type+' appears in moving traffic');
   }
   for(const [place,type] of [['gare','estate'],['morlincourt','flatbed'],['salency','camper'],['trois-ponts','motorbike']]){
     const car=parkedCars.find(v=>v.id==='car-'+place);

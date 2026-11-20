@@ -53,6 +53,16 @@ export function vehiclePart(vehicle,point,height){
   if(height<.33&&Math.abs(along)>.39&&Math.abs(along)<1.2){
     return (along>0?'front':'rear')+(across>0?'Right':'Left');
   }
+  if(vehicle.type==='gt'||vehicle.type==='supercar'){
+    // First-contact rays enter the *outside* edge of the plan-view collider.
+    // Above the bonnet or engine lid an end-on ray continues into the windshield.
+    const midEngine=vehicle.type==='supercar',motorEnd=midEngine?-along:along;
+    const sideGlass=midEngine?along>-.29&&along<.55:along>-.71&&along<.21;
+    const endGlass=Math.abs(along)>.98&&Math.abs(across)<.78;
+    if(height>(midEngine?.61:.62)&&(sideGlass||endGlass&&height>.72))return 'glass';
+    if(height>.29&&height<.76&&motorEnd>(midEngine?.33:.23))return 'engine';
+    return 'body';
+  }
   if(height>.57&&!spec.openSeat&&(Math.abs(along)<.82||height>.69))return 'glass';
   if(height>.29&&along>.48)return 'engine';
   return 'body';
