@@ -207,3 +207,11 @@
 .map-world-entry{cursor:pointer;pointer-events:auto}
 
 .weapon-tracker{position:absolute;z-index:3;left:50%;top:12px;transform:translateX(-50%);display:flex;align-items:center;gap:.5rem;border:1px solid #88b9a3;border-radius:1.5rem;background:#284640;color:#f3eccf;padding:.35rem .7rem;font:600 .75rem system-ui;pointer-events:none;white-space:nowrap}.weapon-tracker[hidden]{display:none}.weapon-tracker #trackArrow{display:inline-block;color:#ace1bf;font-size:1rem}.mc-depot-search .mc-secondary{width:max-content;margin-bottom:8px}@media(max-width:670px){.weapon-tracker{top:auto;bottom:120px}}
+
+#guard{display:none}
+@media(pointer:coarse),(max-width:670px){
+  #guard:not([hidden]){position:absolute;left:20px;bottom:147px;display:flex;align-items:center;justify-content:center;gap:5px;min-height:42px;padding:0 11px;border:2px solid #cbb795;border-radius:22px;background:var(--weft),#394d4aee;color:#fff0d4;font:700 11px var(--ui);pointer-events:auto;touch-action:manipulation}
+  #guard svg{width:16px;height:16px}
+  #guard[aria-pressed=true]{background:var(--weft),#e7c081;color:#29363a}
+}
+@media(max-height:500px) and (pointer:coarse){#guard:not([hidden]){left:116px;bottom:25px}}

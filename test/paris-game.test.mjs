@@ -567,3 +567,15 @@ test('An NPC stops at the passenger door, leaves the cabin and flees before the 
   assert.equal(h.state.inVehicle,true);
   assert.equal(h.published.vehicle?.id,dispatchId);
 });
+
+test('desktop guard and touch stance use the same walking, network pose and jump cancellation',t=>{
+  const h=startGame(t);
+  const press=(type,key)=>window.dispatchEvent(Object.assign(new Event(type,{cancelable:true}),{key}));
+  press('keydown','x');press('keyup','x');h.step(15);
+  assert.equal(h.state.crouched,true);assert.equal(h.published.motion,'crouch');
+  h.game.setMove(0,-1);h.step(24);
+  assert.equal(h.published.motion,'crouch');assert.ok(h.published.speed<2);
+  h.game.action('guard');h.step(12);assert.equal(h.state.crouched,false);
+  h.game.action('guard');h.step(10);h.game.action('jump');h.step(10);
+  assert.equal(h.state.crouched,false);assert.notEqual(h.published.motion,'crouch');
+});

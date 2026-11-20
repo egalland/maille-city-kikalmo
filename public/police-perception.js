@@ -5,7 +5,7 @@ const gap = (a,b) => Math.hypot(a.x-b.x,a.y-b.y);
 export function canIdentify(observer,suspect,clear) {
   if(!observer||!suspect||observer.down||observer.stunned)return false;
   const distance=gap(observer,suspect);
-  if(distance>45)return false;
+  if(distance>(suspect.motion==='crouch'?29:45))return false;
   if(distance>12){
     const bearing=Math.atan2(suspect.y-observer.y,suspect.x-observer.x);
     if(Math.cos(bearing-(observer.angle||0))<-.15)return false;
