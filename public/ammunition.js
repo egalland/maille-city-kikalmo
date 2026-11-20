@@ -1,5 +1,5 @@
 import {weaponCatalog} from './weapon-catalog.js';
-export const ammoCapacity=id=>weaponCatalog[id].mag*3;
+export const ammoCapacity=id=>weaponCatalog[id].mag*6;
 export function reloadMagazine(clip,reserve,capacity){
   const moved=Math.max(0,Math.min(reserve,capacity-clip));
   return {clip:clip+moved,reserve:reserve-moved};

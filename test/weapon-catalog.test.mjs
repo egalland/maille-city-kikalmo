@@ -12,10 +12,10 @@ const at=(id,x,y=0)=>({id,x,y});
 const shot=(a,hit=null,length=8)=>({origin,angle:a,length,hit});
 
 test('Every collectible has its own HUD artwork, readable effect geometry and turntable miniature',()=>{
-  assert.equal(weaponList.length,13);
+  assert.equal(weaponList.length,17);
   assert.deepEqual(starterWeapons,['fist','pistol']);
-  assert.equal(findableWeaponIds.length,11);
-  assert.equal(new Set(weaponList.map(w=>w.name)).size,13);
+  assert.equal(findableWeaponIds.length,15);
+  assert.equal(new Set(weaponList.map(w=>w.name)).size,17);
   const recorder=()=>{const operations=[];const ctx=new Proxy({},{
     get(target,key){if(key in target)return target[key];return (...args)=>operations.push([key,...args]);}
   });return {ctx,operations};};

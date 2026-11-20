@@ -3,6 +3,8 @@ import { weaponCatalog } from './weapon-catalog.js';
 // Aim-assist, manual shots and the fan all use the same caller-provided first-contact trace.
 const spreads={
   shotgun:[0,-.072,.072],
+  shuttle:[0,.045],
+  button:[0,-.048,.048,-.096,.096],
   confetti:[0,-.10,.10,-.21,.21,-.34,.34],
   bubbles:[0,-.126,.126],
   star:[0,-.059,.059],
@@ -11,7 +13,8 @@ const spreads={
 const interactions={
   pompom:{area:3.1,limit:5},
   boomerang:{chain:5.1,limit:1},
-  spool:{chain:3.5,limit:3}
+  spool:{chain:3.5,limit:3},
+  spark:{chain:4.8,limit:2}
 };
 const straight=[0];
 export function weaponShotShape(kind){

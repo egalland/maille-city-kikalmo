@@ -11,6 +11,7 @@ import {attachSectorTravel} from './sector-travel.js';
 import {readSectorTransfer} from './sector-transfer.js';
 import {createGame} from './game.js';
 import {isEnfer} from './paris-data.js';
+import {ammoCapacity} from './ammunition.js';
 import {createNet} from './net.js';
 import {createPartners} from './partners.js';
 import {createCareerUI} from './career-ui.js';
@@ -107,13 +108,13 @@ function appendChat({name,text,player,system=false}){
 }
 function updateOnline(status,players){
   $('#online').dataset.status=status;
-  $('#onlineLabel').textContent=status==='online'?players.length+' en ligne':status==='offline'?'Hors ligne':'Connexion…';
+  $('#onlineLabel').textContent=status==='online'?players.length+' en ligne':status==='idle'?'Inactif':status==='offline'?'Hors ligne':'Connexion…';
   $('#online').setAttribute('aria-label','Joueurs dans le monde, '+$('#onlineLabel').textContent);
   panels?.refresh();
 }
 let welcomed=false;
 const sectorTransfer=readSectorTransfer();
-const net=createNet({name,map:isEnfer?'enfer':'paris',identity:sectorTransfer?.identity,onStatus:st=>{
+const net=createNet({name,map:isEnfer?'enfer':'paris',identity:sectorTransfer?.identity,pauseIfInactive,onStatus:st=>{
   if(st==='online' && !welcomed){welcomed=true;appendChat({system:true,text:'Tu as rejoint le monde partagé.'});}
   updateOnline(st,net.players());
 },onPlayers:players=>updateOnline(net.status,players),onChat:appendChat});
@@ -133,7 +134,7 @@ function showEquipment(){
     lastEquipped=item.id;
   }
   $('#weaponLabel').textContent=item.name;
-  const ammo=item.id==='fist'?'Corps à corps':state.reloading?'Recharge…':state.ammo+' / '+(state.reserve??item.mag*2);
+  const ammo=item.id==='fist'?'Corps à corps':state.reloading?'Recharge…':state.ammo+' / '+(state.reserve??ammoCapacity(item.id)-item.mag);
   $('#equippedAmmo').textContent=ammo;
   wheelButton.setAttribute('aria-label','Ouvrir la roue d’armes · '+item.name+' · '+ammo);
   panels?.refresh('weapons');
@@ -329,28 +330,50 @@ function releaseTouchInputs(){stopStick();combat.release();traversal.release();d
 $('#panels').addEventListener('focusin',releaseTouchInputs);
 entry.addEventListener('focus',releaseTouchInputs);
 window.addEventListener('blur',releaseTouchInputs);
-const backgroundTimeout=25000,idleTimeout=10*60*1000;
-let lastActivity=Date.now(),presencePaused=false,backgroundTimer;
-function noteActivity(){
-  if(document.hidden)return;
-  lastActivity=Date.now();
-  if(presencePaused){presencePaused=false;void net.start();}
+const backgroundTimeout=25_000,idleTimeout=120_000;
+let lastActivity=Date.now(),presencePaused=false,hiddenAt=0,backgroundTimer;
+function pauseIfInactive(){
+  const now=Date.now();
+  if(now-lastActivity<idleTimeout&&(!document.hidden||!hiddenAt||now-hiddenAt<backgroundTimeout))return false;
+  pausePresence();
+  return true;
 }
-for(const event of ['keydown','pointerdown','pointermove','touchstart','wheel','focus'])
-  window.addEventListener(event,noteActivity,{passive:true});
+function noteActivity(event){
+  if(document.hidden||!event.isTrusted)return;
+  if(event.type==='pointermove'&&!event.buttons)return;
+  lastActivity=Date.now();
+  if(!presencePaused)return;
+  presencePaused=false;
+  void net.start();
+}
+for(const event of ['keydown','pointerdown','pointermove','wheel'])
+  window.addEventListener(event,noteActivity,{capture:true,passive:true});
 function pausePresence(){
-  presencePaused=true;savePosition();net.stop();
+  if(presencePaused)return;
+  presencePaused=true;
+  releaseTouchInputs();
+  game.clearInputs();
+  savePosition();
+  net.stop();
+  updateOnline('idle',[]);
+  if(!document.hidden)notify('Inactif · touche l’écran ou appuie sur une touche pour revenir.');
 }
 setInterval(()=>{
-  if(!document.hidden){
-    savePosition();
-    if(!presencePaused&&Date.now()-lastActivity>=idleTimeout)pausePresence();
-  }
-},3000);
+  if(document.hidden)return;
+  savePosition();
+  if(Date.now()-lastActivity>=idleTimeout)pausePresence();
+},1500);
 document.addEventListener('visibilitychange',()=>{
   clearTimeout(backgroundTimer);
-  if(document.hidden){releaseTouchInputs();savePosition();backgroundTimer=setTimeout(pausePresence,backgroundTimeout);}
-  else noteActivity();
+  if(document.hidden){
+    hiddenAt=Date.now();
+    releaseTouchInputs();
+    game.clearInputs();
+    savePosition();
+    backgroundTimer=setTimeout(pausePresence,backgroundTimeout);
+  }else if(hiddenAt&&Date.now()-hiddenAt>=backgroundTimeout){
+    pausePresence();
+  }
 });
 city.addEventListener('pointerdown',()=>{if(controlsAreTouch())chat.classList.remove('mobile-open');});
 window.addEventListener('pagehide',()=>{
@@ -363,7 +386,7 @@ window.addEventListener('pagehide',()=>{
     else sessionStorage.removeItem(pursuitKey);
   }catch{}
 });
-window.addEventListener('pageshow',e=>{if(e.persisted){lastActivity=Date.now();presencePaused=false;void net.start();}});
+window.addEventListener('pageshow',e=>{if(e.persisted){pausePresence();}});
 if(attachSectorTravel(game,net,$('#sectorEdge'),sectorTransfer)!==false){
   net.start();
   $('#loadScene').hidden=true;

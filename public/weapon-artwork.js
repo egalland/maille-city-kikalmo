@@ -129,6 +129,36 @@ const pictures={
     stroke(c,[[42,51],[49,53]],p.thread,3);stroke(c,[[41,56],[48,58]],p.accent,3);stroke(c,[[40,61],[47,63]],p.thread,3);
     star(c,75,13,12,p.accent);stroke(c,[[58,12],[64,11]],p.trim,2.2);stroke(c,[[63,7],[68,7]],p.trim,1.8);
   },
+  needle(c,p){
+    filled(c,[[11,54],[80,27],[86,31],[22,62]],p.thread);
+    stroke(c,[[35,24],[57,24,70,50],[72,59]],p.accent,7);
+    stroke(c,[[35,24],[42,45],[72,59]],p.trim,2.6);
+    stroke(c,[[43,45],[90,26]],p.trim,2.5);
+    filled(c,[[88,23],[97,24],[92,31]],p.accent);
+    bars(c,22,51,4,4,-1.4,p.trim);
+  },
+  shuttle(c,p){
+    for(const y of [27,44]){
+      filled(c,[[12,y+11],[28,y-1],[62,y-3],[89,y+5],[63,y+13],[30,y+16]],p.accent);
+      oval(c,52,y+6,13,4,p.cloth,ink,1.7);
+      bars(c,47,y+2,4,3,0,p.trim);
+    }
+    filled(c,[[36,52],[49,50],[46,68],[34,71]],p.thread);
+  },
+  button(c,p){
+    filled(c,[[14,43],[54,28],[70,38],[56,58],[26,65]],p.thread);
+    oval(c,73,33,16,22,p.accent,ink,3.4,-.43);
+    oval(c,73,33,11,16,p.cloth,ink,2,-.43);
+    for(const [x,y] of [[68,30],[77,27],[72,39],[80,36]])oval(c,x,y,2.1,2.1,p.trim,null);
+    bars(c,27,51,5,4,-1.5,p.trim);
+  },
+  spark(c,p){
+    filled(c,[[17,53],[32,41],[57,36],[74,48],[52,60],[33,65]],p.thread);
+    oval(c,49,38,23,13,p.cloth,ink,3,-.26);
+    for(let i=0;i<5;i++)stroke(c,[[33+i*7,30],[39+i*7,38],[40+i*7,45]],p.accent,3);
+    filled(c,[[72,34],[84,13],[84,25],[95,21],[84,42],[81,30]],p.trim,p.thread,2);
+    bars(c,30,57,4,4,-1,p.trim);
+  },
   chime(c,p){
     stroke(c,[[44,27],[38,19,44,14],[49,10,54,17],[57,21,53,27]],ink,6);
     stroke(c,[[44,27],[38,19,44,14],[49,10,54,17],[57,21,53,27]],p.thread,3.5);

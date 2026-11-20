@@ -5,20 +5,28 @@ const firearms=Object.values(weaponCatalog).filter(w=>Number.isFinite(w.mag));
 const shotKind="json_extract(NEW.data,'$.kind')",pickupKind="json_extract(NEW.data,'$.weapon')";
 const profile='(SELECT profile FROM mc_armory_sessions WHERE room=NEW.room AND id=NEW.player)';
 const capacityCase='CASE '+pickupKind+' '+firearms.map(w=>"WHEN '"+w.id+"' THEN "+ammoCapacity(w.id)).join(' ')+' END';
+const pistolCapacity=ammoCapacity('pistol');
+const reserveUpgrade='CASE weapon '+firearms.map(w=>"WHEN '"+w.id+"' THEN "+(w.mag*3)).join(' ')+' ELSE 0 END';
 const reloadTime='CASE '+shotKind+' '+firearms.map(w=>"WHEN '"+w.id+"' THEN "+Math.round(w.reload*1000)).join(' ')+' END';
 export const armorySchema=[
   'CREATE TABLE IF NOT EXISTS mc_armory_sessions(room TEXT,id TEXT,profile TEXT NOT NULL,PRIMARY KEY(room,id))',
   'CREATE TABLE IF NOT EXISTS mc_armory(profile TEXT,weapon TEXT,total INTEGER NOT NULL,spent INTEGER NOT NULL DEFAULT 0,last INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(profile,weapon))',
   'CREATE TRIGGER IF NOT EXISTS mc_armory_disconnect AFTER DELETE ON mc_members BEGIN DELETE FROM mc_armory_sessions WHERE room=OLD.room AND id=OLD.id; END',
+  'CREATE TABLE IF NOT EXISTS mc_armory_reserve_upgrade(profile TEXT PRIMARY KEY)',
+  `CREATE TRIGGER IF NOT EXISTS mc_armory_grant_reserve AFTER INSERT ON mc_armory_reserve_upgrade BEGIN
+    UPDATE mc_armory SET total=total+(${reserveUpgrade}) WHERE profile=NEW.profile;
+    END`,
+  'DROP TRIGGER IF EXISTS mc_armory_spend',
+  'DROP TRIGGER IF EXISTS mc_armory_supply',
   // Only accepted canonical shots debit ammo. Replayed event IDs cannot fire the trigger twice.
-  `CREATE TRIGGER IF NOT EXISTS mc_armory_spend AFTER INSERT ON mc_events WHEN NEW.type='shot' AND NEW.op LIKE 'fire:%' BEGIN
+  `CREATE TRIGGER IF NOT EXISTS mc_armory_spend_v2 AFTER INSERT ON mc_events WHEN NEW.type='shot' AND NEW.op LIKE 'fire:%' BEGIN
     UPDATE mc_armory SET total=max(0,total-1),spent=CASE WHEN json_extract(NEW.data,'$.firedAt')-last>=${reloadTime}
       THEN 1 ELSE spent+1 END,last=json_extract(NEW.data,'$.firedAt') WHERE profile=${profile} AND weapon=${shotKind};
     END`,
-  `CREATE TRIGGER IF NOT EXISTS mc_armory_supply AFTER INSERT ON mc_events WHEN NEW.type='pickup' BEGIN
+  `CREATE TRIGGER IF NOT EXISTS mc_armory_supply_v2 AFTER INSERT ON mc_events WHEN NEW.type='pickup' BEGIN
     INSERT INTO mc_armory(profile,weapon,total,spent) VALUES(${profile},${pickupKind},${capacityCase},0)
       ON CONFLICT(profile,weapon) DO UPDATE SET total=excluded.total,spent=0;
-    UPDATE mc_armory SET total=min(36,total+12) WHERE profile=${profile} AND weapon='pistol' AND ${pickupKind}<>'pistol';
+    UPDATE mc_armory SET total=min(${pistolCapacity},total+24) WHERE profile=${profile} AND weapon='pistol' AND ${pickupKind}<>'pistol';
     END`
 ];
 export const canFireSql=`EXISTS(SELECT 1 FROM mc_armory a JOIN mc_armory_sessions s ON a.profile=s.profile
@@ -36,7 +44,9 @@ export async function openArmory(q,room,id,token,secret){
   const hash=Array.from(new Uint8Array(bytes),byte=>byte.toString(16).padStart(2,'0')).join('');
   return [
     q(`INSERT OR IGNORE INTO mc_armory_sessions(room,id,profile) SELECT room,id,? FROM mc_members WHERE room=? AND id=? AND secret=?`,hash,room,id,token),
-    q(`INSERT OR IGNORE INTO mc_armory(profile,weapon,total) SELECT s.profile,'pistol',36 FROM mc_armory_sessions s
+    q(`INSERT OR IGNORE INTO mc_armory_reserve_upgrade(profile) SELECT s.profile FROM mc_armory_sessions s
+      JOIN mc_members m ON s.room=m.room AND s.id=m.id WHERE s.room=? AND s.id=? AND m.secret=?`,room,id,token),
+    q(`INSERT OR IGNORE INTO mc_armory(profile,weapon,total) SELECT s.profile,'pistol',${pistolCapacity} FROM mc_armory_sessions s
       JOIN mc_members m ON s.room=m.room AND s.id=m.id WHERE s.room=? AND s.id=? AND m.secret=?`,room,id,token),
     readArmory(q,room,id)
   ];

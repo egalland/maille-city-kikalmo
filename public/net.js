@@ -2,6 +2,7 @@ import {browserProfile} from './ammunition.js';
 import {parkingExpired,wreckExpired,replacementAt,pruneVehicleWorld,disconnectedFor,abandonedFor} from './vehicle-lifecycle.js';
 import {matchesPickup} from './drop-id.js';
 import {createRosterWire} from './roster-wire.js';
+import {maxShotAge} from './shot-playback.js';
 import {createStateEncoder} from './state-wire.js';
 
 // Each tab is a separate player. State snapshots may coalesce; actions have stable IDs and are retried.
@@ -83,7 +84,7 @@ export function createNet(options={}) {
     const d=e.data||{};
     const clock=serverTime();
     // Effects can expire on the wire. Damage and shared world changes still go to the game.
-    if(e.type==='shot'&&clock-(d.firedAt??e.at)>950)return;
+    if(e.type==='shot'&&clock-(d.firedAt??e.at)>maxShotAge)return;
     if(e.type==='melee'&&clock-(d.started??e.at)>1400)return;
     if(combatActions.has(e.type)&&clock-(d.firedAt??e.at)<COMBAT_WINDOW&&
         (d.target===id||Math.hypot(d.x-state.x,d.y-state.y)<145))combatUntil=Date.now()+COMBAT_WINDOW;
@@ -133,13 +134,14 @@ export function createNet(options={}) {
   function cadence(roundTrip) {
     if (options.pollMs) return options.pollMs;
     if (typeof document!=='undefined' && document.hidden) return 3200;
-    if(roster.length<=1)return 850;
-    const nearby=roster.filter(p=>p.id!==id&&Math.hypot(p.x-state.x,p.y-state.y)<150);
+    if(Date.now()<combatUntil)return Math.max(16,70-roundTrip);
+    if(roster.length<=1)return 650;
+    const nearby=roster.filter(p=>p.id!==id&&Math.hypot(p.x-state.x,p.y-state.y)<180);
     if(!nearby.length)return 420;
-    if(Date.now()<combatUntil || nearby.some(p=>p.shooting && serverTime()-p.updatedAt<600))
-      return Math.max(20,78-roundTrip);
+    if(nearby.some(p=>p.shooting && serverTime()-p.updatedAt<600))
+      return Math.max(16,70-roundTrip);
     const moving=state.moving||actionPoses.has(state.motion)||nearby.some(p=>p.moving||actionPoses.has(p.motion));
-    return Math.max(36,(moving?120:175)-roundTrip);
+    return Math.max(25,(moving?105:130)-roundTrip);
   }
   function chooseBatch() {
     const now=Date.now(), clock=serverTime();
@@ -167,6 +169,7 @@ export function createNet(options={}) {
   async function tick() {
     timer=null;timerDue=Infinity;
     if (!started || busy) return false;
+    if(options.pauseIfInactive?.())return false;
     busy=true;poseDue=false;
     const attempt=run, joining=!joined;
     if(joining)rosterWire.reset();

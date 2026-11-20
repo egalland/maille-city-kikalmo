@@ -293,7 +293,7 @@ test('a trigger spends one round and sends one timestamped fire packet carrying 
   assert.equal(b.effects.filter(([type])=>type==='shot').length,1);
 });
 
-test('late gunfire uses its remaining tracer life, ignores duplicates and never replays an expired shot',t=>{
+test('late gunfire gets a readable animation, ignores duplicates and never replays an expired shot',t=>{
   const {clients:[a],tick,place}=arena(t);
   place(a,arc);tick(3);
   const stamp=a.scene.epoch;
@@ -302,8 +302,8 @@ test('late gunfire uses its remaining tracer life, ignores duplicates and never 
   a.receive(shot(stamp-240,1));a.receive(shot(stamp-100,2));a.receive(shot(stamp-100,2));
   tick();
   const traces=a.effects.filter(([type])=>type==='shot');
-  assert.equal(traces.length,1,'distinct, old SMG-style burst pulses are not all replayed on receipt');
-  assert.ok(traces[0][7]>.025&&traces[0][7]<.11,'renderer receives partial tracer age in seconds');
-  a.receive(shot(stamp-100,2));a.receive(shot(stamp-900,3));tick(3);
-  assert.equal(a.effects.filter(([type])=>type==='shot').length,1);
+  assert.equal(traces.length,1,'the burst starts with one visible pulse');
+  assert.ok(traces[0][7]<=.028,'the animation gets time to appear on screen');
+  a.receive(shot(stamp-100,2));a.receive(shot(stamp-1700,3));tick(10);
+  assert.equal(a.effects.filter(([type])=>type==='shot').length,2);
 });

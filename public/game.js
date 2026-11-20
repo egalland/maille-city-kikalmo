@@ -413,7 +413,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       owned.add(drop.weapon);
       const total=authoritativeAmmo?.[drop.weapon]??ammoCapacity(drop.weapon);
       ammo[drop.weapon]=Math.min(total,weapons[drop.weapon].mag);reserve[drop.weapon]=total-ammo[drop.weapon];
-      if(!authoritativeAmmo&&drop.weapon!=='pistol')reserve.pistol=Math.min(ammoCapacity('pistol')-ammo.pistol,reserve.pistol+12);
+      if(!authoritativeAmmo&&drop.weapon!=='pistol')reserve.pistol=Math.min(ammoCapacity('pistol')-ammo.pistol,reserve.pistol+24);
       if(isNew){
         equipOwned(drop.weapon);onLoadoutChange(ownedWeapons());
       }else if(weapon===drop.weapon)reloading=0;
@@ -1314,7 +1314,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     weapon=owned.has(s.weapon)?s.weapon:'pistol';
     for(const [k,w] of Object.entries(weapons)){
       ammo[k]=Number.isFinite(w.mag)?Math.floor(finite(s.ammo?.[k],w.mag,0,w.mag)):Infinity;
-      if(Number.isFinite(w.mag))reserve[k]=Math.floor(finite(s.reserve?.[k],2*w.mag,0,ammoCapacity(k)-ammo[k]));
+      if(Number.isFinite(w.mag))reserve[k]=Math.floor(finite(s.reserve?.[k],ammoCapacity(k)-w.mag,0,ammoCapacity(k)-ammo[k]));
     }
     reloading=weapon===s.weapon?finite(s.reloading,0,0,weapons[weapon].reload):0;
     yaw=safeAngle(Number.isFinite(s.yaw)?s.yaw:angle);pitch=finite(s.pitch,.13,-.32,1.05);
@@ -1469,7 +1469,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     }
   }
   function fire(source='manual'){
-    if(paused||incapacitated()||passengerSeat||p.motion==='swim'||!view.available||cooldown>0)return;
+    if(paused||incapacitated()||passengerSeat||['swim','climb','vault'].includes(p.motion)||!view.available||cooldown>0)return;
     if(weapon==='fist'){
       if(!swing)startSwing(source);
       return;
@@ -1742,7 +1742,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   }
   function playRemoteShot(event,age){
     const d=event.data,effect=weapons[d.kind]?.effect||'shot';
-    if(dist(d,p)>=125)return;
+    if(dist(d,p)>=180)return;
     if(age<.2&&Number.isFinite(d.angle))witnessedShots.set(event.player,{angle:d.angle,at:epoch-age*1000});
     if(age<effectDuration(effect)){
       const rays=Array.isArray(d.rays)?d.rays.slice(0,13):[d];
@@ -1750,7 +1750,9 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         view.effect(effect,r.x,r.y,r.angle,clamp(r.length,0,100),[],d.lift||0,age);
     }
     if(age<.23&&dist(d,p)<78){
-      if(weapons[d.kind]?.noise){alertCrowd(d,30);audio.grit(.13,.12*(1-dist(d,p)/83),2550);}
+      const profile=weapons[d.kind],volume=1-dist(d,p)/83;
+      if(profile?.noise){alertCrowd(d,30);audio.grit(.13,.12*volume,2550);}
+      else if(profile)tone(profile.frequency,.08,'sine',.045*volume,profile.frequency*.42);
     }
     if(age<.55&&d.impact&&dist(d.impact,d)<100)view.effect('burst',d.impact.x,d.impact.y,0,0,[],0,age);
   }
@@ -2112,7 +2114,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       }
       rememberNpc(d,true);
     }}
-    if(e.type==='shot'&&e.player!==net?.id&&dist(d,p)<125)shotPlayback.push(e,net?.serverTime?.()??epoch);
+    if(e.type==='shot'&&e.player!==net?.id&&dist(d,p)<180)shotPlayback.push(e,net?.serverTime?.()??epoch);
   });
   ready=true;sendHud(true);
   if(view.available){receivePeerSnapshots();syncPeers();population(.016);publish();frame(previousFrame+.1);}
@@ -2120,7 +2122,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     setSkin(value){baseSkin=foxSkin(value).id;p.color=withJacket(baseSkin,jacketDye);publish();},
     setCareerOutfit(state){jacketDye=state.dye||null;p.color=withJacket(baseSkin,jacketDye);armorLayer.apply(state);sendHud(true);},
     getArmorWear:()=>armorLayer.wear(),
-    setAppearance(value){appearance=value&&typeof value==='object'&&!Array.isArray(value)?{...value}:null;publish();},emote,selectWeapon,action,setPaused(v){paused=!!v;if(paused)resetInputs();},
+    setAppearance(value){appearance=value&&typeof value==='object'&&!Array.isArray(value)?{...value}:null;publish();},emote,selectWeapon,action,setPaused(v){paused=!!v;if(paused)resetInputs();},clearInputs:resetInputs,
     setMove(x,y){if(incapacitated())return;stickX=clamp(Number(x)||0,-1,1);stickY=clamp(Number(y)||0,-1,1);if(stickX||stickY)unlock();},
     setFlightVertical(value){mobileLift=isAircraft(car?.type)&&!paused?clamp(Number(value)||0,-1,1):0;},
     setDrive(x,y){mobileSteer=car&&!paused?clamp(Number(x)||0,-1,1):0;mobileThrottle=car&&!paused?clamp(Number(y)||0,-1,1):0;},

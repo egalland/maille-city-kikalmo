@@ -194,6 +194,7 @@ test('two playable clients see the same partial damage, then the same broken str
   }
   tick(30); clickAt(a, bin);
   await poll(() => clients.every(c => c.net.world().propHealth[bin.id]?.health < first), 'a subsequent pistol round should accumulate');
+  await poll(() => b.effects.some(([kind]) => kind === 'shot'), 'the observing renderer draws the accepted shot');
   const second = b.net.world().propHealth[bin.id].health;
   assert.ok(second > 0);
   tick(22); clickAt(a, bin);

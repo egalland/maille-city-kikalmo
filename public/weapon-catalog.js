@@ -19,7 +19,11 @@ const entries=[
   defineWeapon('bubbles','Souffle-bulles','Trois bulles à chaque souffle',[16,.31,25,8,1.04,'bubbles',673],['#98caff','#648bbf','#324663','#d7faff']),
   defineWeapon('spool','Toupie-bobine','Roule de cible en cible',[4,.82,28,16,1.45,'spool',185],['#bbadff','#8279b2','#3c3a62','#eee5ff']),
   defineWeapon('star','Fronde étoilée','Trois étoiles à moyenne portée',[7,.53,49,13,1.17,'star',760],['#ffe77e','#bd9953','#54475b','#fffaad']),
-  defineWeapon('chime','Cloche à grelots','Une onde sonore en demi-cercle',[4,.84,10,15,1.22,'chime',829],['#e7ca9e','#b08b58','#4f414d','#fff0c6'])
+  defineWeapon('chime','Cloche à grelots','Une onde sonore en demi-cercle',[4,.84,10,15,1.22,'chime',829],['#e7ca9e','#b08b58','#4f414d','#fff0c6']),
+  defineWeapon('needle','Arbalète à aiguilles','Un trait précis de longue portée',[5,.7,94,25,1.42,'ribbon',510],['#efb4ff','#9565aa','#39214f','#f9e0ff']),
+  defineWeapon('shuttle','Lance-navettes','Deux navettes en éventail',[12,.35,53,14,1.38,'yarn',302],['#70e1ac','#45886d','#204438','#defacd']),
+  defineWeapon('button','Canon à boutons','Cinq boutons en éventail serré',[7,.61,29,12,1.51,'spool',246],['#ffa46d','#a54c3f','#5c3532','#ffe6b9']),
+  defineWeapon('spark','Bobine à étincelles','Une décharge rebondit deux fois',[9,.45,38,16,1.55,'star',682],['#9acfff','#587eb5','#334669','#e7f8ff'])
 ];
 export const weaponCatalog=Object.freeze(Object.fromEntries(entries.map(w=>[w.id,w])));
 export const weaponList=Object.freeze(entries);

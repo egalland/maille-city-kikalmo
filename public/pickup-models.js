@@ -63,6 +63,27 @@ export function createPickupDisplay(scene){
       bar(-.13,-.19,-.07,.07,.085,wood);bar(-.07,.07,-.21,.225,.083,wood);bar(-.07,.07,.10,.22,.083,wood);
       bar(-.21,.225,.10,.22,.028,accent);part('ball',accent,.27,.17,0,.10,.10,.065);
       for(let i=0;i<5;i++){const a=i*Math.PI*2/5;part('cone',stitch,.27+.087*Math.sin(a),.17+.087*Math.cos(a),0,.069,.15,.046,-a);}
+    }else if(kind==='needle'){
+      bar(-.37,-.12,.39,.12,.085,cloth);
+      for(const z of [-.24,.24])part('box',accent,.13,.07,z,.085,.08,.42,z);
+      bar(-.18,-.05,.49,.16,.032,stitch);
+    }else if(kind==='shuttle'){
+      for(const z of [-.14,.14]){
+        part('ball',accent,.02,.04,z,.41,.075,.092);
+        part('box',cloth,.02,.10,z,.25,.042,.055);
+      }
+      bar(-.10,.01,-.16,-.17,.105,wood);
+    }else if(kind==='button'){
+      bar(-.32,-.10,.19,.07,.16,cloth);
+      part('cylinder',accent,.25,.11,0,.30,.13,.30,Math.PI/2);
+      for(const z of [-.09,.09])for(const y of [.04,.17])
+        part('ball',stitch,.326,y,z,.018,.029,.029);
+    }else if(kind==='spark'){
+      bar(-.32,-.13,.28,.08,.11,cloth);
+      bar(-.22,-.08,-.26,-.21,.085,wood);
+      for(let x=-.16;x<=.23;x+=.08)
+        part('loop',accent,x,.09,0,.115,.124,.124).rotation.y=Math.PI/2;
+      part('cone',stitch,.41,.09,0,.084,.19,.084,-Math.PI/2);
     }else if(kind==='chime'){
       part('cone',accent,0,-.01,0,.236,.33,.236);part('cylinder',wood,0,-.15,0,.235,.044,.235);
       part('loop',stitch,0,.19,0,.075,.075,.065);part('ball',cloth,0,-.19,0,.054,.054,.054);

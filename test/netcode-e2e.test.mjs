@@ -119,3 +119,20 @@ test('A delayed round still resolves the visible crossing point after the runner
   assert.ok(positionAtCommit.y>=11.7,'The committed target position was already outside the original ray');
   assert.equal(target.events.filter(e=>e.type==='hit').length,1);
 });
+
+test('Late burst tracers play visibly once, and a new observer does not replay expired rounds',async()=>{
+  const {createShotPlayback,maxShotAge}=await import('../public/shot-playback.js');
+  const {effectDuration}=await import('../public/weapon-effects.js');
+  const playback=createShotPlayback(),visible=[];
+  const shot=(seq,firedAt)=>({player:'source',seq,type:'shot',data:{shotId:'burst-'+seq,firedAt}});
+  const play=(event,age)=>visible.push([event.seq,age]);
+  playback.push(shot(2,823),1480);
+  playback.push(shot(1,675),1480);
+  playback.push(shot(2,823),1480);
+  playback.push(shot(3,1480-maxShotAge-1),1480);
+  playback.flush(1480,play);
+  assert.deepEqual(visible.map(([seq])=>seq),[1]);
+  playback.flush(1600,play);
+  assert.deepEqual(visible.map(([seq])=>seq),[1,2]);
+  assert.ok(visible.every(([,age])=>age<effectDuration('shot')));
+});

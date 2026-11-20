@@ -46,7 +46,8 @@ export const authoredWeaponDrops=Object.freeze([
   ["yarn",6835.8,-493.9]    // Sacré-Cœur
 ].map(([weapon,x,y])=>Object.freeze({id:encodeDropId(weapon,x,y),weapon,x,y})));
 export const enferWeaponDrops=Object.freeze([
-  ['yarn',-29.4,-267.1],['smg',-43.1,-271.5],['shotgun',75.1,-280.2]
+  ['yarn',-29.4,-267.1],['smg',-43.1,-271.5],['shotgun',75.1,-280.2],
+  ['needle',-114.9,-179.5],['shuttle',134.3,-273.5],['button',-33.2,-392.2],['spark',124,-126.5]
 ].map(([weapon,x,y])=>Object.freeze({id:encodeDropId(weapon,x,y),weapon,x,y})));
 const enferWeaponIds=new Set(enferWeaponDrops.map(p=>p.id));
 const authoredWeaponIds=new Set(authoredWeaponDrops.map(p=>p.id));

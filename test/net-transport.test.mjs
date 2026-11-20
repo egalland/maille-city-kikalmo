@@ -4,11 +4,11 @@ import {createNet} from '../public/net.js';
 
 const epoch=1_800_000_000_000;
 const turn=()=>new Promise(resolve=>setImmediate(resolve));
-function harness(t){
+function harness(t,options={}){
   t.mock.timers.enable({apis:['setTimeout','Date'],now:epoch});
-  const requests=[],events=[],statuses=[];
+  const requests=[],events=[],statuses=[],leaves=[];
   const fetcher=(url,init)=>{
-    if(url.endsWith('/leave'))return Promise.resolve(new Response('{}'));
+    if(url.endsWith('/leave')){leaves.push(JSON.parse(init.body));return Promise.resolve(new Response('{}'));}
     const body=JSON.parse(init.body);
     return new Promise((resolve,reject)=>{
       requests.push({body,url,at:Date.now(),fail:reject,
@@ -17,7 +17,7 @@ function harness(t){
         }});
     });
   };
-  const net=createNet({fetcher,onStatus:s=>statuses.push(s)});
+  const net=createNet({fetcher,onStatus:s=>statuses.push(s),...options});
   net.publish({x:0,y:0,health:100});
   net.onEvent(e=>events.push(e));
   async function advance(n){t.mock.timers.tick(n);await turn();}
@@ -27,7 +27,7 @@ function harness(t){
     assert.equal(await start,true);
   }
   t.after(()=>{net.stop();});
-  return {net,requests,events,statuses,advance,start};
+  return {net,requests,events,statuses,leaves,advance,start};
 }
 const fire=()=>({shotId:crypto.randomUUID(),firedAt:Date.now(),x:0,y:0,angle:0,length:30,kind:'pistol'});
 const event=(seq,type,data)=>({seq,type,data,player:'friend',at:Date.now()});
@@ -46,7 +46,7 @@ test('a trigger queued behind a slow poll flushes on its reply with no overlap o
   assert.deepEqual(requests[2].body.events.map(e=>e.data.shotId),[shot.shotId]);
   assert.equal(requests[2].at,reading.at+134);
   requests[2].answer();await turn();
-  await advance(77);assert.equal(requests.length,3);
+  await advance(69);assert.equal(requests.length,3);
   await advance(1);assert.equal(requests.length,4);
 });
 
@@ -165,9 +165,31 @@ test('a full social queue leaves room for a trigger and a distant shot does not 
   await advance(175);
   const idle=requests.at(-1);
   idle.answer({events:[event(1,'shot',{x:900,y:0,kind:'pistol'})],cursor:1});await turn();
-  await advance(150);
+  await advance(129);
   assert.equal(requests.at(-1),idle);
   assert(Array.from({length:120},(_,i)=>net.sendChat(String(i))).some(ok=>!ok));
   const shot=fire();assert(net.emit('fire',shot));
   await advance(0);assert(requests.at(-1).body.events.some(e=>e.data.shotId===shot.shotId));
+});
+
+test('presence stops before sending another heartbeat and can rejoin with the same identity',async t=>{
+  let inactive=false;
+  const {net,requests,leaves,start,advance}=harness(t,{pauseIfInactive:()=>{
+    if(!inactive)return false;
+    net.stop();
+    return true;
+  }});
+  await start();
+  inactive=true;
+  await advance(300);
+  assert.equal(requests.length,1);
+  assert.equal(net.status,'offline');
+  assert.equal(leaves[0].id,net.id);
+  inactive=false;
+  const restarted=net.start();
+  await turn();
+  assert.ok(requests.at(-1).url.endsWith('/join'));
+  assert.equal(requests.at(-1).body.id,leaves[0].id);
+  requests.at(-1).answer();
+  assert.equal(await restarted,true);
 });

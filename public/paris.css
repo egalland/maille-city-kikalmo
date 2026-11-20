@@ -135,7 +135,7 @@
 }
 .district h2{color:#ffedca;text-shadow:0 2px 1px #493c32,0 1px 7px #44372f}
 .scene .street:not(:empty){width:fit-content;max-width:100%;padding:2px 6px;border-radius:4px;background:#293b3bd9;color:#fff1d8;text-shadow:none}
-.online-chip:not([data-status="offline"]):not([data-status="full"]){background:var(--weft),#314b45;border-color:#667e6f;color:#daead8}
+.online-chip:not([data-status="offline"]):not([data-status="full"]):not([data-status="idle"]){background:var(--weft),#314b45;border-color:#667e6f;color:#daead8}
 .status-dot{box-shadow:none}.topnav button,.tool,.help,.keys-mobile button{color:#d5d4c6}
 .scene .player-panel::before,.scene .chat::before,.equipment-trigger::after,.scene .radar::after{
   content:"";position:absolute;inset:3px;pointer-events:none;border:1px dashed #d4bf925c;border-radius:inherit;
@@ -231,3 +231,5 @@
 @media(pointer:coarse),(max-width:670px){
   #scene[data-piloting]:not(.he-editing) #fire{bottom:calc(15px + 2 * 67px + 37px)}
 }
+
+.online-chip[data-status="idle"]{color:#f2ca7a;border-color:#776447;background:#3c3229}.online-chip[data-status="idle"] .status-dot{background:#efc681;box-shadow:none}

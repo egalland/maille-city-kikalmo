@@ -48,25 +48,27 @@ export function createParkour(p,ground,gradient,{onImpact=()=>{}}={}){
     }
     if(!obstacle?.id || obstacle.taperCenter)return null;
     const vault=vaultableProp(obstacle)&&!obstacle.climbable;
-    if(!vault && !obstacle.climbable && obstacle.type!=='building')return null;
+    const fence=obstacle.type==='enclosure';
+    const crossing=vault||fence;
+    if(!crossing && !obstacle.climbable && obstacle.type!=='building')return null;
     const hitX=p.x+reach*dx,hitY=p.y+reach*dy;
     const top=surfaceTop(obstacle,hitX,hitY),rise=ground(hitX,hitY)+top-startZ;
     if(rise<.12||rise>(vault?1.34:2.22))return null;
     // Favor a firm foothold inside the roof edge. For a vault, both feet must
     // be beyond the far side before descending to the pavement.
-    for(let length=reach+PLAYER_RADIUS+.17;length<reach+(vault?3.7:3.15);length+=.15){
+    for(let length=reach+PLAYER_RADIUS+.17;length<reach+(crossing?3.7:3.15);length+=.15){
       const x=p.x+dx*length,y=p.y+dy*length;
       const support=supportAt(x,y,ground(hitX,hitY)+top-ground(x,y)+.035,geometry);
-      if(vault ? support.id===obstacle.id : support.id!==obstacle.id)continue;
+      if(crossing ? support.id===obstacle.id : support.id!==obstacle.id)continue;
       if(!vault && obstacle.type==='pickup' && ground(x,y)+support.top<ground(obstacle.x,obstacle.y)+obstacle.h-.02)continue;
       const endZ=ground(x,y)+support.top;
       if(Math.abs(endZ-startZ)>2.27 || contactAt(x,y,{...geometry,footZ:support.top}))continue;
-      const peak=Math.max(startZ,endZ,ground(hitX,hitY)+top)+ (vault ? .23 : .11);
+      const peak=Math.max(startZ,endZ,ground(hitX,hitY)+top)+ (crossing ? .27 : .11);
       const trial={kind:vault?'vault':'climb',id:obstacle.id,dx,dy,x:p.x,y:p.y,startZ,endZ,peak,length,
-        approach:Math.max(0,reach-.18),duration:vault ? .62+.038*length : .82+.07*rise,time:0,hitX,hitY};
+        approach:Math.max(0,reach-.27),duration:vault ? .62+.038*length : .82+.07*rise,time:0,hitX,hitY};
       let clear=true;
-      for(let n=1;n<=20;n++){
-        const q=samplePlan(trial,n/20);
+      for(let n=1;n<=32;n++){
+        const q=samplePlan(trial,n/32);
         if(contactAt(q.x,q.y,{...geometry,footZ:q.z-ground(q.x,q.y)})){clear=false;break;}
       }
       if(clear)return trial;

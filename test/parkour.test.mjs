@@ -81,3 +81,16 @@ test('the local contact shadow stays on the terrace while the player jumps above
   for(let i=0;i<60;i++)tick();
   assert.ok(Math.abs(p.supportHeight-deckHeight)<.002);
 });
+
+test('a short fence is vaulted and a taller palisade is climbed down onto the far side',()=>{
+  for(const [h,expected] of [[1.18,'vault'],[1.74,'climb']]){
+    const obstacle={...deck('enclosure',h),climbable:false,standable:false,halfLength:.075};
+    const {p,world,controls,press,run}=trial(obstacle);
+    assert.equal(controls.hint(0,world),expected);
+    press();run(.30);
+    assert.equal(p.motion,expected);
+    run(1.10);
+    assert.ok(p.x>obstacle.x,expected);
+    assert.equal(p.lift,0);
+  }
+});
