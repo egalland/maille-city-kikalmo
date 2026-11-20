@@ -313,7 +313,11 @@ export function createNet(options={}) {
   }
   function leave() {
     if (!joined) return;
-    const body=JSON.stringify({id,token,map});
+    // A close between the exit control and the next poll must still release the moving car.
+    const lastVehicle=pending.findLast(e=>e.type==='vehicle');
+    const roadRelease=lastVehicle?.data?.occupied===false&&lastVehicle.data.roadCoast?
+      {op:lastVehicle.op,type:'vehicle',data:lastVehicle.data}:undefined;
+    const body=JSON.stringify({id,token,map,roadRelease});
     // Same-origin keepalive also works when a player closes the tab.
     const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),2500);
     requestCount++;

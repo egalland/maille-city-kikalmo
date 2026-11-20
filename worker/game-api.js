@@ -1,7 +1,8 @@
+import {cleanRoadCoast,sampleRoadCoast} from '../public/road-coast.js';
 import {armorySchema,openArmory,readArmory,privateAmmo} from './armory.js';
 import {reportSchema,reportPlayer} from './social.js';
 import {withJacket} from '../public/outfit-shop.js';
-import {seatSchema,seatedRosterSQL,attachPassengers,requestSeat,continueFlightSeat} from './vehicle-seats.js';
+import {seatSchema,seatedRosterSQL,attachPassengers,requestSeat,continueReleasedSeat,inheritRoadPassenger} from './vehicle-seats.js';
 import {abandonedFor,disconnectedFor,wreckFor,wreckExpired,replacementDelay} from '../public/vehicle-lifecycle.js';
 import {hitSeverity, woundDuration, activeBleeding} from '../public/bleeding.js';
 import {weaponCatalog} from '../public/weapon-catalog.js';
@@ -132,7 +133,7 @@ function vitalityFields(source,now,longRecovery=false) {
   }
   return result;
 }
-const locomotionModes=new Set(['idle','crouch','walk','run','jump','fall','land','vault','climb','swim']);
+const locomotionModes=new Set(['idle','crouch','walk','run','jump','fall','land','vault','climb','swim','dismount']);
 function movementFields(s,now,previous){
   if(!Number.isFinite(s.lift))return {};
   if(isAircraft(s.vehicle?.type))return {lift:num(s.lift,0,0,flightCeiling),motion:s.lift>0?'carAir':'idle',verticalSpeed:num(s.verticalSpeed,0,-8,8)};
@@ -225,6 +226,11 @@ function eventData(type,raw,now) {
       if(!occupied&&out.type==='helicopter'&&validFlightPath(d.flightPath)){
         out.flightPath=d.flightPath;out.lift=d.flightPath[0][1];
         out.flightAt=num(d.flightAt,now,now-1800,now);out.expiresAt=out.flightAt+(out.flightPath.length-1)*flightSampleMs+abandonedFor;
+      }
+      if(!occupied&&isVehicleType(out.type)&&!isAircraft(out.type)&&d.roadCoast){
+        const coast=cleanRoadCoast(d.roadCoast,out.type,now);
+        if(!coast)return null;
+        out.roadCoast=coast;out.expiresAt=coast.until+abandonedFor;
       }
       if(occupied&&d.eject&&Number.isFinite(d.eject.x+d.eject.y+d.eject.angle)&&Math.hypot(d.eject.x-result.x,d.eject.y-result.y)<=5)
         out.eject={x:d.eject.x,y:d.eject.y,angle:num(d.eject.angle,0,-7,7),at:now};
@@ -540,9 +546,9 @@ async function sync(db,b,now,room) {
   const name=clean(b.name,24)||member.name;
   const rawState=playerState(b.protocol===2?restoreStateFields(b.state,b.keepState,priorState):b.state,now,room,priorState);
   const gliding=member.glidingCraft&&JSON.parse(member.glidingCraft);
-  if(member.seatedDriver||gliding?.flightPath){
+  if(member.seatedDriver||gliding?.flightPath||gliding?.roadCoast){
     if(!Number.isFinite(rawState.x))Object.assign(rawState,priorState);
-    const driver=member.seatedDriver?JSON.parse(member.seatedDriver):sampleAutorotation(gliding,now);
+    const driver=member.seatedDriver?JSON.parse(member.seatedDriver):gliding.roadCoast?sampleRoadCoast(gliding,now):sampleAutorotation(gliding,now);
     for(const field of ['x','y','angle','vx','vy','speed','moving','lift','verticalSpeed'])
       if(driver[field]!==undefined)rawState[field]=driver[field];
     if((driver.vehicle?.type==='helicopter'||gliding?.flightPath)&&driver.lift>.18)rawState.aircraftFallUntil=now+6000;
@@ -553,8 +559,12 @@ async function sync(db,b,now,room) {
   const stmts=[];
   for(const input of inputs){
     const data=input?.data;
-    if(input?.type==='vehicle'&&key(input.op)&&key(data?.id)&&data.type==='helicopter'&&data.occupied===false&&validFlightPath(data.flightPath))
-      stmts.push(continueFlightSeat(q,{room,id,op:input.op,car:data.id,count:data.flightPath.length,now:num(data.flightAt,now,now-1800,now)}));
+    if(input?.type!=='vehicle'||!key(input.op)||!key(data?.id)||data.occupied!==false)continue;
+    const release=eventData('vehicle',data,now);
+    if(release?.flightPath||release?.roadCoast){
+      const until=release.roadCoast?release.expiresAt:release.flightAt+(release.flightPath.length-1)*flightSampleMs;
+      stmts.push(continueReleasedSeat(q,{room,id,op:input.op,car:data.id,type:release.type,until}));
+    }
   }
   if (now-member.seen>3500 || state!==member.state || name!==member.name) {
     if(Number.isFinite(rawState.x))rememberFirePose(stmts,q,room,id,priorState,member.seen,rawState);
@@ -567,11 +577,12 @@ async function sync(db,b,now,room) {
     }
   }
   const glideEnds="json_extract(data,'$.flightAt')+(json_array_length(data,'$.flightPath')-1)*"+flightSampleMs;
+  const releaseEnds="coalesce(json_extract(data,'$.roadCoast.until'),"+glideEnds+",0)";
   const claims=new Set(),pickupOps=new Map(), propOps=new Map();
   for (const input of inputs) {
     const {type}=dict(input);
     let {op}=dict(input);
-    if((member.seatedDriver||gliding?.flightPath)&&['vehicle','vehicleShunt','pickup','fire','melee','hit','shot','propDamage','destroy'].includes(type))continue;
+    if((member.seatedDriver||gliding?.flightPath||gliding?.roadCoast)&&['vehicle','vehicleShunt','pickup','fire','melee','hit','shot','propDamage','destroy'].includes(type))continue;
     if(type==='seat'&&key(op)){
       const seat=dict(input.data),leave=seat.leave===true;
       if(leave||(UUID.test(seat.driver)&&key(seat.car)))requestSeat(stmts,q,{room,id,name,op,now,aliveSince:now-GONE,driver:seat.driver,car:seat.car,leave});
@@ -646,9 +657,9 @@ async function sync(db,b,now,room) {
     const accept=`INSERT OR IGNORE INTO mc_events (room,player,op,name,type,data,at) SELECT ?,?,?,?,?,?,?`;
     const values=[room,id,op,name,type,payload,now];
     if (requiresCar) {
-      const flightGuard=` AND NOT EXISTS (SELECT 1 FROM mc_items WHERE room=? AND item=? AND kind='vehicle' AND ${glideEnds}>?)`+
-        (data.flightPath?" AND EXISTS (SELECT 1 FROM mc_items WHERE room=? AND item=? AND kind='vehicle' AND owner=?)":"");
-      const flightArgs=[room,data.id,now,...(data.flightPath?[room,data.id,id]:[])];
+      const flightGuard=` AND NOT EXISTS (SELECT 1 FROM mc_items WHERE room=? AND item=? AND kind='vehicle' AND ${releaseEnds}>?)`+
+        ((data.flightPath||data.roadCoast)?" AND EXISTS (SELECT 1 FROM mc_items WHERE room=? AND item=? AND kind='vehicle' AND owner=?)":"");
+      const flightArgs=[room,data.id,now,...((data.flightPath||data.roadCoast)?[room,data.id,id]:[])];
       stmts.push(q(accept+` WHERE NOT EXISTS (
         SELECT 1 FROM mc_items i JOIN mc_members m ON m.room=i.room AND m.id=i.owner
         WHERE i.room=? AND i.kind='vehicle' AND i.item=? AND i.owner<>? AND m.seen>?
@@ -683,6 +694,7 @@ async function sync(db,b,now,room) {
         ON CONFLICT (room,kind,item) DO UPDATE SET
         seq=excluded.seq,owner=excluded.owner,data=excluded.data,at=excluded.at
         WHERE excluded.seq>mc_items.seq`,room,id,op,type,now));
+      if(type==='vehicle'&&data.occupied)inheritRoadPassenger(stmts,q,{room,id,op,car:data.id,now});
     }
   }
   const membersIndex=stmts.length;
@@ -690,7 +702,7 @@ async function sync(db,b,now,room) {
   const cursor=num(b.cursor,0,0,Number.MAX_SAFE_INTEGER);
   stmts.push(q('SELECT seq,player,name,type,data,at FROM mc_events WHERE room=? AND seq>? ORDER BY seq LIMIT 160',room,cursor));
   if (claims.size) {
-    stmts.push(q(`SELECT item AS id,CASE WHEN ${glideEnds}>? THEN 'autorotation' ELSE owner END AS owner FROM mc_items WHERE room=? AND kind='vehicle' AND item IN (${[...claims].map(()=>'?').join(',')})`,now,room,...claims));
+    stmts.push(q(`SELECT item AS id,CASE WHEN ${releaseEnds}>? THEN CASE WHEN json_extract(data,'$.roadCoast') IS NULL THEN 'autorotation' ELSE 'coasting' END ELSE owner END AS owner FROM mc_items WHERE room=? AND kind='vehicle' AND item IN (${[...claims].map(()=>'?').join(',')})`,now,room,...claims));
   }
   const pickupIndex=stmts.length;
   if(pickupOps.size)stmts.push(q(`SELECT op,item,ok,available FROM mc_pickup_claims WHERE room=? AND player=?
@@ -737,6 +749,10 @@ export async function handleApi(request, env) {
   if (operation==='career') return json(await runCareer(env.DB,b,room,Date.now()));
   if (operation==='join') return join(env.DB,b,Date.now(),room);
   if (operation==='leave') {
+    const release=b.roadRelease;
+    if(release?.type==='vehicle'&&release.data?.occupied===false&&key(release.op)&&eventData('vehicle',release.data,Date.now())?.roadCoast){
+      await sync(env.DB,{id:b.id,token:b.token,events:[release]},Date.now(),room);
+    }
     await env.DB.prepare('DELETE FROM mc_members WHERE room=? AND id=? AND secret=?').bind(room,b.id,b.token).run();
     return json({left:true});
   }

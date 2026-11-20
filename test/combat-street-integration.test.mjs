@@ -252,9 +252,11 @@ test('two playable clients board one car, follow the same drive and release the 
   driver.game.setDrive(0,1);
   await poll(()=>Math.hypot(rider.scene.p.x-driven.x,rider.scene.p.y-driven.y)>1.4,'rider follows driver motion');
   driver.game.setDrive(0,0);
-  // Driver exits. Both controls and shared occupancy must return to the on-foot state.
+  // An occupied passenger seat follows the released chassis until its rider steps out.
   driver.game.action('vehicle');
-  await poll(()=>!driver.hud.inVehicle&&!rider.hud.inVehicle&&driver.scene.entities.some(e=>e.id===rider.net.id),'driver exit releases both seats');
+  await poll(()=>!driver.hud.inVehicle&&rider.hud.passenger&&rider.net.world().vehicles[driven.vehicle.id]?.roadCoast,'driver exits and the rider stays with the coasting vehicle');
+  rider.game.action('vehicle');
+  await poll(()=>!rider.hud.inVehicle&&driver.scene.entities.some(e=>e.id===rider.net.id),'the rider gets out independently');
 });
 
 test('confirmed remote shots deplete purchased armor before the existing player health bar',t=>{

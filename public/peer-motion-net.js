@@ -44,13 +44,14 @@ export function recordPeerMotion(track, data, now) {
   const previous = samples.at(-1);
   const at = Number.isFinite(data.updatedAt) ? data.updatedAt : now;
   const vehicle = data.vehicle?.id || '';
-  const stopped = data.moving === false || data.health === 0 || data.downUntil > at || data.ragdoll?.until > at;
+  const dismount = data.motion === 'dismount' && !vehicle;
+  const stopped = data.moving === false || data.health === 0 || data.downUntil > at || (!dismount && data.ragdoll?.until > at);
   const speed = vehicle && !stopped ? data.vehicle.speed || data.speed || 0 : 0;
   const angle = data.angle || 0;
   const vx = stopped ? 0 : Number.isFinite(data.vx) ? data.vx : speed * Math.cos(angle);
   const vy = stopped ? 0 : Number.isFinite(data.vy) ? data.vy : speed * Math.sin(angle);
   const airborne = data.lift > 0 && (data.motion === 'jump' || data.motion === 'fall');
-  const maxSpeed = vehicle ? vehicleMotionLimit(data.vehicle.type) : airborne ? vehicleMotionLimit('helicopter') : 8;
+  const maxSpeed = vehicle ? vehicleMotionLimit(data.vehicle.type) : dismount ? vehicleMotionLimit() : airborne ? vehicleMotionLimit('helicopter') : 8;
   const scale = maxSpeed / Math.max(maxSpeed, Math.hypot(vx, vy));
   const sample = {at, x:data.x, y:data.y, vx:vx * scale, vy:vy * scale, vehicle, joined:data.joinedAt};
   if (previous) {

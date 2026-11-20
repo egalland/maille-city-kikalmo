@@ -1,4 +1,5 @@
-import {sampleAutorotation,flightSampleMs} from '../public/autorotation.js';
+import {sampleRoadCoast} from '../public/road-coast.js';
+import {sampleAutorotation} from '../public/autorotation.js';
 
 // A closed vehicle has one shared passenger seat. Only confirmed drivers can offer it.
 export const seatSchema=[
@@ -41,9 +42,9 @@ export function attachPassengers(players, rows){
     if(!driver||driver.vehicle.id!==seat.car){
       if(seat.flightUntil>Date.now()&&seat.glidingCraft){
         const craft=JSON.parse(seat.glidingCraft);
-        if(craft.flightPath){
-          rider.passenger={driver:'autorotation',car:craft.id,coasting:true};
-          Object.assign(rider,sampleAutorotation(craft,Date.now()),{vehicle:null});
+        if(craft.flightPath||craft.roadCoast){
+          rider.passenger={driver:craft.roadCoast?'coasting':'autorotation',car:craft.id,coasting:true};
+          Object.assign(rider,craft.roadCoast?sampleRoadCoast(craft,Date.now()):sampleAutorotation(craft,Date.now()),{vehicle:null});
           rider.updatedAt=Date.now();
         }
       }
@@ -91,11 +92,23 @@ export function requestSeat(stmts,q,{room,id,name,op,now,aliveSince,driver,car,l
 
 // Copy the passenger into the unpiloted cabin before the pilot's on-foot pose
 // releases the ordinary driver seat. Both changes commit in the same D1 batch.
-export function continueFlightSeat(q,{room,id,op,car,count,now}){
+export function continueReleasedSeat(q,{room,id,op,car,type,until}){
   return q(`INSERT OR REPLACE INTO mc_air_riders(room,rider,car,until)
     SELECT s.room,s.rider,s.car,? FROM mc_seats s
     JOIN mc_items i ON i.room=s.room AND i.item=s.car AND i.kind='vehicle' AND i.owner=s.driver
-    WHERE s.room=? AND s.driver=? AND s.car=? AND json_extract(i.data,'$.type')='helicopter'
+    WHERE s.room=? AND s.driver=? AND s.car=? AND json_extract(i.data,'$.type')=?
       AND NOT EXISTS (SELECT 1 FROM mc_events WHERE room=? AND player=? AND op=?)`,
-    now+(count-1)*flightSampleMs,room,id,car,room,id,op);
+    until,room,id,car,type,room,id,op);
+}
+
+// A passenger can remain in a stopped, driverless chassis. Hand the occupied
+// seat to its next driver in the same transaction as the ownership change.
+export function inheritRoadPassenger(stmts,q,{room,id,op,car,now}){
+  stmts.push(q(`INSERT OR IGNORE INTO mc_seats(room,rider,driver,car)
+    SELECT a.room,a.rider,?,a.car FROM mc_air_riders a
+    JOIN mc_items v ON v.room=a.room AND v.item=a.car AND v.kind='vehicle' AND v.owner=?
+    JOIN mc_events e ON e.seq=v.seq AND e.room=v.room AND e.player=? AND e.op=? AND e.at=?
+    WHERE a.room=? AND a.car=? AND a.until>? AND a.rider<>?`,id,id,id,op,now,room,car,now,id));
+  stmts.push(q(`DELETE FROM mc_air_riders WHERE room=? AND car=? AND EXISTS
+    (SELECT 1 FROM mc_seats WHERE room=? AND driver=? AND car=? AND rider=mc_air_riders.rider)`,room,car,room,id,car));
 }
