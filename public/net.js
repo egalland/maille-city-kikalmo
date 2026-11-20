@@ -8,7 +8,7 @@ const actionPoses=new Set(['jump','fall','vault','climb','land','carAir']);
 const cosmeticQueue=new Set(['emote','alert','shot']);
 const socialQueue=new Set(['chat','emote']);
 const combatActions=new Set(['fire','shot','hit','melee']);
-const onlineOnly=new Set([...combatActions,'chat','alert','emote']);
+const onlineOnly=new Set([...combatActions,'chat','alert','emote','seat']);
 const COMBAT_WINDOW=1400;
 const MAX_BATCH=20, MAX_QUEUE=120;
 const blankWorld=()=>({destroyed:[],vehicles:{},npcs:{},pickups:{},propHealth:{},vehicleDamage:{}});
@@ -216,6 +216,10 @@ export function createNet(options={}) {
         for(const item of batch)if(item.type==='pickup'){
           const answer=replies.get(item.op);
           finishClaim(item.op,answer?.id===item.data.id?answer:null);
+        }
+        if(next&&batch.some(item=>item.type==='seat')){
+          const seat=next.find(player=>player.id===id)?.passenger||null;
+          for(const fn of listeners)fn({type:'seatResult',data:{seat},at:data.now,player:id});
         }
         for (const denied of data.denied||[]) {
           for (const fn of listeners) fn({type:'vehicleDenied',data:denied,at:data.now,player:denied.owner});

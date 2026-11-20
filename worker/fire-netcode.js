@@ -60,7 +60,11 @@ export function prepareFire(data,now,validTarget){
 export async function readFireSession(db,q,{room,id,token,now,aliveSince,packets,submitted}){
   const auth='SELECT id,name,state,seen,joined FROM mc_members WHERE room=? AND id=? AND secret=? AND seen>?';
   const authArgs=[room,id,token,aliveSince];
-  const getMember=q(auth,...authArgs),tracks=new Map();
+  const getMember=q(`SELECT m.id,m.name,m.state,m.seen,m.joined,d.state AS seatedDriver
+    FROM mc_members m LEFT JOIN mc_seats s ON s.room=m.room AND s.rider=m.id
+    LEFT JOIN mc_members d ON d.id=s.driver AND d.room=m.room AND d.seen>?
+    AND json_extract(d.state,'$.vehicle.id')=s.car
+    WHERE m.room=? AND m.id=? AND m.secret=? AND m.seen>?`,aliveSince,...authArgs),tracks=new Map();
   const targets=new Set();
   for(const p of packets.values())for(const h of p.hits)if(h.target!==id)targets.add(h.target);
   const steadyMiss=Number.isFinite(submitted?.x)&&Number.isFinite(submitted?.y)&&

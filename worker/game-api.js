@@ -1,3 +1,4 @@
+import {seatSchema,seatedRosterSQL,attachPassengers,requestSeat} from './vehicle-seats.js';
 import {abandonedFor,disconnectedFor,wreckFor,wreckExpired} from '../public/vehicle-lifecycle.js';
 import {hitSeverity, woundDuration, activeBleeding} from '../public/bleeding.js';
 import {weaponCatalog} from '../public/weapon-catalog.js';
@@ -44,7 +45,8 @@ const SCHEMA = [
     PRIMARY KEY (room,player,op))`,
   'CREATE INDEX IF NOT EXISTS mc_pickup_item ON mc_pickup_claims (room,item,available DESC) WHERE ok=1',
   'CREATE INDEX IF NOT EXISTS mc_pickup_active ON mc_pickup_claims (room,available) WHERE ok=1',
-  'CREATE INDEX IF NOT EXISTS mc_pickup_age ON mc_pickup_claims (at)'
+  'CREATE INDEX IF NOT EXISTS mc_pickup_age ON mc_pickup_claims (at)',
+  ...seatSchema
 ];
 // Keep the public Paris records in place. Earlier named games remain isolated in storage.
 const worldKeys={paris:'paris:public',enfer:'enfer:public'};
@@ -58,7 +60,7 @@ const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{1
 const KEY = /^[\w:-]{1,68}$/;
 const ITEM_TYPES = new Set(['propDamage','destroy','vehicle','vehicleDamage','npc']);
 const EVENTS = new Set(['propDamage','destroy','vehicle','vehicleDamage','npc','emote','shot','melee','alert','hit','chat']);
-const MEMBERS_SQL = 'SELECT id,name,state,joined,seen FROM mc_members WHERE room=? AND seen>? ORDER BY joined,id';
+const MEMBERS_SQL = seatedRosterSQL;
 function ready(db) {
   if (!schemaReady.has(db)) {
     const promise = db.batch(SCHEMA.map(q => db.prepare(q))).catch(error => {
@@ -229,6 +231,7 @@ function eventData(type,raw,now) {
 }
 function roster(rows,viewerId) {
   const players=rows.map(r=>({...JSON.parse(r.state),id:r.id,name:r.name,joinedAt:r.joined,updatedAt:r.seen}));
+  attachPassengers(players,rows);
   const viewer=players.find(r=>r.id===viewerId);
   for(const r of players)if(r.id===viewerId||!viewer||Math.hypot(r.x-viewer.x,r.y-viewer.y)>290)delete r.traffic;
   return players;
@@ -466,6 +469,12 @@ async function sync(db,b,now,room) {
   if (!member) return json({error:'rejoin'},401);
   const name=clean(b.name,24)||member.name;
   const rawState=playerState(b.protocol===2?restoreStateFields(b.state,b.keepState,priorState):b.state,now,room);
+  if(member.seatedDriver&&Number.isFinite(rawState.x)){
+    const driver=JSON.parse(member.seatedDriver);
+    for(const field of ['x','y','angle','vx','vy','speed','moving','lift','verticalSpeed'])
+      if(driver[field]!==undefined)rawState[field]=driver[field];
+    rawState.vehicle=null;
+  }
   const state=Number.isFinite(rawState.x) ? JSON.stringify(rawState) : member.state;
   const actor=Number.isFinite(rawState.x)?rawState:priorState;
   const stmts=[];
@@ -483,6 +492,12 @@ async function sync(db,b,now,room) {
   for (const input of inputs) {
     const {type}=dict(input);
     let {op}=dict(input);
+    if(member.seatedDriver&&['vehicle','pickup','fire','melee','hit','shot','propDamage','destroy'].includes(type))continue;
+    if(type==='seat'&&key(op)){
+      const seat=dict(input.data),leave=seat.leave===true;
+      if(leave||(UUID.test(seat.driver)&&key(seat.car)))requestSeat(stmts,q,{room,id,name,op,now,aliveSince:now-GONE,driver:seat.driver,car:seat.car,leave});
+      continue;
+    }
     if(type==='fire'){
       const packet=firePackets.get(input);
       if(packet)recordFire(stmts,q,room,id,name,packet,fireHistories,actor,now);
