@@ -896,7 +896,7 @@ export function createCar(type='car',color,seed=0){
   function updateCabin(pose){
     if(spec.openSeat)return;
     if(!pose.driver&&!(pose.parts&1)){if(cabin)cabin.group.visible=false;return;}
-    const identity=[pose.driver?appearanceKey(pose.appearance)||pose.id:'',pose.driverSkin,pose.passenger?1:0,pose.parts&1].join('/');
+    const identity=[pose.driver?appearanceKey(pose.appearance)||pose.id:'',pose.driverSkin,pose.passengerSkin,pose.passenger?1:0,pose.parts&1].join('/');
     if(!cabin){
       const host=body.windowHost||body.group.getObjectByName('carrosserie');
       if(!host)return;
@@ -930,7 +930,7 @@ export function createCar(type='car',color,seed=0){
       const c=canvas.getContext('2d');c.clearRect(0,0,96,96);
       function person(passenger,offset,size){
         c.save();c.translate(offset,87-size);c.scale(size/96,size/96);
-        drawCabinDriver(c,passenger?{id:pose.id+'passenger',color:'#8e5674'}:pose,96);
+        drawCabinDriver(c,passenger?{id:pose.id+'passenger',peer:!!pose.passengerSkin,driverSkin:pose.passengerSkin,color:'#8e5674'}:pose,96);
         c.restore();
       }
       if(i===0&&pose.driver)person(false,17,64);

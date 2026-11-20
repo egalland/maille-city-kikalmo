@@ -182,9 +182,10 @@ function showLife(){
   }
 }
 function onState(next){
-  const wasDriving=Boolean(state.inVehicle);
+  const wasDriving=Boolean(state.inVehicle&&!state.passenger);
   state={...state,...next};
-  const drivingNow=Boolean(state.inVehicle);
+  const drivingNow=Boolean(state.inVehicle&&!state.passenger);
+  $('#scene').toggleAttribute('data-passenger',Boolean(state.passenger));
   if(wasDriving!==drivingNow){stopStick();$('#scene').toggleAttribute('data-driving',drivingNow);}
   driving.setActive(drivingNow&&state.lifeState!=='down');
   $('#district').textContent=state.district;
@@ -199,7 +200,7 @@ function onState(next){
   const ride=$('#ride');
   ride.classList.toggle('near',Boolean(state.inVehicle||state.nearVehicle));
   const vehicle=state.inVehicle?state.vehicleName:state.nearVehicleName;
-  const rideVerb=state.inVehicle?'Descendre':state.boarding?'Conducteur en sortie…':state.jackTarget?'Prendre le volant':state.nearVehicle?'Monter':'Véhicule';
+  const rideVerb=state.inVehicle?'Descendre':state.nearPassengerSeat?'Monter en passager':state.boarding?'Conducteur en sortie…':state.jackTarget?'Prendre le volant':state.nearVehicle?'Monter':'Véhicule';
   const rideLabel=vehicle?rideVerb+' · '+vehicle:'Monter ou descendre du véhicule';
   ride.setAttribute('aria-label',rideLabel);
   ride.title=$('#rideShortcut').title=rideLabel;

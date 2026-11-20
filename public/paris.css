@@ -175,6 +175,7 @@
 .drive-hud .chassis-status[data-damaged=worn]{color:#edce8d}
 .drive-hud .chassis-status[data-damaged=severe]{color:#ffaeaa}
 @media(pointer:coarse),(max-width:670px){
+  #scene[data-passenger]:not(.he-editing) :is(#stick,#jump,#melee,#fire){display:none}
   #scene[data-driving]:not(.he-editing) :is(#stick,#jump,#melee,#heal,#ride,#recenter){display:none}
   #scene[data-driving]:not(.he-editing) #fire{width:42px;height:42px;right:14px;bottom:111px}
   #scene[data-driving] .drive-hud>span{display:block}
