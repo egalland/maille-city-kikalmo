@@ -794,10 +794,10 @@ export function createCanvasView(canvas,spawn,onNotice){
       fibers:debris?.strands||(kind==='meleeImpact'?impactFibers(angle,len):null)});
   }
   function render(state,dt,time){
-    if(!running)return;clock=time;
-    if(time-last<1/32&&!state.snap&&drawn)return;const frameDt=Math.min(.1,time-last);last=time;drawn=true;
+    if(!running)return false;clock=time;
+    if(time-last<1/32&&!state.snap&&drawn)return false;const frameDt=Math.min(.1,time-last);last=time;drawn=true;
     const width=canvas.clientWidth||window.innerWidth,height=canvas.clientHeight||window.innerHeight;
-    if(!width||!height)return;
+    if(!width||!height)return false;
     // Render close stitching at native resolution when the street can afford it.
     const started=performance.now(),density=Math.min(globalThis.devicePixelRatio||1,width<640?1.15:1);
     const scale=Math.min(density,1360/width,900/height)*renderQuality;

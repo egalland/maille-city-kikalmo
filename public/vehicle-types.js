@@ -1,7 +1,8 @@
+import {fleetHandling} from './vehicle-handling.js';
 // Metres and seconds. steering is the peak yaw rate, cruise scales normal city traffic.
 const specs={};
 function define(type,label,length,width,height,forward,reverse,accel,brake,steering,cruise,openSeat=false){
-  specs[type]=Object.freeze({label,halfLength:length/2,halfWidth:width/2,height,forward,reverse,accel,brake,steering,cruise,openSeat});
+  specs[type]=Object.freeze({...fleetHandling(type),label,halfLength:length/2,halfWidth:width/2,height,forward,reverse,accel,brake,steering,cruise,openSeat});
 }
 define('car','Berline rétro',4.12,1.80,1.72,30,7,7.6,14,1.26,1.00);
 define('compact','Citadine',3.42,1.62,1.65,24,6.5,8.1,14.8,1.62,.94);

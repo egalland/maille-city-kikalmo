@@ -24,7 +24,7 @@ export function createMeshRenderer(canvas){
   const projection=new Matrix4(),matrix=new Matrix4(),model=new Matrix4(),instance=new Matrix4();
   const viewSphere=new Sphere(),frustum=new Frustum(),eye=new Vector3(),normal=new Vector3(),vertex=new Vector3();
   const geometries=new WeakMap(),textures=new WeakMap(),sky=new Color();
-  let fog=[.2,.28,.3],quality=1;
+  let fog=[.2,.28,.3],quality=1,ambient=1;
   const renderer={software:true,shadowMap:{},setPixelRatio(ratio){quality=Math.min(1,ratio);},setSize,render,dispose};
   function setSize(w,h){
     const factor=Math.min(.72,630/Math.max(w,h))*quality;
@@ -59,9 +59,9 @@ export function createMeshRenderer(canvas){
     const sample={pixels:tex,size,version:map.version};textures.set(map,sample);return sample;
   }
   function render(scene,camera,force=false){
-    if(!image)return;
+    if(!image)return false;
     const now=performance.now();
-    if(!force&&now-frame<1000/23)return;
+    if(!force&&now-frame<1000/23)return false;
     frame=now;
     scene.updateMatrixWorld();camera.updateMatrixWorld();cameraEye.setFromMatrixPosition(camera.matrixWorld);
     projection.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
@@ -69,10 +69,11 @@ export function createMeshRenderer(canvas){
     const fy=camera.projectionMatrix.elements[5]*height*.5;
     const horizon=height*.5-fy*camera.matrixWorldInverse.elements[9]/Math.max(.25,camera.matrixWorldInverse.elements[10]);
     sky.copy(scene.fog?.color||scene.background||new Color('#c6c9ae'));
+    ambient=scene.userData.ambientBrightness??1;
     fog=[sky.r,sky.g,sky.b];depth.fill(0);
     for(let y=0;y<height;y++){
       const t=Math.max(0,Math.min(1,1-y/Math.max(1,horizon)));
-      const r=channel(mix(fog[0],.27,t)),g=channel(mix(fog[1],.51,t)),b=channel(mix(fog[2],.64,t));
+      const r=channel(mix(fog[0],.27*ambient,t)),g=channel(mix(fog[1],.51*ambient,t)),b=channel(mix(fog[2],.64*ambient,t));
       pixels.fill(0xff000000|(b<<16)|(g<<8)|r,y*width,(y+1)*width);
     }
     visit(scene);
@@ -137,7 +138,8 @@ export function createMeshRenderer(canvas){
         if(normals&&!material.isMeshBasicMaterial){
           normal.fromBufferAttribute(normals,a).transformDirection(world);
           const n=normal.x*.42+normal.y*.78+normal.z*.46;
-          light=.62+.51*(material.side===DoubleSide?Math.abs(n):Math.max(0,n));
+          light=(.62+.51*(material.side===DoubleSide?Math.abs(n):Math.max(0,n)))*ambient;
+          if(material.userData.streetLamp)light+=material.emissiveIntensity*.45;
         }
         const tinted=col&&material.vertexColors;
         const r=base.r*(tinted?col.getX(a):1)*light,g=base.g*(tinted?col.getY(a):1)*light,k=base.b*(tinted?col.getZ(a):1)*light;

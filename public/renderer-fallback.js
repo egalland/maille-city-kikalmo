@@ -12,12 +12,13 @@ export function rendererFallback(createPrimary,createCompatible,{forceCompatible
   return {
     get available(){return !disposed&&current.available;},
     get mode(){return current.mode;},
+    get drawCalls(){return current.drawCalls;},
     render(state,dt,time){
-      try{current.render(state,dt,time);}
+      try{return current.render(state,dt,time);}
       catch(error){
         if(compatible||disposed)throw error;
         fallback(error);
-        current.render({...state,snap:true},dt,time);
+        return current.render({...state,snap:true},dt,time);
       }
     },
     aim(...args){return current.aim(...args);},

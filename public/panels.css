@@ -232,3 +232,11 @@
 .mc-depot-search summary{cursor:pointer;padding:5px 0}
 .mc-depot-search[open]{display:grid;gap:6px}
 .mc-depot-result{color:#eacfa8;font-size:13px}
+
+.mc-camera-options{margin:0;padding:10px 14px;border:1px solid #667770;border-radius:8px;display:grid;gap:.8rem}
+.mc-camera-options legend{padding:0 .4rem;font-weight:750}
+.mc-camera-options label{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.25rem;align-items:center}
+.mc-camera-options input{grid-column:1/-1;width:100%;min-height:24px;accent-color:#aac4a8}
+.mc-camera-options select{max-width:12rem}
+#performanceHud{position:absolute;z-index:2;left:12px;top:26%;pointer-events:none;max-width:min(310px,92%);padding:8px 12px;background:#13262bf0;border:1px solid #a6bdb2;color:#f8edcf;border-radius:6px;font:12px/1.4 monospace;white-space:pre-line;font-variant-numeric:tabular-nums}
+#performanceHud strong{display:block;color:#b6dbbe}
