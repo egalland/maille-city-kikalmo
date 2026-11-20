@@ -8,5 +8,6 @@ export function parkingExpired(vehicle,now){
 }
 
 export function wreckExpired(wear,now){
-  return wear?.explodeAt>0&&wear.explodeAt+wreckFor<=now;
+  const retiredAt=wear?.explodeAt||wear?.disabledAt;
+  return !!retiredAt&&retiredAt+wreckFor<=now;
 }

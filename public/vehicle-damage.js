@@ -46,9 +46,15 @@ export function vehiclePart(vehicle,point,height){
 export function damagedTires(parts){return [2,4,8,16].filter(bit=>parts&bit).length;}
 export function wheelPart(front,right){return (front?2:8)*(right?2:1);}
 
+// Bodywork can crumple or a tyre can fail without starting an engine fire.
+export function incendiaryImpact(hit) {
+  return hit.cause==='blast'||hit.part==='engine'||hit.cause==='crash'&&hit.speed>=27;
+}
+
 export function nextChassis(previous,hit,amount,now){
   const hp=Math.max(0,chassisHealth(previous?.hp)-amount);
-  const fireAt=hp<=32?(previous?.fireAt||now):0;
-  return {...hit,hp,parts:(previous?.parts||0)|(partMask[hit.part]||0),
-    fireAt,explodeAt:fireAt?(previous?.explodeAt||fireAt+vehicleBurnDelay):0};
+  const fireAt=previous?.fireAt||(hp<=32&&incendiaryImpact(hit)?now:0);
+  const disabledAt=hp===0&&!fireAt?now:0;
+  return {...hit,hp,...(previous?.repairedAt?{repairedAt:previous.repairedAt}:{}),parts:(previous?.parts||0)|(partMask[hit.part]||0),
+    disabledAt,fireAt,explodeAt:fireAt?(previous?.explodeAt||fireAt+vehicleBurnDelay):0};
 }

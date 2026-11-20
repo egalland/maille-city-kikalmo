@@ -77,8 +77,11 @@ export function createWanted(initialSnapshot = null, startTime = 0) {
     clock = now;
   }
 
-  function tick(time,hidden=false) {
-    advance(time,hidden);
+  function tick(time,hidden=false,identified=false) {
+    if(identified&&points>0){
+      clock=Math.max(clock,finite(time,clock));
+      lastCrimeTime=clock;
+    }else advance(time,hidden);
     return state();
   }
 
