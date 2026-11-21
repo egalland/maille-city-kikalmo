@@ -13,7 +13,7 @@ export function createPartners(net,{map,changed,notify}){
     if(key===signature)return;
     const incoming=next.received.find(id=>!state.received.includes(id)&&!isMuted(id));
     if(incoming)notify(name(incoming)+' t’invite en duo · Joueurs');
-    if(next.partner&&next.partner!==state.partner)notify('En duo avec '+name(next.partner));
+    if(next.partner&&next.partner!==state.partner)notify('En duo avec '+name(next.partner)+' · Tir allié bloqué');
     state=next;signature=key;revision++;changed();
   }
   async function command(action,target){
@@ -45,6 +45,7 @@ export function createPartners(net,{map,changed,notify}){
       function button(label,click){const b=document.createElement('button');b.type='button';b.className='mc-secondary';b.textContent=label;b.onclick=click;tools.append(b);}
       if(state.partner===person.id){
         button('Localiser mon équipier',showMap);button('Quitter le duo',()=>command('leave'));
+        const note=document.createElement('small');note.textContent='Tir allié bloqué';tools.append(note);
       }else if(state.partner)return;
       else if(state.received.includes(person.id)){
         button('Accepter le duo',()=>command('accept',person.id));button('Décliner',()=>command('decline',person.id));

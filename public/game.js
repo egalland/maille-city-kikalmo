@@ -7,6 +7,7 @@ import {vehicleContact,createVehicleDisplacements,sweptPedestrianContact,slideVe
 import {automaticGear,stepRoadDrive,impactSpeeds,roadSteering,roadSlip} from './vehicle-handling.js';
 import {cameraOptions,cameraModes,readCameraOptions,writeCameraOptions} from './camera-options.js';
 import {createFrameMeter} from './diagnostics.js';
+import {teammate} from './partners.js';
 import {roadblockSite,findOfficerCover} from './police-tactics.js';
 import {crouchedPace,isLow,behindCar,guardedFraction} from './guard-stance.js';
 import {crimeHeardOrSeen,observePursuit,responseUnits,canUseForce,custodyTime,policeSearchArea,searchEscapeDelay} from './police-perception.js';
@@ -1830,6 +1831,8 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       if(--unsettled===0&&worst>=0)recordAction(severity[worst]);
     };
     const shotId=crypto.randomUUID();shotContacts=[];
+    const partner=teammate()?.id;
+    let allyContact=false;
     for(const {target,damage:baseDamage,zone} of pattern.hits){
       const amount=target.hitKind==='npc'?npcWeaponDamage(baseDamage,target.type,zone):baseDamage;
       const direction=Math.atan2(target.y-p.y,target.x-p.x),force=clamp(amount/45,.12,1);
@@ -1850,7 +1853,10 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         damageChassis(target,{cause:'weapon',weapon,part});
         if((part==='glass'||spec.openSeat&&height>.53)&&(target.peer||target.occupied||target.routeId)){
           const injury=Math.round(amount*(open||spec.openSeat?1:.54));
-          if(target.peer){peerHits.push({target:target.id,damage:injury,angle:direction,force:force*.55,viewedAt:Math.round(target.viewAt??epoch)});worst=Math.max(worst,3);}
+          if(target.peer){
+            if(target.id===partner)allyContact=true;
+            else {peerHits.push({target:target.id,damage:injury,angle:direction,force:force*.55,viewedAt:Math.round(target.viewAt??epoch)});worst=Math.max(worst,3);}
+          }
           else {
             const driver={...target,id:target.driverId||vehicleId(target)+'-driver',type:target.driverRole||'human',vehicleType:target.type};
             if(hurtNpc(driver,injury,direction,force*.45,null,weapon)){
@@ -1866,6 +1872,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         else worst=Math.max(worst,isLawOfficer(target.type)?4:2);
       }
       if(target.hitKind==='peer'){
+        if(target.id===partner){allyContact=true;continue;}
         peerHits.push({target:target.id,damage:amount,angle:direction,force,
           ...(Number.isFinite(target.viewAt)?{viewedAt:Math.round(target.viewAt)}:{})});
         worst=Math.max(worst,3);
@@ -1880,6 +1887,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       hits:peerHits,...(rays.length>1?{rays}:{}),...(pattern.impact?{impact:pattern.impact}:{})});
     for(const contact of contacts)emit(contact.type,{...contact.data,shotId});
     settleShot(false);
+    if(allyContact)onNotice('Tir allié bloqué');
     audio.gunshot(weapon);
     if(!ammo[weapon])readyReload();
   }

@@ -20,7 +20,7 @@ import {normalizeAppearance} from '../public/kikalmo-schema.js';
 import {encodeRoster} from '../public/roster-wire.js';
 import {stateReferences,restoreStateFields} from '../public/state-wire.js';
 import { decodeDropId, matchesPickup, decodeOfficerDrop, officerLootWindow } from '../public/drop-id.js';
-import {partnerSchema,runPartners} from './partners.js';
+import {noPartnerHit,partnerSchema,runPartners} from './partners.js';
 import {careerSchema,runCareer} from './career.js';
 import {prepareFire,readFireSession,rememberFirePose,recordFire} from './fire-netcode.js';
 import {npcMaxHealth} from '../public/vitality.js';
@@ -634,6 +634,9 @@ async function sync(db,b,now,room) {
     const data=type==='vehicleDamage'?vehicleImpact(input.data,actor,priorState):eventData(type,input.data,now);
     if (!data) continue;
     let guard={clause:'',args:[]};
+    if(type==='hit'&&data.cause!=='melee'&&data.cause!=='traffic'){
+      guard={clause:'WHERE '+noPartnerHit('?'),args:[room,id,data.target,id,data.target]};
+    }
     if(type==='melee'){
       if(!Number.isFinite(actor.x)||!Number.isFinite(actor.y)||actor.vehicle||actor.health===0||actor.downUntil>now||
           Math.hypot(actor.x-data.x,actor.y-data.y)>5)continue;

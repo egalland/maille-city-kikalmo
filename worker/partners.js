@@ -18,6 +18,9 @@ export const partnerSchema=[
   END`
 ];
 const actions=new Set(['state','invite','accept','decline','cancel','leave']);
+// Check the live relationship in the same database statement that records the hit.
+export const noPartnerHit=target=>`NOT EXISTS (SELECT 1 FROM mc_partners WHERE room=?
+  AND ((first=? AND second=${target}) OR (second=? AND first=${target})))`;
 export async function runPartners(db,b,room,now,gone){
   const {id,token,action,target}=b;
   if(!actions.has(action))return {ok:false,error:'Demande inconnue.'};

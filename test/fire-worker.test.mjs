@@ -46,6 +46,29 @@ test('one pull writes its trace and bounded hit together, even after concurrent 
   assert.equal(after.events.filter(e=>e.type==='hit').length,2);
 });
 
+test('a duo blocks both modern and legacy firearm hits until either partner leaves',async t=>{
+  const w=world(t),a=await w.player(0,0),b=await w.player(10,0);
+  const team=(who,action,target)=>w.api('partners',who,{action,target:target?.id});
+  assert.ok((await team(a,'invite',b)).ok);
+  assert.ok((await team(b,'accept',a)).ok);
+  w.advance(400);
+  const protectedShot=w.packet([w.hit(b)]);
+  const initial=await w.fire(a,protectedShot);
+  assert.deepEqual(initial.events.map(e=>e.type),['shot']);
+  const back=w.packet([w.hit(a)],{x:9.65,angle:Math.PI});
+  const reciprocal=await w.fire(b,back);
+  assert.deepEqual(reciprocal.events.map(e=>e.type),['shot','shot']);
+  const legacy=await w.api('sync',a,{events:[{op:'legacy-shot',type:'hit',data:{target:b.id,damage:17,cause:'weapon'}}]});
+  assert.equal(legacy.events.filter(e=>e.type==='hit').length,0);
+  await team(a,'leave');
+  await w.fire(a,protectedShot);
+  w.advance(400);
+  const newShot=w.packet([w.hit(b)]);
+  await w.fire(a,newShot);
+  const received=(await w.api('sync',b)).events.filter(e=>e.type==='hit');
+  assert.deepEqual(received.map(e=>[e.data.shotId,e.data.target,e.data.damage]),[[newShot.shotId,b.id,17]]);
+});
+
 test('an elevated shot authorizes a nearby NPC wound, including a helmet or a lethal head hit',async t=>{
   const w=world(t),a=await w.player(0,0);
   for(const [id,type,y,zone,health] of [

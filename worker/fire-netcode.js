@@ -2,6 +2,7 @@ import {canFireSql,canFireArgs} from './armory.js';
 import {vehicleMotionLimit} from '../public/vehicle-types.js';
 import {weaponCatalog} from '../public/weapon-catalog.js';
 import {weaponShotShape} from '../public/weapon-patterns.js';
+import {noPartnerHit} from './partners.js';
 
 const FIRE_AGE=2200, REWIND=450, PRESENTATION_DELAY=65;
 const SHOT_ID=/^[a-zA-Z\d_-]{1,48}$/;
@@ -218,7 +219,9 @@ export function recordFire(stmts,q,room,id,name,packet,tracks,actor,now){
       AND abs(json_extract(data,'$.firedAt')-?)<CASE WHEN json_extract(data,'$.kind')=? THEN ? ELSE 95 END))
     INSERT INTO mc_events (room,player,op,name,type,data,at)
     SELECT ?,?,json_extract(value,'$.op'),?,json_extract(value,'$.type'),json_extract(value,'$.data'),?
-    FROM fresh CROSS JOIN json_each(?) ORDER BY CAST(key AS INTEGER)`,
+    FROM fresh CROSS JOIN json_each(?)
+    WHERE json_extract(value,'$.type')<>'hit' OR ${noPartnerHit("json_extract(value,'$.data.target')")}
+    ORDER BY CAST(key AS INTEGER)`,
     ...canFireArgs(room,id,weapon,shot.firedAt),room,id,shotOp,room,id,now-FIRE_AGE-1300,shot.firedAt,shot.kind,Math.floor(weapon.interval*900),
-    room,id,name,now,JSON.stringify(rows)));
+    room,id,name,now,JSON.stringify(rows),room,id,id));
 }
