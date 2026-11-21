@@ -1173,8 +1173,42 @@ function roadsterWreck(spec){
   return wreck;
 }
 
+function createTrain(color){
+  const group=new THREE.Group(),paint=/^#[a-f\d]{6}$/i.test(color||'')?color:'#427b86';
+  const box=(x,y,z,w,h,d,t)=>addPart(group,geo.box,x,y,z,w,h,d,t);
+  box(0,.63,0,15.1,.44,2.32,'#40393c');
+  box(0,1.86,0,15.52,2.50,2.75,paint);
+  box(0,3.21,0,15.3,.24,2.59,'#d8c6aa');
+  box(0,3.42,0,11,.19,2.08,'#a3a59b');
+  for(const front of [-1,1]){
+    box(7.76*front,1.84,0,.61,2.45,2.59,paint);
+    box(8.07*front,2.39,0,.07,.83,2.01,'#304850');
+    box(8.115*front,2.38,0,.06,.83,.085,'#cabba1');
+    box(8.12*front,.86,0,.26,.31,2.32,'#3f3d47');
+    for(const side of [-1,1]){
+      box(8.12*front,1.53,.9*side,.12,.21,.29,front===1?'#ffe4ac':'#db625d');
+      for(const axle of [4.81,5.78]){
+        const wheel=addPart(group,geo.cylinder,front*axle,.33,side*.76,.66,.25,.66,'#3a363c');
+        wheel.rotation.x=Math.PI/2;
+      }
+    }
+  }
+  for(const side of [-1,1]){
+    const z=side*1.391;
+    box(0,1.42,z,15.38,.17,.054,'#efcf91');
+    for(const x of [-6.5,-3.45,-1.75,0,1.75,3.45,6.5])
+      box(x,2.38,z,1.32,.73,.065,'#567783');
+    for(const x of [-5.0,5.0]){
+      box(x,1.87,z,.95,1.87,.078,'#d6c094');
+      box(x,2.37,z+side*.046,.52,.72,.032,'#455e6a');
+    }
+  }
+  batchGroup(group);
+  return {group,update(){}};
+}
 export function createCar(type='car',color,seed=0){
   const kind=type?.type??type;
+  if(kind==='train')return createTrain(color);
   if(kind==='helicopter'||kind==='airship'){
     const factory=kind==='helicopter'?createHelicopter:createAirship;
     return factory(THREE,{geo,addPart,batchGroup,cord,carTrim,updateSeatedFigures,clearCabin},color,seed);

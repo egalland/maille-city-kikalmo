@@ -1,5 +1,6 @@
 import {createWorldCamera} from './world-camera.js';
 import {frontageSigns,namedFronts,paintFrontageSign,montRenaudPaving} from './enfer-frontage.js';
+import {railXY,railSections,railStations,railGaugeOffsets,railwayPlatformOffset,railwayPlatformLength} from './enfer-rail.js';
 import {storeByBuilding,shopOpening,shopHeadroom,shopFixture} from './enfer-retail.js';
 import {parkingLots,lotPoint,parkingWidth,parkingDepth,parkingMarkings,parkingSign} from './enfer-parking-lots.js';
 import {heritageByFootprint,heritagePlinth} from './enfer-heritage.js';
@@ -995,6 +996,34 @@ export function createCanvasView(canvas,spawn,onNotice){
       ellipseGround(arc.x,arc.y,35.2,.025,'#c4b5a6');
     }
     groundTexture();
+    if(isEnfer){
+      const railStrip=(start,end,off,half,h,color)=>poly3([
+        [...railXY(start,off-half),h],[...railXY(end,off-half),h],
+        [...railXY(end,off+half),h],[...railXY(start,off+half),h]
+      ],color);
+      for(const section of railSections){
+        if(!seen({...section,r:8},streetViewRange))continue;
+        const {start,end,center}=section;
+        railStrip(start,end,0,3.57,.085,'#898082');
+        for(const off of railGaugeOffsets)railStrip(start,end,off,.055,.198,'#c4b9ac');
+        for(const offset of [-2.16,2.16])railStrip(center-.11,center+.11,offset,1.14,.15,'#6f5751');
+      }
+      for(const station of railStations){
+        if(!seen({...station,r:19},streetViewRange))continue;
+        for(const side of [-1,1]){
+          const off=side*railwayPlatformOffset,d=station.d,h=railwayPlatformLength/2;
+          railStrip(d-h,d+h,off,1.6,.13,'#c0b5a0');
+          railStrip(d-h,d+h,off-side*1.44,.075,.16,'#ecd78c');
+          const [x,y]=railXY(d,off+side*.45),base=at(x,y,2.4),top=at(x,y,3.06);
+          if(base&&top)queue.push({z:depth(x,y),draw:()=>{
+            const width=Math.max(12,f*5.2/base.d),height=Math.max(7,base.y-top.y);
+            g.fillStyle='#265468';g.fillRect(top.x-width/2,top.y,width,height);
+            g.fillStyle='#f7e9c9';g.font='bold '+Math.max(6,Math.round(height*.62))+'px sans-serif';
+            g.textAlign='center';g.textBaseline='middle';g.fillText(station.name,top.x,top.y+height*.5,width-4);
+          }});
+        }
+      }
+    }
     if(isEnfer)for(const {a,b,width} of montRenaudPaving){
       if(!seen({x:(a[0]+b[0])/2,y:(a[1]+b[1])/2,r:22},streetViewRange))continue;
       const dx=b[0]-a[0],dy=b[1]-a[1],k=width/(2*Math.hypot(dx,dy)),u=-dy*k,v=dx*k;

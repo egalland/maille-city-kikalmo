@@ -2,8 +2,8 @@ import {fleetHandling} from './vehicle-handling.js';
 // Metres and seconds. steering is the peak yaw rate, cruise scales normal city traffic.
 const specs={};
 // Longitudinal seat anchors (metres forward of centre) for vehicles with a cab-over or saddle.
-const cabEye={boxtruck:2.11,tipper:2.11};
-const seatOffsets={helicopter:.54,airship:.70,cargo:-.74,scooter:-.24,motorbike:-.26,estate:.07,gt:-.56,supercar:.24,camper:1.32,flatbed:1.50,boxtruck:2.67,tipper:2.22};
+const cabEye={boxtruck:2.11,tipper:2.11,train:2.42};
+const seatOffsets={helicopter:.54,airship:.70,cargo:-.74,scooter:-.24,motorbike:-.26,estate:.07,gt:-.56,supercar:.24,camper:1.32,flatbed:1.50,boxtruck:2.67,tipper:2.22,train:4.65};
 // These powertrains keep their established low gears and rotor response. Only the
 // upper part of the range opens up to their new maximum speed.
 const powerBandKph={sport:240,gt:276,supercar:318,motorbike:232,helicopter:300};
@@ -34,6 +34,8 @@ define('tipper','Benne des Briqueteries',6.45,2.30,2.69,94/3.6,3.9,1.87,9.2,.77,
 define('pickup','Camionnette de marché',4.84,1.98,1.86,163/3.6,5.8,3.8,12.7,1.06,.87);
 define('airship','Dirigeable · Navette Nuage',11.4,4.2,5.1,16,4,2.1,4.1,.46,.50);
 define('helicopter','Hélicoptère Libellule',6.9,1.80,2.68,360/3.6,12,7.2,10,1.14,.75);
+define('train','Autorail des Mailles',16.2,2.82,3.62,26,0,1.02,3.6,0,0);
+export const isTrain=type=>type==='train';
 export const vehicleTypes=Object.freeze(Object.keys(specs));
 export const isVehicleType=type=>Object.hasOwn(specs,type);
 export const vehicleSpec=type=>isVehicleType(type)?specs[type]:specs.car;
@@ -48,6 +50,7 @@ export function vehicleMotionLimit(type){
 export function vehicleDoorways(vehicle,clearance=0){
   const {halfLength,halfWidth,seatOffset}=vehicleSpec(vehicle.type),angle=vehicle.angle||0;
   const c=Math.cos(angle),s=Math.sin(angle),side=(vehicle.type==='airship'?.76:halfWidth)+clearance;
-  const local=vehicle.type==='bus'?[[halfLength*.73,side],[0,side],[halfLength*.73,-side]]:[[seatOffset,-side],[seatOffset,side]];
+  const local=vehicle.type==='bus'?[[halfLength*.73,side],[0,side],[halfLength*.73,-side]]:
+    isTrain(vehicle.type)?[[4.9,side],[4.9,-side],[-4.9,side],[-4.9,-side],[0,side],[0,-side]]:[[seatOffset,-side],[seatOffset,side]];
   return local.map(([forward,right])=>({x:vehicle.x+c*forward-s*right,y:vehicle.y+s*forward+c*right}));
 }

@@ -40,7 +40,7 @@ test('retail checks the correct counter, debits once and retains purchases acros
 
 test('a parked vehicle keeps its pose and can only be reclaimed by its profile before expiry',async t=>{
   const {active,who,b,post,drive,car,tick,actor}=await harness(t);
-  const [,spot]=lotSpaces(parkingLots.at(-1)),owner=(await active(who,'state')).state.parkingOwner;
+  const [,spot]=lotSpaces(parkingLots.find(p=>p.id==='parking-galerie')),owner=(await active(who,'state')).state.parkingOwner;
   await active(b,'state');
   await post('sync',who,{state:drive(spot)});
   const park={...car,x:spot.x,y:spot.y,angle:spot.angle,occupied:false,parkingSlot:spot.id,parkingOwner:owner};

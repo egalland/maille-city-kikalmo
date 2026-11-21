@@ -7,6 +7,7 @@ import {airfields} from './airfield.js';
 import {careerPlaces} from './career-catalog.js';
 import {parkingLots} from './enfer-parking-lots.js';
 import {neighborhoodShops} from './enfer-frontage.js';
+import {railStations} from './enfer-rail.js';
 import {placeSymbols,heritageWaypoints} from './career-navigation.js';
 import {foxSkins} from './puppet-dyes.js';
 import {makeEmoteIcon} from './emote-art.js';
@@ -367,20 +368,21 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
         const stop=coreDestinations.find(d=>'car-'+d.key===car.id);
         return {...car,id:'parking/'+car.id,name:vehicleSpec(car.type).label+' · '+(stop?.label||streetAt(car.x,car.y))};
       });
-      const venues=[...Object.values(careerPlaces),...airfields,...parkingLots,...neighborhoodShops,...parking,...heritageWaypoints];
+      const venues=[...Object.values(careerPlaces),...airfields,...parkingLots,...neighborhoodShops,...railStations,...parking,...heritageWaypoints];
       const lots=node('optgroup','');lots.label='Stationnements habituels';
       const shops=node('optgroup','');shops.label='Commerces';
       const montRenaud=node('optgroup','');montRenaud.label='Zone commerciale du Mont Renaud';
+      const stations=node('optgroup','');stations.label='Gares et trains';
       const publicLots=node('optgroup','');publicLots.label='Parkings publics';
       const monuments=node('optgroup','');monuments.label='Églises et mairies';
       for(const place of venues){
         const mark=placeSymbols[place.id];
         const option=node('option','',mark?mark+' · '+place.name:place.name);
-        const group=place.footprint||place.id==='parking-galerie'?montRenaud:place.symbol?monuments:
+        const group=railStations.includes(place)?stations:place.footprint||place.id==='parking-galerie'||place.id==='parking-mont-renaud-est'?montRenaud:place.symbol?monuments:
           parkingLots.includes(place)?publicLots:neighborhoodShops.includes(place)?shops:mark?selector:lots;
         option.value=place.id;group.append(option);
       }
-      selector.append(montRenaud,shops,publicLots);
+      selector.append(stations,montRenaud,shops,publicLots);
       if(parking.length)selector.append(lots);
       if(monuments.children.length)selector.append(monuments);
       const focus=button('Voir le quartier des missions','mc-secondary',()=>{

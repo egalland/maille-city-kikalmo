@@ -64,7 +64,7 @@
       <div id="wantedFeedback" class="alert-feedback" hidden></div>
     </div>
   </section>
-  <div data-hud="speed" id="driveHud" class="drive-hud" hidden><i data-icon="car"></i><span><span id="vehicleName">Au volant</span><span class="chassis-status" id="chassisStatus"></span><span class="chassis-status" id="parkingHint" hidden>E · Se garer et sortir</span></span><b id="carSpeed">0 km/h</b><b id="flightAltimeter" hidden aria-label="Hauteur au-dessus du sol">0 m</b></div>
+  <div data-hud="speed" id="driveHud" class="drive-hud" hidden><i data-icon="car"></i><span><span id="vehicleName">Au volant</span><span class="chassis-status" id="chassisStatus"></span><span class="chassis-status" id="parkingHint" hidden></span></span><b id="carSpeed">0 km/h</b><b id="flightAltimeter" hidden aria-label="Hauteur au-dessus du sol">0 m</b></div>
   <div class="ko-notice" id="koNotice" role="status" hidden><strong>K.-O.</strong><span id="reviveTimer"></span></div>
   <div id="sectorEdge" role="status" hidden></div>
   <div class="game-notice" id="notice" role="status" aria-live="polite"></div>
@@ -99,6 +99,7 @@
       <div class="drive-utilities">
         <button type="button" id="driveLamps" aria-label="Changer le mode des phares"><span>Phares</span></button>
         <button type="button" id="driveHorn" aria-label="Klaxonner"><i data-icon="volume"></i><span>Klaxon</span></button>
+        <button type="button" id="trainReverse" aria-label="Inverser le sens du train" hidden><span>Inverser</span></button>
         <button type="button" id="driveCamera" aria-label="Recentrer la caméra"><i data-icon="camera"></i></button>
         <button type="button" id="driveExit"><i data-icon="car"></i><span>Sortir</span></button>
       </div>

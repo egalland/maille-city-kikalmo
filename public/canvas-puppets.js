@@ -342,6 +342,18 @@ function carFace(c,pts,fill,stroke,width,woven,curve=.055){
 }
 
 export function drawCanvasCar(c,o,x,groundY,height,time=0,viewAngle=0){
+  if(o?.type==='train'){
+    const h=height,w=h*(.68+3.72*Math.abs(Math.sin(viewAngle)));
+    c.save();c.translate(x,groundY);
+    c.fillStyle='#3d3b45';c.fillRect(-w*.47,-h*.27,w*.94,h*.22);
+    c.fillStyle=o.color||'#427b86';c.fillRect(-w/2,-h*.89,w,h*.65);
+    c.fillStyle='#cfbea5';c.fillRect(-w*.46,-h*.96,w*.92,h*.074);
+    c.fillStyle='#e3c485';c.fillRect(-w/2,-h*.49,w,h*.04);
+    c.fillStyle='#567581';
+    const panes=w>h*1.4?8:2;
+    for(let i=0;i<panes;i++)c.fillRect(-w*.42+i*w*.84/panes,-h*.75,w*.70/panes,h*.18);
+    c.restore();return;
+  }
   if(isAircraft(o?.type))return drawCanvasAircraft(c,o,x,groundY,height,time,viewAngle);
   drawCarBody(c,o,x,groundY,height,time,viewAngle);
   const stage=chassisStage(o?.chassisHp);

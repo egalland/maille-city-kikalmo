@@ -48,7 +48,7 @@ test('street parking is sparse, clear of traffic, accessible and stationary betw
     assert.equal(namedFronts.get(shop.building),shop);
     assert.equal(contactAt(shop.x,shop.y,{radius:.48}),null,shop.name);
   }
-  for(let along=0;along<=28;along+=.25){
+  for(let along=0;along<=38;along+=.25){
     const [x,y]=montRenaudPoint(along,5.65);
     assert.equal(contactAt(x,y,{radius:.42,footZ:0,bodyHeight:1.55}),null,'Mont Renaud sidewalk '+along);
   }

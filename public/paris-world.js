@@ -18,6 +18,7 @@ import {enferStops,enferDistrict,enferStreet} from './enfer-places.js';
 import { baseTerrainHeight, terrainHeight, buildingGround, waterLevel } from './terrain-height.js';
 import {workshopId,workshopColliders} from './workshop.js';
 import {storeByBuilding,shopColliders} from './enfer-retail.js';
+import {railStations,railSections,railXY,railSpacing,railDistance,railPoint} from './enfer-rail.js';
 import {airfields} from './airfield.js';
 import { terraceProfiles } from './street-terraces.js';
 import { authoredWeaponDrops } from './drop-id.js';
@@ -593,6 +594,9 @@ export const coreDestinations=(isEnfer?enferStops:historicStops).map(stop=>{
   const [key,label,x,y,,target]=stop;
   return {id:key,key,label,x,y,angle:Math.atan2(target[1]-y,target[0]-x)};
 });
+if(isEnfer)for(const station of railStations)coreDestinations.push({
+  id:station.id,key:station.id,label:station.name,x:station.x,y:station.y,angle:station.angle-station.side*Math.PI/2,rail:true
+});
 function genuineSectorStop(){
   const x=clamp(Number.isFinite(sector.x)?sector.x:midX,landBounds.minX+3,landBounds.maxX-3);
   const y=clamp(Number.isFinite(sector.y)?sector.y:midY,landBounds.minY+3,landBounds.maxY-3);
@@ -702,10 +706,16 @@ const routeRecords=streetList.map(road=>{
 export const props=[];
 const heights={tree:3.5,lamp:5,bollard:.87,bench:.85,hydrant:.85,bin:1.1,postbox:1.2};
 const radii={tree:.42,lamp:.20,bollard:.22,bench:.85,hydrant:.31,bin:.34,postbox:.36};
+function onRailway(x,y){
+  if(!isEnfer||x< -320||x>910||y<253||y>780)return false;
+  const point=railPoint(railDistance(x,y));
+  return Math.hypot(x-point.x,y-point.y)<4.2||railStations.some(s=>Math.hypot(s.x-x,s.y-y)<19);
+}
 function putProp(path,side,index,type,p){
   const road=path.road;
   const r=radii[type],offset=road.w*.5+(type==='tree'?1.9:1.16);
   const x=p.x-Math.sin(p.angle)*offset*side,y=p.y+Math.cos(p.angle)*offset*side;
+  if(onRailway(x,y))return;
   if(destinations.some(d=>Math.hypot(x-d.x,y-d.y)<8))return;
   if(isEnfer&&parkingLots.some(lot=>{
     const dx=x-lot.x,dy=y-lot.y;
@@ -749,6 +759,7 @@ if(isEnfer){
   for(let gx=Math.ceil(landBounds.minX/18);gx*18<landBounds.maxX;gx++)
     for(let gy=Math.ceil(landBounds.minY/18);gy*18<landBounds.maxY;gy++){
       const seed=hash(gx+','+gy),x=gx*18+((seed%117)/117-.5)*13,y=gy*18+(((seed>>>11)%113)/113-.5)*13;
+      if(onRailway(x,y))continue;
       if(!wooded.area(x,y,.05).size||![...wooded.area(x,y,.05)].some(a=>inShape(x,y,a)))continue;
       if(testPose(x,y,{radius:1.15},false)||[...decor.area(x,y,4)].some(o=>Math.hypot(o.x-x,o.y-y)<4))continue;
       if([...roadGrid.area(x,y,6)].some(({road,a,b})=>lineDist2(x,y,a,b)<sq(road.w*.5+2)))continue;
@@ -887,6 +898,7 @@ export function clearsTrafficAtRest(p,type,lanes=lanesNearStop(p,9)){
   return !lanes.some(b=>rectAgainstRect(p.x,p.y,p.angle,halfLength,halfWidth,b));
 }
 function parkedVehicleAtStop(stop,i){
+  if(stop.rail)return null;
   const preferred=sector?parkedFleet[hash(Math.round(midX)+':'+Math.round(midY))%parkedFleet.length]:(isEnfer&&enferParkedByStop[stop.key]||parkedFleet[i]||'compact');
   const lanes=lanesNearStop(stop,34);
   const street=closestRoad(stop.x,stop.y,35,s=>s.kind!=='motorway'&&s.kind!=='path');
@@ -933,7 +945,9 @@ if(isEnfer)for(const lot of parkingLots){
   for(const [index,type] of [[0,'compact'],[3,'sedan']]){
     parkedCars.push({...spaces[index],type,color:lot.colors[index?1:0],bay:'lot',kind:'car',parked:true,moving:false,speed:0});
   }
-  for(const [index,[x,y]] of [parkingSign(lot),lotPoint(lot,6.9,-4.25),lotPoint(lot,-6.9,4.62),lotPoint(lot,6.9,4.62)].entries()){
+  const posts=[parkingSign(lot),lotPoint(lot,6.9,-4.25)];
+  if(lot.id!=='parking-mont-renaud-est')posts.push(lotPoint(lot,-6.9,4.62),lotPoint(lot,6.9,4.62));
+  for(const [index,[x,y]] of posts.entries()){
     const prop={id:lot.id+'-post-'+index,type:'bollard',x,y,angle:lot.angle,r:.16,h:.87};
     props.push(prop);decor.insert(prop,bounds([[x,y]],.16));
   }
@@ -1153,6 +1167,19 @@ function drawBaseMap(ctx,x,y,radius,scale,full){
         ctx.save();ctx.lineWidth=.85/scale;ctx.setLineDash([2.4/scale,3.2/scale]);
         ctx.strokeStyle='#867460';ctx.stroke();ctx.restore();
       }
+    }
+  }
+  if(isEnfer){
+    ctx.globalAlpha=1;ctx.strokeStyle='#bfaa95';ctx.lineWidth=Math.max(.95/scale,.56);
+    const tracks=scale>=.32?[-railSpacing/2,railSpacing/2]:[0];
+    for(const offset of tracks){
+      ctx.beginPath();let previous=-Infinity;
+      for(const {start,end,x:rx,y:ry} of railSections){
+        if(Math.hypot(rx-x,ry-y)>radius+10)continue;
+        if(start!==previous)ctx.moveTo(...railXY(start,offset));
+        ctx.lineTo(...railXY(end,offset));previous=end;
+      }
+      ctx.stroke();
     }
   }
   ctx.globalAlpha=1;ctx.restore();

@@ -5,7 +5,7 @@ import {outfitShop} from '../public/outfit-shop.js';
 import {atShopCounter,retailGoods,foodRecovery} from '../public/enfer-retail.js';
 import {abandonedFor,replacementAt} from '../public/vehicle-lifecycle.js';
 import {isAircraft} from '../public/airfield.js';
-import {isVehicleType,vehicleSpec} from '../public/vehicle-types.js';
+import {isVehicleType,vehicleSpec,isTrain} from '../public/vehicle-types.js';
 
 export const careerSchema=[
   woolSchema,...districtEventsSchema,
@@ -97,7 +97,7 @@ export async function runCareer(db,b,room,now){
     JOIN mc_members m ON m.room=s.room AND m.id=s.rider
     WHERE s.room=? AND s.driver=? AND s.car=? AND m.seen>? AND cs.profile<>?`;
   const verifyCar=async()=>{
-    if(!actor.vehicle?.id||!isVehicleType(actor.vehicle.type)||isAircraft(actor.vehicle.type))return false;
+    if(!actor.vehicle?.id||!isVehicleType(actor.vehicle.type)||isAircraft(actor.vehicle.type)||isTrain(actor.vehicle.type))return false;
     const driven=await q("SELECT owner FROM mc_items WHERE room=? AND kind='vehicle' AND item=?",room,actor.vehicle.id).first();
     if(driven?.owner!==b.id)return false;
     guard+=" AND EXISTS (SELECT 1 FROM mc_items WHERE room=? AND kind='vehicle' AND item=? AND owner=?)";

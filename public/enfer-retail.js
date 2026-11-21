@@ -18,7 +18,9 @@ const catalogs={
   'action-noyon':{clerk:'Lou',coat:'#436d9d',
     goods:[['peinture','Coffret de peinture',8],['bougie','Bougie parfumée',6],['boite','Boîte de rangement',10]]},
   'kiabi-noyon':{clerk:'Camille',coat:'#637fa5',
-    goods:[['echarpe','Écharpe rayée',9],['bonnet','Bonnet côtelé',8],['sweat','Sweat à capuche',15]]}
+    goods:[['echarpe','Écharpe rayée',9],['bonnet','Bonnet côtelé',8],['sweat','Sweat à capuche',15]]},
+  'sport-noyon':{clerk:'Alex',coat:'#426186',
+    goods:[['gourde','Gourde de randonnée',9],['ballon','Ballon cousu',10],['sac-sport','Sac de sport',15]]}
 };
 
 export const shopHeadroom=2.75;

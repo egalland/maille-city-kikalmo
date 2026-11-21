@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Box3, Vector3 } from '../public/three.js';
 import {isAircraft} from '../public/airfield.js';
 import { createCar, createPuppet } from '../public/puppets3d.js';
-import { vehicleSpec, vehicleTypes, vehicleDoorways } from '../public/vehicle-types.js';
+import { vehicleSpec, vehicleTypes, vehicleDoorways, isTrain } from '../public/vehicle-types.js';
 import { destinations, parkedCars, routeAgents, contactAt } from '../public/paris-world.js';
 import { ragdollPose } from '../public/ragdoll.js';
 
@@ -15,7 +15,7 @@ test('the Paris fleet fits its drivable colliders, places accessible doors and u
   }
   // Freight movements are scheduled on the active Enfer road corridors. The
   // archived city retains its original traffic mix.
-  const parisRoster=vehicleTypes.filter(type=>!isAircraft(type)&&!['boxtruck','tipper'].includes(type));
+  const parisRoster=vehicleTypes.filter(type=>!isAircraft(type)&&!isTrain(type)&&!['boxtruck','tipper'].includes(type));
   assert.deepEqual([...observed].sort(),parisRoster.sort());
   for(const v of parkedCars){
     const spec=vehicleSpec(v.type);
@@ -23,7 +23,7 @@ test('the Paris fleet fits its drivable colliders, places accessible doors and u
     const stop=destinations.find(d=>v.id==='car-'+d.key);
     assert.ok(vehicleDoorways(v).some(d=>Math.hypot(d.x-stop.x,d.y-stop.y)<4.4),v.id);
   }
-  for(const type of vehicleTypes.filter(type=>!isAircraft(type))){
+  for(const type of vehicleTypes.filter(type=>!isAircraft(type)&&!isTrain(type))){
     const spec=vehicleSpec(type),object=createCar(type),bounds=new Box3().setFromObject(object.group,true);
     const size=bounds.getSize(new Vector3());
     assert.ok(Math.abs(size.x-spec.halfLength*2)<.56,type+' length '+size.x);

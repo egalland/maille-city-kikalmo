@@ -10,7 +10,8 @@ import {weaponCatalog} from '../public/weapon-catalog.js';
 import {propMaxHealth, vehiclePropDamage} from '../public/prop-damage.js';
 import {validFlightPath,sampleAutorotation,flightSampleMs} from '../public/autorotation.js';
 import {airfields,isAircraft,flightCeiling} from '../public/airfield.js';
-import {isVehicleType,vehicleSpec} from '../public/vehicle-types.js';
+import {isVehicleType,vehicleSpec,isTrain} from '../public/vehicle-types.js';
+import {railTrain,validatedRailPose,atRailStation,railDistance} from '../public/enfer-rail.js';
 import {chassisDamage,partMask,incendiaryImpact,ignitionHealth,meleeWearFloor,vehicleBurnDelay,blastRadius,blastDamage} from '../public/vehicle-damage.js';
 import {meleeMoves} from '../public/melee-moves.js';
 import {cleanTrafficPacket} from '../public/traffic-sync.js';
@@ -178,6 +179,12 @@ function playerState(raw,now,room,previous) {
   const traffic=cleanTrafficPacket(s.traffic,now);if(traffic)result.traffic=traffic;
   if (s.vehicle && key(s.vehicle.id)){
     result.vehicle={...pose(s.vehicle),id:key(s.vehicle.id)};
+    if(isTrain(result.vehicle.type)||railTrain(result.vehicle.id)){
+      const train=room===worldKeys.enfer&&isTrain(result.vehicle.type)&&validatedRailPose(result.vehicle.id,result.vehicle);
+      if(!train){delete result.vehicle;return result;}
+      Object.assign(result.vehicle,train);
+      Object.assign(result,{x:train.x,y:train.y,angle:train.angle,speed:train.speed,lift:.18});
+    }
     if(isAircraft(result.vehicle.type))Object.assign(result.vehicle,{lift:result.lift||0,
       bank:num(s.vehicle.bank,0,-.25,.25),carPitch:num(s.vehicle.carPitch,0,-.2,.2)});
     for(const k of ['brake','headlamps','fare'])if(typeof s.vehicle[k]==='boolean')result.vehicle[k]=s.vehicle[k];
@@ -225,6 +232,11 @@ function eventData(type,raw,now) {
       if(!key(d.id))return null;
       const occupied=!!d.occupied;
       const out={...result,id:d.id,occupied,...(!occupied&&d.shifted?{shifted:true}:{}),...(!occupied?{expiresAt:now+abandonedFor}:{})};
+      if(isTrain(out.type)||railTrain(out.id)){
+        const track=isTrain(out.type)&&validatedRailPose(out.id,out);
+        if(!track||d.eject||d.shifted||d.roadCoast||!atRailStation(railDistance(track.x,track.y)))return null;
+        return {...out,...track,speed:0,moving:false,...(!occupied?{expiresAt:now+43_200_000}:{})};
+      }
       if(!occupied&&isAircraft(out.type)&&validFlightPath(d.flightPath,out.type)){
         out.flightPath=d.flightPath;out.lift=d.flightPath[0][1];
         out.flightAt=num(d.flightAt,now,now-1800,now);out.expiresAt=out.flightAt+(out.flightPath.length-1)*flightSampleMs+abandonedFor;
@@ -659,6 +671,9 @@ async function sync(db,b,now,room) {
       data.x=actor.x;data.y=actor.y;op='horn-'+Math.floor(now/800);
     }
     const requiresCar=type==='vehicle';
+    if((type==='vehicleShunt'||type==='vehicleDamage')&&(isTrain(data.type)||railTrain(data.id)))continue;
+    if(requiresCar&&isTrain(data.type)&&(room!==worldKeys.enfer||!Number.isFinite(actor.x+actor.y)||
+      Math.hypot(actor.x-data.x,actor.y-data.y)>23))continue;
     if(requiresCar&&data.eject&&(!Number.isFinite(actor.x+actor.y)||actor.health===0||actor.vehicle||
       Math.hypot(actor.x-data.x,actor.y-data.y)>6.8))continue;
     if (requiresCar) {
@@ -672,8 +687,8 @@ async function sync(db,b,now,room) {
     const values=[room,id,op,name,type,payload,now];
     if (requiresCar) {
       const flightGuard=` AND NOT EXISTS (SELECT 1 FROM mc_items WHERE room=? AND item=? AND kind='vehicle' AND ${releaseEnds}>?)`+
-        ((data.flightPath||data.roadCoast)?" AND EXISTS (SELECT 1 FROM mc_items WHERE room=? AND item=? AND kind='vehicle' AND owner=?)":"");
-      const flightArgs=[room,data.id,now,...((data.flightPath||data.roadCoast)?[room,data.id,id]:[])];
+        ((data.flightPath||data.roadCoast||isTrain(data.type)&&!data.occupied)?" AND EXISTS (SELECT 1 FROM mc_items WHERE room=? AND item=? AND kind='vehicle' AND owner=?)":"");
+      const flightArgs=[room,data.id,now,...((data.flightPath||data.roadCoast||isTrain(data.type)&&!data.occupied)?[room,data.id,id]:[])];
       const profile='(SELECT profile FROM mc_career_sessions WHERE room=? AND id=?)';
       const reservationGuard=` AND NOT EXISTS (SELECT 1 FROM mc_items WHERE room=? AND item=? AND kind='vehicle'
         AND json_extract(data,'$.expiresAt')>? AND json_extract(data,'$.parkingOwner') IS NOT NULL

@@ -6,7 +6,8 @@ import {drawBoundary} from './residential-boundaries.js';
 import {vehicleSpec} from './vehicle-types.js';
 import {nearbySignals,nearbyEnclosures,nearbyParkedCars} from './paris-world.js';
 import {pavementRuns} from './curb-clearance.js';
-import {frontageSigns,frontageStyle,namedFronts,montRenaudPaving} from './enfer-frontage.js';
+import {frontageSigns,frontageStyle,namedFronts,montRenaudPaving,montRenaudPoint} from './enfer-frontage.js';
+import {railXY,railSections,railStations,railSpacing,railGaugeOffsets,railwayPlatformOffset,railwayPlatformLength} from './enfer-rail.js';
 import {parkingLots,lotPoint,parkingWidth,parkingDepth,parkingMarkings,parkingSign,parkingDriveways} from './enfer-parking-lots.js';
 import {workshopId,workshopEdge,bayDoor,headroom} from './workshop.js';
 import {storeByBuilding,shopHeadroom,shopOpening,shopFixture} from './enfer-retail.js';
@@ -682,6 +683,55 @@ function strip(batch,mat,a,d,width,h,col,scale=5,xOffset=0){
   const points=[[a,-w],[a,w],[d,w],[d,-w]].map(([p,off])=>[p[0]+nx*(off+xOffset),p[1]+nz*(off+xOffset)]);
   batch.quad(mat,points,h,col,scale);
 }
+function paintRailSection(b,{start,end},detail){
+  strip(b,'pave',railXY(start),railXY(end),7.15,.085,'#908887',2);
+  if(detail)for(let d=Math.ceil(start/.8)*.8;d<end;d+=.8)for(const side of [-1,1]){
+    const center=side*railSpacing/2;
+    strip(b,'felt',railXY(d,center-1.13),railXY(d,center+1.13),.20,.14,'#6a5551',1);
+  }
+  for(const off of railGaugeOffsets){
+    const a=railXY(start,off),d=railXY(end,off);
+    strip(b,'plain',a,d,.17,.168,'#514a4d',1);
+    strip(b,'plain',a,d,.084,.198,'#b8afa8',1);
+  }
+}
+function paintRailStation(b,station){
+  const d=station.d,h=railwayPlatformLength/2,signStyle=station.id==='gare-noyon'?16:17;
+  const p=(along,across)=>railXY(d+along,across);
+  for(const side of [-1,1]){
+    const v=side*railwayPlatformOffset,edge=v-side*1.44;
+    strip(b,'pave',p(-h,v),p(h,v),3.2,.13,'#bcb09e',2);
+    strip(b,'plain',p(-h,edge),p(h,edge),.12,.15,'#ffe086');
+    for(const along of [-8,8]){
+      const [x,z]=p(along,v+side*.9);
+      b.box(x,.13,z,.18,3.02,.18,'#446061');
+      const [u,w]=p(along,v+side*.15);
+      b.box(u,.13,w,.14,3.02,.14,'#446061');
+    }
+    strip(b,'felt',p(-9,v+side*.46),p(9,v+side*.46),2.12,3.14,'#54666b');
+    strip(b,'plain',p(-9,v-side*.58),p(9,v-side*.58),.13,3.12,'#d4ad79');
+    for(const facing of [-1,1]){
+      const face=(along,h)=>{const [x,z]=p(along*facing,v+side*.89+facing*.045);return [x,h,z];};
+      b.face('sign'+signStyle,face(-2.6,2.21),face(2.6,2.21),face(2.6,2.91),face(-2.6,2.91),
+        white,[[0,0],[1,0],[1,1],[0,1]]);
+    }
+  }
+  strip(b,'pave',p(-19,-7.55),p(-19,7.55),2.3,.22,'#ae9c88',1);
+}
+function paintMallPylon(b){
+  const point=(u,h,off=0)=>{const [x,z]=montRenaudPoint(u,-3.9+off);return [x,h,z];};
+  for(const u of [-7.9,-6.05]){
+    const [x,,z]=point(u,0);b.box(x,0,z,.16,4.26,.16,'#56535b');
+  }
+  for(let i=0;i<4;i++){
+    const h=1.46+i*.69,style=15-i;
+    for(const facing of [-1,1]){
+      const side=facing*.045,face=(u,y)=>point(-6.975+u*facing,y,side);
+      b.face('sign'+style,face(-.995,h),face(.995,h),face(.995,h+.60),face(-.995,h+.60),
+        white,[[0,0],[1,0],[1,1],[0,1]]);
+    }
+  }
+}
 function disc([x,z],r,sides){
   return Array.from({length:sides},(_,i)=>[x+Math.cos(i*tau/sides)*r,z+Math.sin(i*tau/sides)*r]);
 }
@@ -700,7 +750,7 @@ function addRoad(b,seg,neighbours){
   const pavement=w+Math.min(6,w*.6);
   if(isEnfer){
     const yCurb=.185;
-    const drive=parkingDriveways.get(s.id),crossings=drive?[...neighbours,drive]:neighbours;
+    const drive=parkingDriveways.get(s.id),crossings=drive?[...neighbours,...drive]:neighbours;
     for(const side of [-1,1]){
       const width=(pavement-w)*.5;
       for(const [start,end] of pavementRuns(a,d,side*(pavement+w)*.25,width*.5,crossings)){
@@ -755,6 +805,12 @@ function addRoad(b,seg,neighbours){
 }
 const chunkSize=160;
 function key(x,z){return Math.floor(x/chunkSize)+','+Math.floor(z/chunkSize);}
+const railChunks=new Map();
+for(const section of railSections){
+  const id=key(section.x,section.y);
+  if(!railChunks.has(id))railChunks.set(id,[]);
+  railChunks.get(id).push(section);
+}
 function makeIndex(){
   const groups=new Map(),towers=[],roads=new Map(),bucket=24;
   function get(x,z){const k=key(x,z);if(!groups.has(k))groups.set(k,{buildings:[],segments:[]});return groups.get(k);}
@@ -1038,6 +1094,11 @@ export function createCity3D(scene,{software=false}={}){
     b.road=null;
     if(isEnfer && !target.skyline){
       b.base=0;b.foundation=false;b.drape=true;
+      for(const section of railChunks.get(target.key)||[])paintRailSection(b,section,target.detail);
+      for(const station of railStations){
+        if(key(station.x,station.y)===target.key)paintRailStation(b,station);
+      }
+      if(key(...montRenaudPoint(-7,-3.9))===target.key)paintMallPylon(b);
       for(const {a,b:d,width} of montRenaudPaving){
         if(key((a[0]+d[0])/2,(a[1]+d[1])/2)===target.key)
           strip(b,'pave',a,d,width,.10,'#c7b39d',streetFabric.paving.meters);

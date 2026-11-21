@@ -50,11 +50,13 @@ test('the bundled Noyonnais map opens on usable streets and includes water, terr
   assert.ok(walking);
   assert.equal(SPAWN.key,'noyon');
   assert.equal(districtAt(SPAWN.x,SPAWN.y),'Les Vieilles Mailles');
-  assert.ok(coreDestinations.every(p=>!/Noyon|Pontoise|Couarcy/i.test(p.label)));
-  assert.equal(coreDestinations.length,11);
+  assert.ok(coreDestinations.filter(p=>!p.rail).every(p=>!/Noyon|Pontoise|Couarcy/i.test(p.label)));
+  const stations=coreDestinations.filter(p=>p.rail);
+  assert.deepEqual(stations.map(p=>p.label),['Halte de l’Oise','Gare de Noyon']);
+  assert.equal(coreDestinations.length,13);
   for(const point of coreDestinations){
     assert.equal(blocked(point.x,point.y,.65),false,point.label);
-    assert.ok(streetAt(point.x,point.y));
+    if(!point.rail)assert.ok(streetAt(point.x,point.y));
   }
   const pontoise=coreDestinations.find(p=>p.key==='pontoise');
   assert.ok(Math.hypot(SPAWN.x-pontoise.x,SPAWN.y-pontoise.y)>4_000);

@@ -229,7 +229,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     resize(state.cameraConfig?.fov);inFrame++;
     const {p,car,yaw,pitch,destroyed}=state;
     const model=car?vehicleSpec(car.type):null;
-    const cockpit=!!car&&!isAircraft(car.type)&&!state.passengerView&&state.cameraConfig?.mode==='driver';
+    const cockpit=!!car&&!isAircraft(car.type)&&car.type!=='train'&&!state.passengerView&&state.cameraConfig?.mode==='driver';
     const rig=followCamera(state,dt,time),{ground,reset:snap}=rig;
     camX=rig.x;camY=rig.y;
     camera.position.set(rig.x,rig.z,rig.y);

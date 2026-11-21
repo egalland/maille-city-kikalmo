@@ -204,6 +204,7 @@ function onState(next){
   state={...state,...next};
   const drivingNow=Boolean(state.inVehicle&&!state.passenger);
   $('#scene').toggleAttribute('data-passenger',Boolean(state.passenger));
+  $('#scene').toggleAttribute('data-train',Boolean(state.train));
   if(wasDriving!==drivingNow){stopStick();$('#scene').toggleAttribute('data-driving',drivingNow);}
   if(wasFlying!==Boolean(state.piloting)){
     driving.release();showFlightControls(Boolean(state.piloting));
@@ -211,6 +212,7 @@ function onState(next){
   driving.setActive(drivingNow&&state.lifeState!=='down');
   $('#traversalShortcut').hidden=Boolean(state.inVehicle);
   $('#handbrakeShortcut').hidden=!drivingNow||Boolean(state.inAircraft);
+  $('#handbrakeShortcut').lastChild.textContent=state.train?' Frein d’urgence · R pour inverser':' Frein à main';
   $('#district').textContent=state.district;
   const street=state.street||'';
   $('#street').textContent=street===state.district?'':street;
@@ -218,11 +220,14 @@ function onState(next){
   const altitude=$('#flightAltimeter');
   altitude.hidden=!state.inAircraft;
   if(!altitude.hidden)altitude.textContent=Math.round(state.flightHeight)+' m / sol';
-  $('#carSpeed').textContent=(state.speed||0)+' km/h'+(state.gear==null||state.piloting?'':' · '+(state.gear<0?'R':'D'+state.gear));
+  $('#carSpeed').textContent=(state.speed||0)+' km/h'+(state.gear==null||state.piloting||state.train?'':' · '+(state.gear<0?'R':'D'+state.gear));
   $('#vehicleName').textContent=state.vehicleName||'Au volant';
-  $('#parkingHint').hidden=!state.canPark;
+  const driveHint=$('#parkingHint'),atPlatform=state.train&&state.railStation&&state.speed===0;
+  driveHint.hidden=!state.canPark&&!state.train;
+  driveHint.textContent=state.train?(atPlatform?state.railStation+' · E pour descendre':state.railDestination+' · '+state.railDistance+' m'):
+    'E · Se garer et sortir';
   const condition=$('#chassisStatus'),integrity=Math.round(state.vehicleHealth??100);
-  condition.textContent=integrity===0?'En panne':'Carrosserie · '+integrity+' %';
+  condition.textContent=state.train?'↑ Traction · ↓ Frein · R Inverser':integrity===0?'En panne':'Carrosserie · '+integrity+' %';
   const wear=chassisStage(integrity);
   condition.dataset.damaged=wear>=2?'severe':wear===1?'worn':'';
   const ride=$('#ride');
@@ -236,6 +241,10 @@ function onState(next){
   passengerExit.hidden=!state.passenger;
   if(state.passenger)passengerExit.textContent=state.canBail||state.canBailRoad?'Sauter':'Sortir';
   const exit=$('#driveExit');
+  const reverser=$('#trainReverse');reverser.hidden=!state.train;reverser.disabled=!state.canReverseTrain;
+  const pedal=$('[data-drive="brake"]');
+  pedal.setAttribute('aria-label',state.train?'Freiner le train':'Freiner puis reculer à l’arrêt');
+  pedal.querySelector('span').textContent=state.train?'Frein':'Frein · Recul';
   exit.querySelector('span').textContent=state.canPark?'Se garer':state.canBail||state.canBailRoad?'Sauter':'Sortir';
   exit.setAttribute('aria-label',state.canPark?'Se garer et sortir':state.canBail?'Sauter en vol':state.canBailRoad?'Sauter du véhicule en marche':'Sortir du véhicule');
   ride.title=$('#rideShortcut').title=rideLabel;
@@ -324,6 +333,7 @@ stick.onpointerup=stick.onpointercancel=stick.onlostpointercapture=stopStick;
 $('#recenter').onpointerdown=e=>{e.preventDefault();game.action('recenter');};
 $('#ride').onpointerdown=e=>{e.preventDefault();game.action('vehicle');};
 $('#driveExit').onclick=()=>{driving.release();game.action('vehicle');};
+$('#trainReverse').onclick=()=>{driving.release();game.action('reverseTrain');};
 $('#driveLamps').onclick=()=>game.action('headlamps');
 $('#driveHorn').onclick=()=>game.action('horn');
 $('#driveCamera').setAttribute('aria-label','Changer la caméra de conduite');
