@@ -19,7 +19,7 @@ import {enferStops,enferDistrict,enferStreet} from './enfer-places.js';
 import { baseTerrainHeight, terrainHeight, buildingGround, waterLevel, roadHeight, aircraftDeck } from './terrain-height.js';
 import {workshopId,workshopColliders} from './workshop.js';
 import {storeByBuilding,shopColliders} from './enfer-retail.js';
-import {facilitySolids,inMarketDistrict} from './mont-renaud.js';
+import {facilitySolids,inMarketDistrict,marketPaving,marketLotsGround} from './mont-renaud.js';
 import {railStations,railSections,railXY,railSpacing,railDistance,railPoint} from './enfer-rail.js';
 import {createRailCrossings} from './rail-crossings.js';
 import {airfields} from './airfield.js';
@@ -725,10 +725,12 @@ function putProp(path,side,index,type,p){
   if(destinations.some(d=>Math.hypot(x-d.x,y-d.y)<8))return;
   if(isEnfer&&parkingLots.some(lot=>{
     const dx=x-lot.x,dy=y-lot.y;
-    if(dx*dx+dy*dy>14*14)return false;
+    if(!lot.mall&&dx*dx+dy*dy>14*14)return false;
     const c=Math.cos(lot.angle),s=Math.sin(lot.angle),along=Math.abs(dx*c+dy*s),across=-dx*s+dy*c;
+    if(lot.mall)return along<lot.width/2+r&&Math.abs(across)<lot.depth/2+r;
     return along<7.3+r&&Math.abs(across)<5.05+r || along<3.4+r&&across<0&&across>-8.4-r;
   }))return;
+  if(isEnfer&&inMarketDistrict(x,y)&&marketPaving.some(way=>way.kind!=='paint'&&lineDist2(x,y,way.a,way.b)<sq(way.width/2+r)))return;
   const nearArc=Math.hypot(x-monuments.arc.x,y-monuments.arc.y);
   if(!isEnfer&&(nearArc<128||Math.hypot(x-monuments.arche.x,y-monuments.arche.y)<58))return;
   if(testPose(x,y,{radius:Math.max(r,.7)},false))return;
@@ -1159,6 +1161,9 @@ function drawBaseMap(ctx,x,y,radius,scale,full){
   ctx.save();ctx.clip();
   for(const park of mapParks.area(x,y,radius))drawSolid(ctx,park,'#47685d');
   const shapes=terrain.area(x,y,radius),paths=mapStreets.area(x,y,radius);
+  if(isEnfer)for(const area of marketLotsGround){
+    if(Math.hypot(x-area.x,y-area.y)<radius+68)drawSolid(ctx,area,'#556466');
+  }
   for(const s of shapes){
     if(s.type==='water')drawSolid(ctx,s,mapPalette.water);
     else if(s.type==='building'&&!s.minHeight)drawSolid(ctx,s,mapPalette[s.kind]||mapPalette.building);
@@ -1180,6 +1185,11 @@ function drawBaseMap(ctx,x,y,radius,scale,full){
     }
   }
   if(isEnfer){
+    ctx.strokeStyle='#8d8985';
+    for(const way of marketPaving){
+      if(way.kind!=='road'||Math.hypot(x-way.x,y-way.y)>radius+35)continue;
+      ctx.lineWidth=way.width*.75;ctx.beginPath();ctx.moveTo(...way.a);ctx.lineTo(...way.b);ctx.stroke();
+    }
     ctx.globalAlpha=1;ctx.strokeStyle='#bfaa95';ctx.lineWidth=Math.max(.95/scale,.56);
     const tracks=scale>=.32?[-railSpacing/2,railSpacing/2]:[0];
     for(const offset of tracks){

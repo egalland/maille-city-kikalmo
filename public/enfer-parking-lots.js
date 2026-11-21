@@ -14,14 +14,14 @@ export function lotPoint(lot,along,across){
 }
 export function parkingMarkings(lot){
   if(lot.mall){
-    const halfDepth=lot.depth/2,halfWidth=lot.columns*3.3/2;
+    const halfWidth=lot.columns*lot.bayWidth/2;
     return (lot.rows===2?[-1,1]:[1]).flatMap(side=>{
       const line=(u,v)=>lotPoint(lot,u,v*side);
-      const edge=halfDepth-.35;
+      const edge=lot.aisle/2+lot.bayDepth;
       return [[line(-halfWidth,edge),line(halfWidth,edge)],
         ...Array.from({length:lot.columns+1},(_,i)=>{
-          const u=-halfWidth+i*3.3;
-          return [line(u,edge-4.87),line(u,edge)];
+          const u=-halfWidth+i*lot.bayWidth;
+          return [line(u,edge-lot.bayDepth),line(u,edge)];
         })];
     });
   }
@@ -35,15 +35,15 @@ export function parkingMarkings(lot){
 export function lotSpaces(lot){
   if(lot.mall)return (lot.rows===2?[-1,1]:[1]).flatMap((side,row)=>
     Array.from({length:lot.columns},(_,column)=>{
-      const [x,y]=lotPoint(lot,(column+.5-lot.columns/2)*3.3,side*(lot.depth/2-2.8));
-      return {id:lot.id+'-'+row+'-'+column,x,y,angle:lot.angle+side*Math.PI/2};
+      const [x,y]=lotPoint(lot,(column+.5-lot.columns/2)*lot.bayWidth,side*(lot.aisle+lot.bayDepth)/2);
+      return {id:lot.id+'-bay-'+row+'-'+column,x,y,angle:lot.angle+side*Math.PI/2};
     }));
   return [-4.95,-1.65,1.65,4.95].map((along,index)=>{
     const [x,y]=lotPoint(lot,along,2.22);
     return {id:lot.id+'-'+index,x,y,angle:lot.angle+Math.PI/2};
   });
 }
-export function parkingSign(lot){return lotPoint(lot,lot.mall?-lot.width/2+1.15:-5.86,lot.mall?-3.6:-4.26);}
+export function parkingSign(lot){return lotPoint(lot,lot.mall?-lot.width/2-1.1:-5.86,lot.mall?lot.aisle/2+.55:-4.26);}
 const spaces=parkingLots.flatMap(lot=>lotSpaces(lot).map(bay=>({...bay,lot})));
 export const parkingLease=7*24*60*60*1000;
 export function parkingBay(p,type){
@@ -52,8 +52,9 @@ export function parkingBay(p,type){
   return spaces.find(bay=>{
     const delta=p.angle-bay.angle,dx=p.x-bay.x,dy=p.y-bay.y;
     const c=Math.cos(bay.angle),s=Math.sin(bay.angle),a=Math.abs(Math.sin(delta)),b=Math.abs(Math.cos(delta));
-    return a<.47&&Math.abs(dx*c+dy*s)+spec.halfLength*b+spec.halfWidth*a<=2.64&&
-      Math.abs(-dx*s+dy*c)+spec.halfWidth*b+spec.halfLength*a<=1.66;
+    const maxLength=bay.lot.mall?bay.lot.bayDepth/2:2.64,maxWidth=bay.lot.mall?bay.lot.bayWidth/2:1.66;
+    return a<.47&&Math.abs(dx*c+dy*s)+spec.halfLength*b+spec.halfWidth*a<=maxLength&&
+      Math.abs(-dx*s+dy*c)+spec.halfWidth*b+spec.halfLength*a<=maxWidth;
   })||null;
 }
 export const parkingDriveways=new Map();

@@ -5,7 +5,7 @@ import {vehicleSpec,vehicleDoorways} from '../public/vehicle-types.js';
 import {careerPlaces} from '../public/career-catalog.js';
 import {parkingLots,lotPoint,lotSpaces,parkingBay} from '../public/enfer-parking-lots.js';
 import {neighborhoodShops,namedFronts} from '../public/enfer-frontage.js';
-import {driveBays,marketDrive,marketPoint,marketParking,atDriveBay} from '../public/mont-renaud.js';
+import {driveBays,marketDrive,marketPoint,marketParking,atDriveBay,driveApproach,driveExit,fuelApproach,fuelExit,fuelLanes,marketGalleryCrossing} from '../public/mont-renaud.js';
 import {atShopCounter,retailStores} from '../public/enfer-retail.js';
 
 test('street parking is sparse, clear of traffic, accessible and stationary between visits',async t=>{
@@ -57,6 +57,28 @@ test('street parking is sparse, clear of traffic, accessible and stationary betw
     assert.equal(contactAt(shop.x,shop.y,{radius:.48}),null,shop.name);
   }
   assert.ok(marketParking.flatMap(lotSpaces).length>=60);
+  const sedan=vehicleSpec('sedan');
+  const checkLane=(points,label)=>{
+    for(let i=1;i<points.length;i++){
+      const [x,y]=points[i-1],[u,v]=points[i];
+      const angle=Math.atan2(v-y,u-x),steps=Math.max(1,Math.ceil(Math.hypot(v-y,u-x)*2));
+      for(let j=0;j<=steps;j++){
+        const t=j/steps;
+        assert.equal(contactAt(x+(u-x)*t,y+(v-y)*t,{angle,halfLength:sedan.halfLength,halfWidth:sedan.halfWidth}),null,label);
+      }
+    }
+  };
+  for(const lot of marketParking){
+    assert.ok(lot.aisle>=7&&lot.bayWidth>=2.7&&lot.bayDepth>=5.2);
+    checkLane([-1,1].map(side=>lotPoint(lot,side*lot.width/2,0)),lot.id);
+  }
+  checkLane(driveApproach,'File d’accès au Drive');
+  checkLane(driveExit,'Sortie du Drive');
+  checkLane(fuelApproach,'Entrée de la station');
+  checkLane(fuelExit,'Sortie de la station');
+  for(const [i,lane] of fuelLanes.entries())checkLane(lane,'Piste carburant '+(i+1));
+  const [[x,y],[u,v]]=marketGalleryCrossing;
+  for(let j=0;j<=20;j++)assert.equal(contactAt(x+(u-x)*j/20,y+(v-y)*j/20,{radius:.4}),null,'Traversée de la galerie');
   for(const bay of driveBays){
     assert.equal(atDriveBay({...bay,speed:0}),bay);
     assert.equal(atDriveBay({...bay,speed:5}),null);

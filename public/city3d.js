@@ -9,7 +9,7 @@ import {pavementRuns} from './curb-clearance.js';
 import {pavedStreetWidth,streetHasCentreMarking,streetVerge} from './street-scale.js';
 import {frontageSigns,frontageStyle,namedFronts} from './enfer-frontage.js';
 import {railXY,railSections,railStations,railSpacing,railGaugeOffsets,railwayPlatformOffset,railwayPlatformLength} from './enfer-rail.js';
-import {facilityShelters,marketPoint,marketDrive,driveBays,marketSigns,marketForecourt,marketPaving} from './mont-renaud.js';
+import {facilityShelters,marketPoint,marketDrive,driveBays,marketSigns,marketForecourt,marketPaving,marketLotsGround} from './mont-renaud.js';
 import {parkingLots,lotPoint,parkingWidth,parkingDepth,parkingMarkings,parkingSign,parkingDriveways} from './enfer-parking-lots.js';
 import {workshopId,workshopEdge,bayDoor,headroom} from './workshop.js';
 import {storeByBuilding,shopOpening,shopFixture} from './enfer-retail.js';
@@ -842,6 +842,23 @@ function paintMarketSign(b,site){
     b.face('sign'+site.style,p(-site.span/2,low),p(site.span/2,low),p(site.span/2,high),p(-site.span/2,high),white);
   }
 }
+function paintMarketSurface(b,poly,h,tint){
+  const scale=streetFabric.road.meters;
+  const span=Math.max(...poly.map(([x,z])=>Math.hypot(x-poly[0][0],z-poly[0][1])));
+  const levels=Math.max(0,Math.ceil(Math.log2(span/6)));
+  function triangle(a,d,f,level){
+    if(level===0){
+      const points=[a,d,f];
+      b.tri('road',...points.map(([x,z])=>[x,h,z]),tint,points.map(([x,z])=>[x/scale,z/scale]));
+      return;
+    }
+    const mid=(p,q)=>[(p[0]+q[0])*.5,(p[1]+q[1])*.5];
+    const ad=mid(a,d),df=mid(d,f),fa=mid(f,a);
+    triangle(a,ad,fa,level-1);triangle(ad,d,df,level-1);
+    triangle(fa,df,f,level-1);triangle(ad,df,fa,level-1);
+  }
+  for(const [i,j,k] of triIndex(poly))triangle(poly[k],poly[j],poly[i],levels);
+}
 function paintMarketPaving(b,{a,d,width,kind}){
   if(kind==='crosswalk'){
     const dx=d[0]-a[0],dz=d[1]-a[1],len=Math.hypot(dx,dz);
@@ -850,10 +867,15 @@ function paintMarketPaving(b,{a,d,width,kind}){
       strip(b,'plain',[x-dz/len*width*.5,z+dx/len*width*.5],
         [x+dz/len*width*.5,z-dx/len*width*.5],.42,.156,'#e8e1cc');
     }
+  }else if(kind==='road'){
+    const len=Math.hypot(d[0]-a[0],d[1]-a[1]);
+    if(len<.04)return;
+    const u=(a[1]-d[1])*width/(2*len),v=(d[0]-a[0])*width/(2*len);
+    paintMarketSurface(b,[[a[0]+u,a[1]+v],[d[0]+u,d[1]+v],[d[0]-u,d[1]-v],[a[0]-u,a[1]-v]],.138,'#e5dfd8');
   }else{
     const mark=kind==='paint',walk=kind==='walk';
-    strip(b,mark?'plain':'pave',a,d,width,mark?.161:walk?.127:.089,
-      mark?'#ece4cc':walk?'#c7b39d':'#777b84',streetFabric.paving.meters);
+    strip(b,mark?'plain':'pave',a,d,width,mark?.189:.156,
+      mark?'#ece4cc':'#c7b39d',streetFabric.paving.meters);
   }
 }
 function disc([x,z],r,sides){
@@ -1228,6 +1250,9 @@ export function createCity3D(scene,{software=false}={}){
         if(key(station.x,station.y)===target.key)paintRailStation(b,station);
       }
       if(key(-1635,1053)===target.key)b.flat('pave',marketForecourt,.067,'#a5a6aa',streetFabric.paving.meters);
+      for(const {x,y,poly} of marketLotsGround){
+        if(key(x,y)===target.key)paintMarketSurface(b,poly,.114,'#dfd9d3');
+      }
       for(const {a,b:d,width,kind,x,y} of marketPaving)
         if(key(x,y)===target.key)paintMarketPaving(b,{a,d,width,kind});
       for(const shelter of facilityShelters)if(key(shelter.site.x,shelter.site.y)===target.key)paintMarketShelter(b,shelter);
@@ -1236,9 +1261,10 @@ export function createCity3D(scene,{software=false}={}){
         if(key(lot.x,lot.y)!==target.key)continue;
         const at=(u,v)=>lotPoint(lot,u,v);
         const width=lot.width||parkingWidth,depth=lot.depth||parkingDepth;
-        strip(b,'pave',at(-width/2,0),at(width/2,0),depth,.11,'#999ba0',streetFabric.paving.meters);
+        if(lot.mall)paintMarketSurface(b,[at(-width/2,-depth/2),at(width/2,-depth/2),at(width/2,depth/2),at(-width/2,depth/2)],.163,'#ebe4dc');
+        else strip(b,'pave',at(-width/2,0),at(width/2,0),depth,.11,'#999ba0',streetFabric.paving.meters);
         if(!lot.mall)strip(b,'pave',at(0,-6.55),at(0,-4.6),6.4,.12,'#baa99b',streetFabric.paving.meters);
-        for(const [a,d] of parkingMarkings(lot))strip(b,'plain',a,d,.09,.133,'#e4d5b5',1);
+        for(const [a,d] of parkingMarkings(lot))strip(b,'plain',a,d,.09,lot.mall?.195:.133,'#e4d5b5',1);
         const [sx,sz]=parkingSign(lot),c=Math.cos(lot.angle),s=Math.sin(lot.angle);
         b.box(sx,.68,sz,.075,1.47,.075,'#46515e');
         const sign=(along,h)=>[sx+along*c,h,sz+along*s];

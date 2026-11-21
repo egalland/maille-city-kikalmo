@@ -44,13 +44,13 @@ export const neighborhoodShops=[
   {id:'glycines',name:'Fleuriste · Les Glycines',building:'317662645',edge:9,style:10,x:138.96,y:-204.71},
   {id:'pages-cousues',name:'Librairie · Les Pages Cousues',building:'317662704',edge:6,style:11,x:55.54,y:-116.77},
   commercialStore('bobines','317656059','Auchan · Mont Renaud',12,34,[-1661.8,1077.8],[-1637.4,1019.2],true),
-  commercialStore('action-noyon','317656053','Action · Mont Renaud',13,0,[-1527.8,1000],[-1523.3,1043.9],true),
+  commercialStore('action-noyon','317656069','Action · Mont Renaud',13,0,[-1798.4,1075.1],[-1847.7,1053.9],true),
   commercialStore('kiabi-noyon','317656086','Kiabi · Mont Renaud',14,0,[-1526.5,1072.1],[-1519.9,1099.3],true),
   commercialStore('sport-noyon','317656056','Intersport · Mont Renaud',15,0,[-1730.4,1193.6],[-1744.7,1227.7],false)
 ];
 const satelliteFronts=[
   ['317656105',{style:22,edge:0}],['2206464950',{style:23,edge:0}],
-  ['317656066',{style:24,edge:2}],['317656007',{style:25,edge:0}]
+  ['317656053',{style:24,edge:0}],['317656007',{style:25,edge:0}]
 ];
 export const namedFronts=new Map([...careerFronts,...satelliteFronts,...neighborhoodShops.map(shop=>[shop.building,shop])]);
 export function frontageStyle(building){

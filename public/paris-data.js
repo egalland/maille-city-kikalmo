@@ -54,9 +54,8 @@ export const enclosureRows=isEnfer?[
   ...(await import('./enfer-cadastre-borders.js')).cadastralBorders
 ]:[];
 if(isEnfer){
-  // The frontage shell and the survey block for the petrol canopy are
-  // replaced by the modeled entrance and open pump shelter.
-  const replaced=new Set(['317656048','317656063']);
+  // The attached frontage shells and petrol canopy are modeled separately.
+  const replaced=new Set(['317656048','317656063','317656070']);
   for(let i=buildings.length-1;i>=0;i--)if(replaced.has(buildings[i].id))buildings.splice(i,1);
   buildings.push(...railStationBuildings);
   assignBuiltUpStreets(streets,buildings);

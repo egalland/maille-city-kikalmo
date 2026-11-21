@@ -2,7 +2,7 @@ import {createWorldCamera} from './world-camera.js';
 import {frontageSigns,namedFronts,paintFrontageSign} from './enfer-frontage.js';
 import {railXY,railSections,railStations,railGaugeOffsets,railwayPlatformOffset,railwayPlatformLength} from './enfer-rail.js';
 import {storeByBuilding,shopOpening,shopFixture} from './enfer-retail.js';
-import {facilityShelters,marketPoint,marketDrive,driveBays,marketSigns,marketForecourt,marketPaving} from './mont-renaud.js';
+import {facilityShelters,marketPoint,marketDrive,driveBays,marketSigns,marketForecourt,marketPaving,marketLotsGround} from './mont-renaud.js';
 import {parkingLots,lotPoint,parkingWidth,parkingDepth,parkingMarkings,parkingSign} from './enfer-parking-lots.js';
 import {heritageByFootprint,heritagePlinth} from './enfer-heritage.js';
 import {heritageModel} from './heritage-models.js';
@@ -534,6 +534,7 @@ export function createCanvasView(canvas,spawn,onNotice){
     }
     function circle(x,y,r,color){mask.fillStyle=color;mask.beginPath();mask.arc(x,y,r,0,tau);mask.fill();}
     fillArea(parks,'#800000');fillArea(waters,'#c00000');
+    if(isEnfer)fillArea(marketLotsGround.map(a=>({a,bounds:{x:a.x,y:a.y,r:74}})),'#400000');
     const arc=monuments.arc,arcVisible=!isEnfer&&Math.hypot(cx-arc.x,cy-arc.y)<radius*1.5+115;
     if(arcVisible)circle(arc.x,arc.y,115,'#400000');
     const local=spatial.ways.around(cx,cy,radius);
@@ -987,6 +988,9 @@ export function createCanvasView(canvas,spawn,onNotice){
     for(const seg of nearWays)if(seg.w>=8&&seen(seg.bounds,streetViewRange)&&!seen(seg.bounds,230))
       roadRibbon(seg,0,'#8c7f81',0,seg.a,seg.b);
     if(atArc)ellipseGround(arc.x,arc.y,115,0,streetFabric.road.color);
+    if(isEnfer)for(const {x,y,poly} of marketLotsGround){
+      if(seen({x,y,r:65},streetViewRange))poly3(poly.map(p=>[...p,.061]),'#919397');
+    }
     for(const seg of visibleWays){
       const verge=streetVerge(seg.way);
       if(verge||seg.way.kind==='path')roadRibbon(seg,verge,seg.way.builtUp===false&&!seg.way.bridge&&seg.way.kind!=='path'?'#a69b8b':'#c7af95');
