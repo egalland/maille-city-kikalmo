@@ -1,3 +1,5 @@
+import {pavedStreetWidth} from './street-scale.js';
+
 // Build longitudinal profiles on the surveyed road network. XY and chainage are metres.
 const cellSize=32,clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const smooth=t=>t*t*(3-2*t);
@@ -31,7 +33,7 @@ function projection(s,x,y){
 function profileFor(road){
   let p=profiles.get(road);
   if(p)return p;
-  p={length:0,sections:[],approaches:[],width:road.w*.5+Math.min(3,road.w*.3)};
+  p={length:0,sections:[],approaches:[],width:pavedStreetWidth(road)*.5};
   for(let i=1;i<road.path.length;i++){
     const s=section(road.path[i-1],road.path[i],p.length,p);
     p.sections.push(s);p.length+=s.length;
@@ -158,7 +160,7 @@ export function selectBridgeDecks(streets,water,ground){
     const p=profiles.get(road);
     for(let i=1;i<road.path.length;i++){
       if(p?.sections[i-1].active)continue;
-      const a=road.path[i-1],b=road.path[i],width=road.w*.5+Math.min(3,road.w*.3);
+      const a=road.path[i-1],b=road.path[i],width=pavedStreetWidth(road)*.5;
       let s;
       visitCells(a,b,width+2,id=>{
         if(!cells.has(id))return;

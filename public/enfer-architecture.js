@@ -29,7 +29,7 @@ export function enferWall(index,floors=1,entry=false){
     if(index===3){
       for(let x=0;x<96;x+=12){rect(x,y,1.5,96,stitch);rect(x+2,y,1,96,'#b2937c');}
     }else{
-      const height=index<2?7:13,width=index<2?19:37;
+      const height=index<2?3:13,width=index<2?8:37;
       for(let row=0;row<96;row+=height){
         rect(0,y+row,96,index<2?.78:1,stitch);
         for(let x=(row/height%2)*width/2;x<96;x+=width){
@@ -79,8 +79,13 @@ export function enferWall(index,floors=1,entry=false){
 }
 
 
+export function enferFacadeFloors(style,eaves,roof){
+  if(style===4)return 1;
+  return roof?.floors??Math.max(1,Math.min(10,Math.round(eaves/2.75)));
+}
+
 // Keep IGN footprints, including angled party walls and small extensions.
-export function enferRoof(poly,height,style){
+export function enferRoof(poly,height,style,residential=false){
   if(style===4||poly.length<3||height<2.6)return null;
   let along=null,largest=0;
   for(let i=0;i<poly.length;i++){
@@ -91,9 +96,19 @@ export function enferRoof(poly,height,style){
   const cross=([x,y])=>-along[1]*x+along[0]*y,projected=poly.map(cross);
   const min=Math.min(...projected),max=Math.max(...projected),width=max-min;
   if(width<1.85||width>(style===3?24:18))return null;
-  const middle=(max+min)*.5,fall=Math.min(3.25,height*.35,width*.37);
+  const middle=(max+min)*.5;
+  let fall=Math.min(3.25,height*.35,width*.37),floors;
+  if(residential&&style<3&&height>=3.8){
+    // Reserve space for the attic while keeping doors and storeys at human scale.
+    const minStorey=2.55,maxStorey=3.2,minRoof=Math.min(1.05,fall);
+    const preferredFloors=Math.round((height-1.65)/2.85);
+    const floorsBelowRoof=Math.floor((height-minRoof)/minStorey);
+    floors=Math.min(10,Math.max(1,Math.min(preferredFloors,floorsBelowRoof)));
+    const eaves=Math.max(floors*minStorey,Math.min(floors*maxStorey,height-fall));
+    fall=Math.max(minRoof,Math.min(3.6,height-eaves));
+  }
   const ridge=p=>cross(p)-middle;
-  return {wall:height-fall,ridge,top:p=>height-fall*Math.min(1,Math.abs(ridge(p))/(width*.5))};
+  return {wall:height-fall,floors,ridge,top:p=>height-fall*Math.min(1,Math.abs(ridge(p))/(width*.5))};
 }
 
 export function roofPitch(points,ridge,side){

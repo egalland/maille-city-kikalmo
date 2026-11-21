@@ -17,6 +17,7 @@ import {paintKnit as knitArchitecture} from './wool-art.js';
 import {createBleedFibers} from './bleed-fibers.js';
 import {fiberLifetime,impactFibers} from './puppet-combat.js';
 import {gradedRoad} from './enfer-bridges.js';
+import {pavedStreetWidth,streetHasCentreMarking,streetVerge} from './street-scale.js';
 import {baseTerrainHeight,terrainHeight,terrainGradient,roadHeight,buildingGround,waterLevel,walkingPose} from './terrain-height.js';
 import {terracePanels} from './street-terraces.js';
 import {propDebris,propWearProfile,propWearStage,trackPropWear} from './prop-wear.js';
@@ -25,7 +26,7 @@ import {isAircraft} from './airfield.js';
 import { vehicleSpec } from './vehicle-types.js';
 // Perspective software renderer for browsers without a WebGL 2 context.
 // It projects the same metre-space data, props, actors and camera boom as the GPU view.
-import {enferStyle,enferStyles,enferWall,enferRoof,roofPitch} from './enfer-architecture.js';
+import {enferStyle,enferStyles,enferWall,enferRoof,enferFacadeFloors,roofPitch} from './enfer-architecture.js';
 import {buildings,streets,water,green,isEnfer} from './paris-data.js';
 import {enclosureStrip} from './enclosure-textiles.js';
 import {monuments,cameraDistance,nearbyProps,nearbyEnclosures,swimmingSurface} from './paris-world.js';
@@ -540,7 +541,7 @@ export function createCanvasView(canvas,spawn,onNotice){
       mask.strokeStyle=curb?'#000':'#400000';mask.lineCap='butt';
       for(const s of local){
         if(!curb&&s.way.kind==='path')continue;
-        mask.lineWidth=s.w+(curb?2.7:0);mask.beginPath();mask.moveTo(...s.a);mask.lineTo(...s.b);mask.stroke();
+        mask.lineWidth=curb?pavedStreetWidth(s.way):s.w;mask.beginPath();mask.moveTo(...s.a);mask.lineTo(...s.b);mask.stroke();
       }
     }
     if(arcVisible)circle(arc.x,arc.y,35.2,'#000');
@@ -667,8 +668,9 @@ export function createCanvasView(canvas,spawn,onNotice){
     }
     const enferIndex=isEnfer?enferStyle(o):-1,local=enferStyles[enferIndex];
     const glass=!local&&(H>48||(bounds.x< -135&&bounds.y< -625&&H>24));
-    const pitched=local&&enferRoof(poly,H,enferIndex);
-    const eave=pitched?.wall??(glass?H-.7:H>7.5?H-Math.min(3.25,H*.15):H-.65);
+    const pitched=local&&enferRoof(poly,H,enferIndex,o.kind==='residential'||o.kind==='mixed');
+    const eave=local?pitched?.wall??H:glass?H-.7:H>7.5?H-Math.min(3.25,H*.15):H-.65;
+    const localFloors=local&&enferFacadeFloors(enferIndex,eave,pitched);
     const frontage=isEnfer&&namedFronts.get(String(o.id));
     const store=isEnfer&&!skyline&&storeByBuilding.get(String(o.id));
     if(store){
@@ -751,7 +753,7 @@ export function createCanvasView(canvas,spawn,onNotice){
         const bays=clamp(Math.round(length/(local?.bay||6.6)),1,40),count=d>85?Math.min(3,Math.ceil(bays/4)):Math.min(16,bays),floors=clamp(Math.round((eave-3)/3.2),1,10);
         const repeats=clamp(Math.round(bays/count),1,10);
         function picture(k,detail){
-          if(local)return repeatFacade(enferWall(enferIndex,enferIndex===4?1:clamp(Math.round(eave/2.75),1,10),k===0&&enferIndex<3&&(seed+j)%3===0&&length>3),repeats);
+          if(local)return repeatFacade(enferWall(enferIndex,localFloors,k===0&&enferIndex<3&&(seed+j)%3===0&&length>3),repeats);
           const style=detail?(seed+j*3+k*5)%8:seed;
           return repeatFacade(facade(style,floors,shade,glass,detail),repeats);
         }
@@ -985,12 +987,15 @@ export function createCanvasView(canvas,spawn,onNotice){
     for(const seg of nearWays)if(seg.w>=8&&seen(seg.bounds,streetViewRange)&&!seen(seg.bounds,230))
       roadRibbon(seg,0,'#8c7f81',0,seg.a,seg.b);
     if(atArc)ellipseGround(arc.x,arc.y,115,0,streetFabric.road.color);
-    for(const seg of visibleWays)roadRibbon(seg,1.35,'#c7af95',0,seg.a,seg.b);
+    for(const seg of visibleWays){
+      const verge=streetVerge(seg.way);
+      if(verge||seg.way.kind==='path')roadRibbon(seg,verge,seg.way.builtUp===false&&!seg.way.bridge&&seg.way.kind!=='path'?'#a69b8b':'#c7af95');
+    }
     for(const seg of visibleWays)if(seg.way.kind!=='path')
       roadRibbon(seg,0,seg.w>7?streetFabric.road.color:'#79747c',0,seg.a,seg.b);
 
     for(const s of visibleWays){
-      if(s.way.kind==='path'||s.w<5.0||s.len<6||!seen(s.bounds,135))continue;
+      if(!streetHasCentreMarking(s.way)||s.len<6||!seen(s.bounds,135))continue;
       for(let d=2;d+1<s.len;d+=9){
         const f0=d/s.len,f1=Math.min(1,(d+2.5)/s.len),dx=s.b[0]-s.a[0],dy=s.b[1]-s.a[1];
         roadRibbon(s,-s.w*.5+.088,'#e1ceb1',0,[s.a[0]+dx*f0,s.a[1]+dy*f0],[s.a[0]+dx*f1,s.a[1]+dy*f1]);}
@@ -1114,10 +1119,11 @@ export function createCanvasView(canvas,spawn,onNotice){
     }
     if(isEnfer)for(const s of visibleWays){
       if(!s.way.bridge)continue;
-      roadRibbon(s,.95,'#c6ad92',0,s.a,s.b);
+      const verge=streetVerge(s.way);
+      roadRibbon(s,verge,'#c6ad92',0,s.a,s.b);
       roadRibbon(s,0,'#746f76',0,s.a,s.b);
       for(const sign of [-1,1]){
-        const dx=(s.b[0]-s.a[0])/s.len,dy=(s.b[1]-s.a[1])/s.len,edge=sign*(s.w*.5+.74);
+        const dx=(s.b[0]-s.a[0])/s.len,dy=(s.b[1]-s.a[1])/s.len,edge=sign*(s.w*.5+Math.max(0,verge-.12));
         const a=[s.a[0]-dy*edge,s.a[1]+dx*edge],b=[s.b[0]-dy*edge,s.b[1]+dx*edge];
         const ah=roadHeight(s.way,s.index,...a),bh=roadHeight(s.way,s.index,...b);
         const face=(bottom,top,color)=>poly3([[...a,bottom,ah],[...b,bottom,bh],[...b,top,bh],[...a,top,ah]],color);

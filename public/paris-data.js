@@ -5,6 +5,7 @@ import {bundledSectors} from './sector-crossing.js';
 import {readMapArchive} from './map-archive.js';
 import {marketHedges} from './mont-renaud.js';
 import {railStationBuildings} from './enfer-rail.js';
+import {assignBuiltUpStreets} from './street-scale.js';
 async function readPreset(key) {
   const d=await readMapArchive(key);
   return {
@@ -58,6 +59,7 @@ if(isEnfer){
   const replaced=new Set(['317656048','317656063']);
   for(let i=buildings.length-1;i>=0;i--)if(replaced.has(buildings[i].id))buildings.splice(i,1);
   buildings.push(...railStationBuildings);
+  assignBuiltUpStreets(streets,buildings);
   selectRiverbanks(water);
   selectBridgeDecks(streets,water,baseTerrainHeight);
 }

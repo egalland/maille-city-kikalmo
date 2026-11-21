@@ -6,6 +6,7 @@ import {drawBoundary} from './residential-boundaries.js';
 import {vehicleSpec} from './vehicle-types.js';
 import {nearbySignals,nearbyEnclosures,nearbyParkedCars,railCrossings} from './paris-world.js';
 import {pavementRuns} from './curb-clearance.js';
+import {pavedStreetWidth,streetHasCentreMarking,streetVerge} from './street-scale.js';
 import {frontageSigns,frontageStyle,namedFronts} from './enfer-frontage.js';
 import {railXY,railSections,railStations,railSpacing,railGaugeOffsets,railwayPlatformOffset,railwayPlatformLength} from './enfer-rail.js';
 import {facilityShelters,marketPoint,marketDrive,driveBays,marketSigns,marketForecourt,marketPaving} from './mont-renaud.js';
@@ -24,7 +25,7 @@ import {propWearProfile,propWearStage,trackPropWear} from './prop-wear.js';
 import * as T from './three.js';
 import * as source from './paris-data.js';
 const {buildings,streets,water,isEnfer}=source;
-import {enferStyle,enferStyles,enferRoof,roofPitch} from './enfer-architecture.js';
+import {enferStyle,enferStyles,enferRoof,enferFacadeFloors,roofPitch} from './enfer-architecture.js';
 import {cityMaterials} from './city-materials.js';
 import {famousLandmark,parisLandmarks} from './city-landmarks.js';
 const specialParisIds=new Set(parisLandmarks.flatMap(item=>item.ids));
@@ -508,7 +509,8 @@ function retailFacade(b,a,d,left,right,outward,eaves,store){
 function addEnferBuilding(b,building,poly,detail,skyline,h){
   const index=enferStyle(building),{wall,roof,bay}=enferStyles[index];
   const sections=[poly,...(building.holes||[])];
-  const roofShape=!skyline?enferRoof(poly,h,index):null,eaves=roofShape?.wall??h;
+  const roofShape=!skyline?enferRoof(poly,h,index,building.kind==='residential'||building.kind==='mixed'):null,eaves=roofShape?.wall??h;
+  const floors=enferFacadeFloors(index,eaves,roofShape);
   const mat=skyline?'plain':'enfer'+index;
   const vertex=([x,z],height)=>[x,height,z];
   const venue=namedFronts.get(String(building.id)),garage=String(building.id)===workshopId;
@@ -529,7 +531,7 @@ function addEnferBuilding(b,building,poly,detail,skyline,h){
     for(let i=0;i<ring.length;i++){
       const a=ring[i],d=ring[(i+1)%ring.length],len=Math.hypot(a[0]-d[0],a[1]-d[1]);
       if(len<.15)continue;
-      const bays=Math.max(1,Math.round(len/bay)),floors=index===4?1:Math.max(1,Math.round(eaves/2.75));
+      const bays=Math.max(1,Math.round(len/bay));
       const inset=store?(q=>[q[0]-(d[1]-a[1])*outward/len*.072,q[1]+(d[0]-a[0])*outward/len*.072]):null;
       const entry=detail&&ring===poly&&index<3&&len>3.1&&(i+hash(building.id))%3===0;
       if(garage&&ring===poly&&i===workshopEdge&&!skyline){
@@ -869,12 +871,13 @@ function addRoad(b,seg,neighbours){
     strip(b,'pave',a1,d1,Math.max(1.45,w),.027,'#f5e9d2',streetFabric.paving.meters);return;
   }
   const y=.074;
-  const pavement=w+Math.min(6,w*.6);
-  if(isEnfer){
+  const pavement=pavedStreetWidth(s),verge=streetVerge(s);
+  const sidewalk=verge>0&&s.kind!=='path'&&(s.builtUp!==false||bridge);
+  if(isEnfer&&sidewalk){
     const yCurb=.185;
     const drive=parkingDriveways.get(s.id),crossings=drive?[...neighbours,...drive]:neighbours;
     for(const side of [-1,1]){
-      const width=(pavement-w)*.5;
+      const width=verge;
       for(const [start,end] of pavementRuns(a,d,side*(pavement+w)*.25,width*.5,crossings)){
         strip(b,'pave',start,end,width,yCurb,white,streetFabric.paving.meters,side*(pavement+w)*.25);
         const dx0=-dz/len*side*w*.5,dz0=dx/len*side*w*.5;
@@ -886,13 +889,13 @@ function addRoad(b,seg,neighbours){
       b.flat('pave',disc(at,pavement*.5,10),y-.015,white,streetFabric.paving.meters);
     }
   }
-  strip(b,'pave',a1,d1,w+Math.min(6,w*.6),y-.018,white,streetFabric.paving.meters);
+  if(verge>0)strip(b,sidewalk?'pave':'felt',a1,d1,pavement,y-.018,sidewalk?white:'#a69b8b',streetFabric.paving.meters);
   if(!isEnfer)strip(b,'road',a1,d1,w+.40,y-.002,'#dfceaf',streetFabric.road.meters);
   strip(b,'road',a1,d1,w,y,white,streetFabric.road.meters);
   if(isEnfer)for(const [at,joint] of [[a,seg.joinStart],[d,seg.joinEnd]]){
     if(joint)b.flat('road',disc(at,w*.5,12),y+.002,white,streetFabric.road.meters);
   }
-  if(w>5&&(!bridge || w>9)){
+  if(streetHasCentreMarking(s)){
     const nx=dx/len,nz=dz/len,spacing=Math.max(9,Math.min(13,len/2));
     for(let s0=3;s0+1.85<len;s0+=spacing){
       const s1=Math.min(s0+2.8,len-.5);strip(b,'plain',[a[0]+nx*s0,a[1]+nz*s0],[a[0]+nx*s1,a[1]+nz*s1],.14,y+.011,'#cdbfaf',2);

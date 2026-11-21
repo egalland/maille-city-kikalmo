@@ -11,6 +11,7 @@ import {paintCareerNavigation} from './career-navigation.js';
 import {cityClimate} from './city-climate.js';
 import {junctionSignals,crossingWalker,sidewalkRoutine} from './street-signals.js';
 import {yarnPalette} from './wool-art.js';
+import {pedestrianStreetOffset} from './street-scale.js';
 // Local coordinates are metres, east and south. All map layers share the IGN projection in paris-data.
 import { buildings, streets, water, green, metadata, enclosureRows } from './paris-data.js';
 
@@ -1001,11 +1002,12 @@ function addPatrol(patrol,id,name){
 }
 for(const {p} of walkerSeeds.values()){
   const sides=p.road.kind==='path'?[0]:[-1,1];
+  const offset=isEnfer?pedestrianStreetOffset(p.road):p.road.w*.5+1.9;
   for(const side of sides){
     let run=[],number=0;
     const start=2+(p.key%5),end=p.length-2;
     for(let d=start;d<end;d+=3.5){
-      const pos=alongPath(p,d),off=(p.road.w*.5+1.9)*side;
+      const pos=alongPath(p,d),off=offset*side;
       const x=pos.x-Math.sin(pos.angle)*off,y=pos.y+Math.cos(pos.angle)*off;
       // End a sidewalk trip where a different carriageway cuts the pavement.
       const carriageway=isEnfer && [...roadGrid.area(x,y,8)].some(seg=>seg.road!==p.road &&
