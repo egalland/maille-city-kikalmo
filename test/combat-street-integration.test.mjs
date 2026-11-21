@@ -193,7 +193,7 @@ test('two playable clients see the same partial damage, then the same broken str
   assert.deepEqual(await Promise.all(clients.map(c => c.net.start())), [true, true]);
   await poll(() => clients.every(c => c.net.peers().length === 1), 'both games should have joined the same world');
   a.game.action('melee'); a.game.action('melee', false);
-  await poll(() => clients.every(c => c.scene.propHealth.get(bin.id)?.health < 42), 'both clients should receive the first jab');
+  await poll(() => clients.every(c => c.scene.propHealth.get(bin.id)?.health < 29), 'both clients should receive the first jab');
   const first = b.scene.propHealth.get(bin.id).health;
   assert.ok(first > 0);
   for (const c of clients) {
@@ -204,8 +204,7 @@ test('two playable clients see the same partial damage, then the same broken str
   await poll(() => clients.every(c => c.net.world().propHealth[bin.id]?.health < first), 'a subsequent pistol round should accumulate');
   await poll(() => b.effects.some(([kind]) => kind === 'shot'), 'the observing renderer draws the accepted shot');
   const second = b.net.world().propHealth[bin.id].health;
-  assert.ok(second > 0);
-  tick(22); clickAt(a, bin);
+  assert.equal(second,0);
   await poll(() => clients.every(c => c.scene.destroyed.has(bin.id)), 'the authoritative lethal shot should clear both colliders');
   for (const c of clients) {
     assert.equal(c.net.world().propHealth[bin.id].health, 0);

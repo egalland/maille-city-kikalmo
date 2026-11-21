@@ -95,6 +95,9 @@ export function createNet(options={}) {
       context.propHealth[d.id]=d;
       if(d.health===0 && !context.destroyed.includes(d.id))context.destroyed.push(d.id);
     }
+    if(e.type==='vehicleRetired'){
+      context.retiredVehicles[d.id]=d.until;delete context.vehicles[d.id];
+    }
     if(e.type==='vehicle'){
       const vehicle={...d,lastSeen:e.at,...(!d.occupied?{expiresAt:d.expiresAt||e.at+abandonedFor}:{})};
       if(context.retiredVehicles[d.id]>serverTime())return;
@@ -119,7 +122,7 @@ export function createNet(options={}) {
       lifetimeChats.add(e.seq);
       if (lifetimeChats.size>1000) lifetimeChats.delete(lifetimeChats.values().next().value);
       onChat({seq:e.seq,player:e.player,name:e.name,text:d.text,at:e.at});
-    } else if (e.player!==id || e.type==='propDamage' || e.type==='vehicle' || e.type==='vehicleDamage' || (e.type==='npc' && Number.isFinite(d.damage))) {
+    } else if (e.player!==id || e.type==='propDamage' || e.type==='vehicle' || e.type==='vehicleRetired' || e.type==='vehicleDamage' || (e.type==='npc' && Number.isFinite(d.damage))) {
       for (const fn of listeners) fn(e);
     }
   }

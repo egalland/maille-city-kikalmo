@@ -15,7 +15,7 @@ function makeBody(entity,traffic=false){
   const speed=hasSpeed?entity.speed:Math.hypot(entity.vx||0,entity.vy||0);
   const vx=entity.vx??(c*speed),vy=entity.vy??(s*speed);
   const radius=spec?Math.hypot(spec.halfLength,spec.halfWidth):(entity.r??entity.radius??.40);
-  return {id:entity.id,type:entity.type,x:entity.x,y:entity.y,c,s,length:spec?.halfLength||0,width:spec?.halfWidth||0,radius,vx,vy,traffic};
+  return {id:entity.id,type:entity.type,x:entity.x,y:entity.y,c,s,length:spec?.halfLength||0,width:spec?.halfWidth||0,radius,vx,vy,traffic,railGate:entity.railGate};
 }
 function bodyAt(body,pose){
   body.x=pose.x;body.y=pose.y;body.c=Math.cos(pose.angle);body.s=Math.sin(pose.angle);
@@ -317,6 +317,7 @@ export function createTrafficFlow(sample,chooseDetour){
         if(!p)break;
         const hit=atPose(p);
         if(!hit)continue;
+        if(hit.railGate){car.obstruction=null;return;}
         // A car waiting normally for the intersecting street is traffic, not a closure.
         // A queue whose lead car is physically obstructed can eventually reroute.
         if(hit.traffic&&!cars.get(hit.id)?.obstruction&&!cars.get(hit.id)?.roadBlock)continue;
@@ -482,7 +483,8 @@ export function createTrafficFlow(sample,chooseDetour){
         else car.stalledSince=null;
         const stalled=car.stalledSince==null?0:tick-car.stalledSince;
         const close=observer&&distanceSquared(observer,car.pose)<12**2;
-        const waitingAtLight=car.pose.junction?.signal && !mayEnter(car,car.pose.junction,epoch);
+        const waitingAtLight=car.pose.junction?.signal && !mayEnter(car,car.pose.junction,epoch)||
+          fixed.some(body=>body.railGate&&distanceSquared(body,car.body)<42**2);
         if(waitingAtLight)car.stalledSince=null;
         const recycle=!waitingAtLight&&recycleAfter>0&&stalled>=recycleAfter*(close?2:1);
         if(!advanced||recycle){

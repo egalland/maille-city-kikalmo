@@ -1,4 +1,4 @@
-import {drawToyWeapon} from './weapon-artwork.js';
+import {drawWeapon} from './weapon-artwork.js';
 
 /* Pixel sprites for Maille City. All artwork is drawn on a small integer grid. */
 const INK = '#21182f';
@@ -408,5 +408,5 @@ export function drawVehicle(ctx, vehicle, time = 0) {
 
 // Every inventory slot uses the same appliqué as its marker in the city.
 export function drawItemIcon(ctx, kind, x, y, size) {
-  if(!drawToyWeapon(ctx,kind,x,y,size))drawToyWeapon(ctx,'fist',x,y,size);
+  if(!drawWeapon(ctx,kind,x,y,size))drawWeapon(ctx,'fist',x,y,size);
 }

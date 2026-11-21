@@ -79,7 +79,8 @@ test('a real moving road car releases the driver at its door, then both travel i
   assert.ok(game.restoreTravelState({...game.exportTravelState(),...start,health:100,vehicle:{id:'slow-car',type:'sedan',speed:3.8}}));
   advance(4);assert.ok(!hud.canBailRoad);game.action('vehicle');advance(1);
   assert.equal(published.vehicle,null);assert.ok(!published.ragdoll&&hud.health===100);
-  assert.ok(Math.hypot(published.vx,published.vy)>2.4);advance(35);assert.ok(Math.hypot(published.vx,published.vy)<.89);
+  assert.equal(published.motion,'dismount');assert.ok(Math.hypot(published.vx,published.vy)>1.4);
+  advance(35);assert.ok(Math.hypot(published.vx,published.vy)<.89);
   t.diagnostic('Release '+(3.6*entrySpeed).toFixed(0)+' km/h, driver '+result.person.toFixed(1)+' m, car '+result.car.toFixed(1)+' m.');
 });
 

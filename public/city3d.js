@@ -4,7 +4,7 @@ import {lampState,pedestrianGreen} from './street-signals.js';
 import {streetFurniture} from './street-furniture.js';
 import {drawBoundary} from './residential-boundaries.js';
 import {vehicleSpec} from './vehicle-types.js';
-import {nearbySignals,nearbyEnclosures,nearbyParkedCars} from './paris-world.js';
+import {nearbySignals,nearbyEnclosures,nearbyParkedCars,railCrossings} from './paris-world.js';
 import {pavementRuns} from './curb-clearance.js';
 import {frontageSigns,frontageStyle,namedFronts,montRenaudPaving,montRenaudPoint} from './enfer-frontage.js';
 import {railXY,railSections,railStations,railSpacing,railGaugeOffsets,railwayPlatformOffset,railwayPlatformLength} from './enfer-rail.js';
@@ -64,7 +64,7 @@ const defaultUV=[[0,0],[1,0],[1,1],[0,1]];
 class Batch {
   constructor(){this.buffers=new Map();this.base=0;this.drape=false;this.foundation=false;}
   lift(p){
-    const base=this.road?roadHeight(this.road.street,this.road.i,p[0],p[2]):this.drape?terrainHeight(p[0],p[2]):this.base;
+    const base=this.road?roadHeight(this.road.street,this.road.i,p[0],p[2]):this.railGround?baseTerrainHeight(p[0],p[2]):this.drape?terrainHeight(p[0],p[2]):this.base;
     const floor=this.foundation&&p[1]===0?Math.min(base,baseTerrainHeight(p[0],p[2]))-.18:base;
     return [p[0],p[1]+floor,p[2]];
   }
@@ -514,6 +514,7 @@ function addEnferBuilding(b,building,poly,detail,skyline,h){
       const a=ring[i],d=ring[(i+1)%ring.length],len=Math.hypot(a[0]-d[0],a[1]-d[1]);
       if(len<.15)continue;
       const bays=Math.max(1,Math.round(len/bay)),floors=index===4?1:Math.max(1,Math.round(eaves/2.75));
+      const inset=store?(q=>[q[0]-(d[1]-a[1])*outward/len*.072,q[1]+(d[0]-a[0])*outward/len*.072]):null;
       const entry=detail&&ring===poly&&index<3&&len>3.1&&(i+hash(building.id))%3===0;
       if(garage&&ring===poly&&i===workshopEdge&&!skyline){
         const {left,right}=bayDoor(poly);
@@ -528,15 +529,15 @@ function addEnferBuilding(b,building,poly,detail,skyline,h){
       if(store&&ring===poly&&i===shopEdge){
         const [left,right]=shopOpening(poly,store);
         retailFacade(b,a,d,left,right,outward,eaves,store);
-        b.wall('felt',left,a,0,shopHeadroom,'#d9be98');
-        b.wall('felt',d,right,0,shopHeadroom,'#d9be98');
+        b.wall('felt',inset(left),inset(a),0,shopHeadroom,'#d9be98');
+        b.wall('felt',inset(d),inset(right),0,shopHeadroom,'#d9be98');
       }else if(entry){
         const split=[a[0]+(d[0]-a[0])/bays,a[1]+(d[1]-a[1])/bays],bottom=eaves/floors;
         b.wall('enferEntry'+index,a,split,0,bottom,white);
         if(bays>1)b.wall(mat,split,d,0,bottom,white,bays-1,1);
         b.wall(mat,a,d,bottom,eaves,white,bays,floors-1);
       }else b.wall(mat,a,d,0,eaves,skyline?wall:white,bays,floors);
-      if(store&&i!==shopEdge)b.wall('felt',d,a,0,shopHeadroom,store.large?'#adc0ad':'#d9be98');
+      if(store&&i!==shopEdge)b.wall('felt',inset(d),inset(a),0,shopHeadroom,store.large?'#adc0ad':'#d9be98');
       if(ring===poly&&i===shopEdge&&!store)storefront(b,a,d,outward,eaves,business);
       if(detail&&ring===poly&&len>3.7&&(entry||i===shopEdge)&&!(store&&i===shopEdge))frontageDetails(b,a,d,outward,hash(building.id+i),i===shopEdge);
       if(detail&&ring===poly&&index!==3&&!(store&&i===shopEdge))facadeRelief(b,a,d,len,outward,bays,floors,eaves,index,entry,i===shopEdge);
@@ -1154,7 +1155,11 @@ export function createCity3D(scene,{software=false}={}){
     b.road=null;
     if(isEnfer && !target.skyline){
       b.base=0;b.foundation=false;b.drape=true;
+      b.railGround=true;
       for(const section of railChunks.get(target.key)||[])paintRailSection(b,section,target.detail);
+      for(const site of railCrossings)if(key(site.x,site.y)===target.key)
+        b.quad('pave',site.deck,.185,'#65636a',2);
+      b.railGround=false;
       for(const station of railStations){
         if(key(station.x,station.y)===target.key)paintRailStation(b,station);
       }

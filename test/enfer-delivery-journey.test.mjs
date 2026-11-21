@@ -93,11 +93,15 @@ test('walk, board, deliver, crash, repair and start a new job on the continuous 
   await command('state');const openingCash=career.cash;
   await command('start',{contract:'delivery'});await command('advance');assert.equal(career.mission.stage,1);
   await driveTo(careerPlaces.quay);await command('advance');assert.equal(career.cash,openingCash+85);
-  for(let shot=0;shot<6&&hud.wanted<1;shot++){
+  // A brief burst should not start a police chase. Set up a reported carjacking
+  // so this continuous delivery route also exercises pursuit and repair.
+  for(let shot=0;shot<6;shot++){
     game.action('fire',true);game.action('fire',false);
     for(let i=0;i<10;i++){step();if(i%3===0)await sync();}
   }
-  assert.ok(hud.wanted>=1,'witnesses reported shots near the unloading place');
+  assert.equal(hud.wanted,0);
+  const chaseStart=game.exportTravelState();
+  assert.ok(game.restoreTravelState({...chaseStart,pursuit:{points:24,report:{...chaseStart,enfer:true}}}));
   const reported=game.getPursuitSnapshot().report;
   for(let tick=0;tick<460&&hud.policeContact!=='En poursuite';tick++){step();if(tick%9===0)await sync();}
   assert.equal(hud.policeContact,'En poursuite');

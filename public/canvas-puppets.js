@@ -354,6 +354,27 @@ export function drawCanvasCar(c,o,x,groundY,height,time=0,viewAngle=0){
     for(let i=0;i<panes;i++)c.fillRect(-w*.42+i*w*.84/panes,-h*.75,w*.70/panes,h*.18);
     c.restore();return;
   }
+  if(o?.type==='tank'||o?.type==='armored'){
+    const h=height,tank=o.type==='tank',side=Math.sin(viewAngle),w=h*(.82+(tank?1.58:1.22)*Math.abs(side));
+    const hull=[[-.5,-.29],[-.42,-.63],[.34,-.63],[.5,-.37],[.46,-.24],[-.46,-.24]];
+    const panel=(vertices,color)=>carFace(c,vertices.map(([u,v])=>[u*w,v*h]),color,'#353b39',.016,null,.037);
+    c.save();c.translate(x,groundY);
+    if(side>0)c.scale(-1,1);
+    if(tank)panel([[-.48,-.33],[.44,-.33],[.48,-.12],[.38,-.055],[-.43,-.055],[-.5,-.14]],'#343939');
+    for(let i=0;i<(tank?6:3);i++){
+      const count=tank?5:2;
+      bead(c,w*(-.38+i*.73/count),-h*.16,h*(tank?.089:.128),h*(tank?.082:.125),'#554f47','#292d2d');
+    }
+    panel(hull,o.color||(tank?'#74795a':'#677768'));
+    if(tank){
+      panel([[-.29,-.59],[-.22,-.91],[.15,-.94],[.24,-.70],[.16,-.57]],'#6b7256');
+      panel([[.085,-.78],[.61,-.85],[.61,-.77],[.085,-.69]],'#485445');
+    }else{
+      panel([[-.37,-.60],[-.34,-.91],[.21,-.91],[.39,-.62]],'#68786e');
+      panel([[-.27,-.83],[.20,-.83],[.29,-.69],[-.27,-.69]],'#344b55');
+    }
+    c.restore();return;
+  }
   if(isAircraft(o?.type))return drawCanvasAircraft(c,o,x,groundY,height,time,viewAngle);
   drawCarBody(c,o,x,groundY,height,time,viewAngle);
   const stage=chassisStage(o?.chassisHp);

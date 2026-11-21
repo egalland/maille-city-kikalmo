@@ -1,29 +1,40 @@
-// Gameplay units are metres and seconds in the toy city.
-const defineWeapon=(id,name,hint,settings,tints)=>{
-  const [mag,interval,range,damage,reload,effect,frequency]=settings;
-  const [accent,thread,cloth,trim]=tints;
-  return Object.freeze({id,name,hint,mag,interval,range,damage,reload,effect,frequency,
-    palette:Object.freeze({accent,thread,cloth,trim}),
-    starter:id==='fist'||id==='pistol',noise:['pistol','smg','shotgun','confetti'].includes(id)});
+// Gameplay units are metres and seconds. IDs remain stable for existing inventories.
+const arsenal={
+  pistol:['Pistolet','Pistolet semi-automatique','sidearm'],smg:['Mitraillette','Tir automatique de près','compact'],
+  shotgun:['Fusil à pompe','Trois plombs en éventail','shotgun'],yarn:['Revolver','Coup par coup','revolver'],
+  ribbonbow:['Carabine','Tir précis à longue portée','rifle'],pompom:['Lance-grenades','Explosion à l’impact','launcher'],
+  confetti:['Fusil de chasse','Sept plombs à courte portée','double'],boomerang:['Pistolet à ricochet','Un ricochet à proximité','sidearm'],
+  bubbles:['Pistolet-mitrailleur','Tir groupé à courte portée','compact'],spool:['Carabine à ricochets','Ricochets à courte distance','rifle'],
+  star:['Fusil d’assaut','Rafale de trois tirs','assault'],chime:['Canon à dispersion','Gerbe très large','launcher'],
+  needle:['Fusil de précision','Tir à très longue portée','sniper'],shuttle:['Carabine tactique','Double tir','assault'],
+  button:['Fusil à canon court','Cinq plombs','shotgun'],spark:['Carabine à rebonds','Jusqu’à deux ricochets','compact']
+};
+const meleePalette=Object.freeze({accent:'#f7c08d',thread:'#be856c',cloth:'#523f4c',trim:'#ffeac3'});
+const firearmPalette=Object.freeze({accent:'#a1acb3',thread:'#747f88',cloth:'#323943',trim:'#d9a88b'});
+const defineWeapon=(id,mag,interval,range,damage,reload,frequency)=>{
+  const [name,hint,profile]=arsenal[id]||['Poings','Corps à corps','melee'];
+  const melee=id==='fist';
+  return Object.freeze({id,name,hint,profile,mag,interval,range,damage,reload,effect:melee?'fist':'shot',frequency,
+    palette:melee?meleePalette:firearmPalette,starter:melee||id==='pistol',noise:!melee});
 };
 const entries=[
-  defineWeapon('fist','Poings','Corps à corps',[Infinity,.42,2.25,12,0,'fist',146],['#f7c08d','#be856c','#523f4c','#ffeac3']),
-  defineWeapon('pistol','Pistolet','Un tir précis',[12,.28,62,17,1,'shot',136],['#edc3a9','#b08689','#514454','#fff1db']),
-  defineWeapon('smg','Mitraillette','Tir automatique rapide',[28,.14,44,10,1.4,'shot',154],['#76e2cc','#338d84','#24444c','#bff5d6']),
-  defineWeapon('shotgun','Fusil à pompe','Trois tirs en éventail',[5,.72,22,16,1.55,'shot',96],['#ffd084','#c68f55','#58444e','#fff0c2']),
-  defineWeapon('yarn','Pelote','Un fil ondulant',[6,.52,40,13,1.15,'yarn',420],['#ffa4cd','#be6a98','#4e3656','#ffdbec']),
-  defineWeapon('ribbonbow','Arc à rubans','Une flèche à longue portée',[4,.83,78,28,1.1,'ribbon',566],['#bbffa2','#68a570','#214941','#ebffcc']),
-  defineWeapon('pompom','Lance-pompons','Un pompon éclate à l’impact',[3,.87,32,21,1.64,'pompom',238],['#ffb988','#db824f','#573c49','#fff1bb']),
-  defineWeapon('confetti','Tromblon confettis','Une gerbe de sept confettis',[3,.94,16,13,1.5,'confetti',293],['#ff92bd','#cc6492','#60344f','#ffe3a5']),
-  defineWeapon('boomerang','Navette boomerang','Rebondit sur une cible voisine',[2,1.03,36,19,1.32,'boomerang',324],['#8bdfeb','#4e9da6','#234858','#d9fff5']),
-  defineWeapon('bubbles','Souffle-bulles','Trois bulles à chaque souffle',[16,.31,25,8,1.04,'bubbles',673],['#98caff','#648bbf','#324663','#d7faff']),
-  defineWeapon('spool','Toupie-bobine','Roule de cible en cible',[4,.82,28,16,1.45,'spool',185],['#bbadff','#8279b2','#3c3a62','#eee5ff']),
-  defineWeapon('star','Fronde étoilée','Trois étoiles à moyenne portée',[7,.53,49,13,1.17,'star',760],['#ffe77e','#bd9953','#54475b','#fffaad']),
-  defineWeapon('chime','Cloche à grelots','Une onde sonore en demi-cercle',[4,.84,10,15,1.22,'chime',829],['#e7ca9e','#b08b58','#4f414d','#fff0c6']),
-  defineWeapon('needle','Arbalète à aiguilles','Un trait précis de longue portée',[5,.7,94,25,1.42,'ribbon',510],['#efb4ff','#9565aa','#39214f','#f9e0ff']),
-  defineWeapon('shuttle','Lance-navettes','Deux navettes en éventail',[12,.35,53,14,1.38,'yarn',302],['#70e1ac','#45886d','#204438','#defacd']),
-  defineWeapon('button','Canon à boutons','Cinq boutons en éventail serré',[7,.61,29,12,1.51,'spool',246],['#ffa46d','#a54c3f','#5c3532','#ffe6b9']),
-  defineWeapon('spark','Bobine à étincelles','Une décharge rebondit deux fois',[9,.45,38,16,1.55,'star',682],['#9acfff','#587eb5','#334669','#e7f8ff'])
+  defineWeapon('fist',Infinity,.42,2.25,12,0,146),
+  defineWeapon('pistol',12,.28,62,17,1,136),
+  defineWeapon('smg',28,.14,44,10,1.4,154),
+  defineWeapon('shotgun',5,.72,22,16,1.55,96),
+  defineWeapon('yarn',6,.52,40,13,1.15,118),
+  defineWeapon('ribbonbow',4,.83,78,28,1.1,112),
+  defineWeapon('pompom',3,.87,32,21,1.64,83),
+  defineWeapon('confetti',3,.94,16,13,1.5,102),
+  defineWeapon('boomerang',2,1.03,36,19,1.32,143),
+  defineWeapon('bubbles',16,.31,25,8,1.04,162),
+  defineWeapon('spool',4,.82,28,16,1.45,123),
+  defineWeapon('star',7,.53,49,13,1.17,139),
+  defineWeapon('chime',4,.84,10,15,1.22,88),
+  defineWeapon('needle',5,.7,94,25,1.42,114),
+  defineWeapon('shuttle',12,.35,53,14,1.38,132),
+  defineWeapon('button',7,.61,29,12,1.51,106),
+  defineWeapon('spark',9,.45,38,16,1.55,153)
 ];
 export const weaponCatalog=Object.freeze(Object.fromEntries(entries.map(w=>[w.id,w])));
 export const weaponList=Object.freeze(entries);

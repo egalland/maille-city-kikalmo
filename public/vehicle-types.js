@@ -35,6 +35,8 @@ define('pickup','Camionnette de marché',4.84,1.98,1.86,163/3.6,5.8,3.8,12.7,1.0
 define('airship','Dirigeable · Navette Nuage',11.4,4.2,5.1,16,4,2.1,4.1,.46,.50);
 define('helicopter','Hélicoptère Libellule',6.9,1.80,2.68,360/3.6,12,7.2,10,1.14,.75);
 define('train','Autorail des Mailles',16.2,2.82,3.62,26,0,1.02,3.6,0,0);
+define('armored','Blindé d’intervention',5.48,2.31,2.58,40,5,3.1,12,1.07,.83);
+define('tank','Char chenillé',7.8,3.02,2.88,19,5.5,2.05,11,1.04,.60);
 export const isTrain=type=>type==='train';
 export const vehicleTypes=Object.freeze(Object.keys(specs));
 export const isVehicleType=type=>Object.hasOwn(specs,type);

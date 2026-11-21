@@ -7,19 +7,19 @@ export function installDriveControls(root,change){
     for(const button of buttons)button.classList.toggle('is-pressed',values.has(button.dataset.drive));
     change(Number(values.has('right'))-Number(values.has('left')),
       values.has('brake')?-1:Number(values.has('throttle')),
-      Number(values.has('ascend'))-Number(values.has('descend')));
+      Number(values.has('ascend'))-Number(values.has('descend')),values.has('handbrake'));
   }
   function release(){if(held.size){held.clear();update();}}
   for(const button of buttons){
     button.addEventListener('pointerdown',event=>{
-      if(!active||event.button!==0)return;
+      if(!active||button.hidden||event.button!==0)return;
       event.preventDefault();held.set(event.pointerId,button);
       button.setPointerCapture?.(event.pointerId);update();
     });
     for(const type of ['pointerup','pointercancel','lostpointercapture'])
       button.addEventListener(type,event=>{if(held.delete(event.pointerId))update();});
     for(const type of ['keydown','keyup'])button.addEventListener(type,event=>{
-      if(!active||![' ','Enter'].includes(event.key))return;
+      if(!active||button.hidden||![' ','Enter'].includes(event.key))return;
       event.preventDefault();event.stopPropagation();
       const key=button.dataset.drive+'/'+event.key;
       if(type==='keydown')held.set(key,button);else held.delete(key);

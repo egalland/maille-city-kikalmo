@@ -18,7 +18,7 @@ import {terrainHeight} from './terrain-height.js';
 import {vehicleSpec} from './vehicle-types.js';
 import {coreDestinations,streetAt,districtAt,parkedCars} from './paris-world.js';
 import {weaponDrops} from './weapon-drops.js';
-import {wantedRules, wantedThresholds, wantedTuning} from './wanted.js';
+import {wantedRules, wantedThresholds} from './wanted.js';
 import {mountAtlas,sectorURL,historicURL} from './grand-paris.js';
 
 import {inventoryWeapons,weaponList} from './weapon-catalog.js';
@@ -445,8 +445,7 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
     for(const {label,points} of Object.values(wantedRules)){
       pointsList.append(node('dt','',label),node('dd','',points?'+'+points:'0'));
     }
-    const {repeatWindow, repeatStep, maxRepeatBonus}=wantedTuning;
-    rules.append(pointsList,node('p','mc-guide-aside','Avant deux étoiles, répéter la même infraction en moins de '+repeatWindow+' s rapporte '+Math.round(repeatStep*100)+' % de plus par répétition, jusqu’à +'+Math.round(maxRepeatBonus*100)+' %. Dès deux étoiles, les vols, dégâts matériels et tirs sans victime valent un quart de leurs points.'));
+    rules.append(pointsList,node('p','mc-guide-aside','Un témoin doit voir le tir ou un agent proche doit le repérer. Les tirs sans victime sont plafonnés à une étoile. Un carjacking déclenche une étoile et les crimes graves font monter les niveaux suivants.'));
     alert.append(levels,node('p','mc-guide-aside','La police poursuit tant qu’elle te voit. Quand elle te perd, la zone en pointillés marque ta dernière position connue. Sors du cercle et reste hors de vue jusqu’à la fin du compte à rebours.'),rules);
 
     const controls=node('details','mc-guide-details');

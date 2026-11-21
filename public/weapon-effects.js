@@ -6,7 +6,7 @@ const effectName=kind=>weaponCatalog[kind]?.effect||kind;
 export function effectDuration(kind){return lifetimes[effectName(kind)]||.17;}
 
 // Each stroke is a world-space polyline; both camera backends project the same strands.
-export function buildShotEffect(kind,x,y,angle,length,progress=.5,barrel=false){
+export function buildShotEffect(kind,x,y,angle,length,progress=.5,barrel=false,drop=0){
   const key=effectName(kind),pal=weaponCatalog[kind]?.palette||byEffect[key]||byEffect.shot;
   if(![x,y,angle,length].every(Number.isFinite)||length<0)return [];
   const u=Math.max(0,Math.min(1,progress)),len=Math.max(.03,length);
@@ -24,7 +24,7 @@ export function buildShotEffect(kind,x,y,angle,length,progress=.5,barrel=false){
   if(key==='fist'){
     curve('#ffe8bb',2.5,9,t=>pt(len*(.38+.54*Math.sin(Math.PI*t)),(t-.5)*1.35,1.0+.13*Math.sin(Math.PI*t)));
   }else if(key==='shot'){
-    line('#ffdb9a',1.45,[pt(0,0,1.03),pt(len,0,1.01)]);
+    line('#ffdb9a',1.45,[pt(0,0,1.03),pt(len,0,1.01+drop)]);
   }else if(key==='yarn'||key==='ribbon'){
     const ribbon=key==='ribbon',turns=ribbon?2.5:3.75;
     for(let j=0;j<(ribbon?2:1);j++)curve(j?pal.trim:pal.accent,j?1.3:2.4,24,t=>{

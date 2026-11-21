@@ -1,55 +1,43 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createWanted, wantedRules, wantedThresholds, wantedTuning} from '../public/wanted.js';
+import {createWanted, wantedThresholds, wantedTuning} from '../public/wanted.js';
 
-test('A lone gunshot stays below a star. Repeating it builds visible progress toward the next threshold', () => {
-  const wanted = createWanted();
-  assert.equal(wanted.add('peaceful', 1).points, 0);
-  const first = wanted.add('gunshot', 2);
-  assert.equal(first.level, 0);
-  assert.equal(first.nextThreshold, 18);
-  assert.equal(first.progress, 5 / 18);
-  assert.equal(wanted.add('gunshot', 3).points, 11);
-  const third = wanted.add('gunshot', 4);
-  assert.equal(third.level, 1);
-  assert.equal(third.points, 18);
-  assert.equal(third.progress, 0);
-  assert.equal(third.nextThreshold, 55);
-});
-
-test('Repetition is per infraction, capped at 60%, and expires after six seconds', () => {
-  const wanted = createWanted();
-  for (let i = 0; i < 6; i++) {
-    const state = wanted.add('gunshot', i * .1);
-    assert.equal(state.lastGain, Math.min(8, 5 + i));
-  }
-  assert.equal(wanted.add('gunshot', 7).lastGain, 5);
-  assert.equal(wanted.add('stealVehicle', 8).lastGain, 24);
-  assert.equal(createWanted().add('stealService', 8.5).lastGain, 38);
-});
-
-test('minor repeat offences slow down after two stars, and later levels are spaced farther apart',()=>{
+test('Reported gunshots increase slowly and stop at one star',()=>{
   const wanted=createWanted();
-  wanted.add('hitOfficer',0);assert.equal(wanted.add('hitOfficer',.5).level,2);
-  for(let i=0;i<25;i++)assert.equal(wanted.add('gunshot',1+i*.3).lastGain,1.3);
-  assert.equal(wanted.state().level,2);
-  assert.equal(wanted.add('hitOfficer',9).lastGain,wantedRules.hitOfficer.points);
-  assert.equal(wanted.state().level,2);
-  wanted.add('hitOfficer',9.5);assert.equal(wanted.add('hitOfficer',10).level,3);
+  assert.equal(wanted.add('peaceful',0).points,0);
+  const first=wanted.add('gunshot',2);
+  assert.equal(first.level,0);assert.equal(first.nextThreshold,24);assert.equal(first.progress,2/24);
+  assert.equal(wanted.add('gunshot',3).lastGain,0);
+  assert.equal(wanted.add('gunshot',4.5).points,4);
+  for(let i=0;i<40;i++)wanted.add('gunshot',7+i*2.5);
+  assert.equal(wanted.state().level,1);assert.equal(wanted.state().points,24);
 });
 
-test('Cooldown decays only after sustained calm, even across late frames or peaceful input', () => {
-  const wanted = createWanted();
-  wanted.add('hitOfficer', 2);
-  assert.equal(wanted.tick(23).points, 48);
-  assert.equal(wanted.add('peaceful', 24).points, 48);
-  assert.equal(wanted.tick(26).points, 42.5);
-  assert.equal(wanted.tick(25).points, 42.5);
-  assert.equal(wanted.add('unknown', 30).points, 31.5);
-  assert.equal(wanted.tick(42).level, 0);
-  assert.equal(wanted.state().points, 0);
-  const other = createWanted();other.add('hitOfficer', 2);
-  assert.equal(other.tick(30).points, 31.5);
+test('Carjacking gives a star, minor offences cap early and reaching five takes about fifty civilian kills',()=>{
+  const wanted=createWanted();
+  assert.equal(wanted.add('stealVehicle',0).level,1);
+  for(let i=0;i<30;i++)wanted.add('destroy',.5+i*.25);
+  assert.equal(wanted.state().points,109);
+  assert.equal(wanted.add('hitCivilian',8).level,2);
+  for(let i=0;i<200;i++)wanted.add('hitOfficer',9+i*.2);
+  assert.equal(wanted.state().level,3);
+  const serious=createWanted();
+  for(let i=0;i<49;i++)serious.add('killCivilian',i);
+  assert.equal(serious.state().level,4);
+  assert.equal(serious.add('killCivilian',49).level,5);
+});
+
+test('Cooldown begins after sustained calm and never rewinds time',()=>{
+  const wanted=createWanted();
+  wanted.add('stealService',2);
+  assert.equal(wanted.tick(23).points,38);
+  assert.equal(wanted.add('peaceful',24).points,38);
+  assert.equal(wanted.tick(26).points,32.5);
+  assert.equal(wanted.tick(25).points,32.5);
+  assert.equal(wanted.add('unknown',30).points,21.5);
+  assert.equal(wanted.tick(42).points,0);
+  const other=createWanted();other.add('stealService',2);
+  assert.equal(other.tick(30).points,21.5);
 });
 
 test('All five stars use explicit thresholds, including when cooling and hitting the points cap', () => {
@@ -62,11 +50,11 @@ test('All five stars use explicit thresholds, including when cooling and hitting
     assert.equal(state.nextThreshold, wantedThresholds[i + 1] ?? null);
     assert.equal(state.progress, i === 4 ? 1 : 0);
   }
-  for (let i = 0; i < 30; i++) wanted.add('hitOfficer', 1 + i / 10);
+  for (let i = 0; i < 30; i++) wanted.add('killCivilian', 1 + i / 10);
   assert.equal(wanted.state().points, wantedTuning.maxPoints);
   assert.equal(wanted.state().level, 5);
   assert.equal(wanted.state().lastGain, 0);
-  assert.equal(wanted.tick(49).level, 4);
+  assert.equal(wanted.tick(68).level, 4);
 });
 
 test('Sector travel transfers the exact points, remaining grace and repeat window to a fresh timeline', () => {
@@ -94,16 +82,16 @@ test('Legacy saves retain their displayed level and malformed or unknown inputs 
   for(const [index,points] of [18,55,110,185,280].entries())
     assert.equal(wanted.restore({version:1,points}).level,index+1);
   wanted.restore({points: 20, lastAction: 'gunshot', ages: {gunshot: [6, -2, '1']}}, 0);
-  assert.equal(wanted.add('gunshot', 0).lastGain, 5);
+  assert.equal(wanted.add('gunshot', 0).lastGain, 2);
   assert.equal(wanted.restore({points: 1e12}, 1).points, wantedTuning.maxPoints);
   assert.equal(wanted.restore(null, NaN).level, 0);
 });
 
 test('Breaking line of sight lowers the pursuit sooner', () => {
   const hidden = createWanted(), visible = createWanted();
-  hidden.add('hitOfficer', 0);
-  visible.add('hitOfficer', 0);
-  assert.equal(hidden.tick(9, true).points, 48);
+  hidden.add('stealVehicle', 0);
+  visible.add('stealVehicle', 0);
+  assert.equal(hidden.tick(9, true).points, 24);
   assert.equal(hidden.tick(15, true).level, 0);
   assert.equal(visible.tick(15).level, 1);
 });

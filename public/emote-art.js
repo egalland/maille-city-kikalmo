@@ -1,6 +1,6 @@
 // Six hand-sewn patches. The network keeps its ordinary emoji codes.
 import {yarnPalette as dye} from './wool-art.js';
-import {drawToyWeapon} from './weapon-artwork.js';
+import {drawYarnEmote} from './weapon-artwork.js';
 
 const patches=new Map();
 const names=new Set(['👋','❤️','😂','👀','😎','🧶']);
@@ -24,7 +24,7 @@ export function emotePatch(symbol){
     c.setLineDash([2.3,2.8]);path(points,null,'#ffe1b5',1.65);c.setLineDash([]);
   }
   if(symbol==='🧶'){
-    drawToyWeapon(c,'yarn',-3,3,68,57);
+    drawYarnEmote(c);
   }else if(symbol==='❤️'){
     path([[31,55],[21,48,9,36],[0,23,9,15],[21,6,31,21],[44,4,54,16],[64,27,52,39],[42,48,31,55]],'#bd6864');
     stitched([[31,49],[16,39,12,31],[7,20,15,18],[21,15,29,24]]);

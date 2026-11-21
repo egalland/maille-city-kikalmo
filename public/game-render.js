@@ -23,6 +23,7 @@ import { createCity3D } from './city3d.js';
 import { createPuppet, createCar } from './puppets3d.js';
 import { createCanvasView } from './canvas-view.js';
 import { createPickupDisplay } from './pickup-models.js';
+import {createCrossingDisplay} from './rail-crossing-models.js';
 import { nearbyProps, swimmingSurface } from './paris-world.js';
 import {createWorldCamera} from './world-camera.js';
 
@@ -114,6 +115,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   }
   const wool=woolDisplay(scene),incidents=districtEventDisplay(scene);
   const city=createCity3D(scene,{software:renderer.software}), pickupDisplay=createPickupDisplay(scene);
+  const crossingDisplay=createCrossingDisplay(scene);
   const landingMarks=isEnfer?createAirfieldMarkings(scene):null;
   const camera=new THREE.PerspectiveCamera(51,1,.12,6300);
   const driverView=createDriverView(scene);
@@ -144,7 +146,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     item.used=inFrame;const g=item.object.group;
     g.userData.followedByCamera=!!e.self;
     const angle=e.angle||0;
-    const ground=vehicle&&isAircraft(e.type)?baseTerrainHeight(e.x,e.y):terrainHeight(e.x,e.y,e.angle,item.roadFloor),swim=e.motion==='swim' && !vehicle;
+    const ground=vehicle&&(isAircraft(e.type)||e.type==='train')?baseTerrainHeight(e.x,e.y):terrainHeight(e.x,e.y,e.angle,item.roadFloor),swim=e.motion==='swim' && !vehicle;
     item.roadFloor=ground;
     const offset=swim?swimGround(e.x,e.y)-ground-.67:0;
     item.waterOffset=item.waterOffset==null?offset:item.waterOffset+(offset-item.waterOffset)*blend(9,dt);
@@ -170,7 +172,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   function badge(e,label,bubble){
     let el=names.get(e.id);
     if(!el){el=document.createElement('span');el.className='world-label';labels.append(el);names.set(e.id,el);}
-    el._used=inFrame;projection.set(e.x,(e.motion==='swim'?swimGround(e.x,e.y)-.67:e.isCar&&isAircraft(e.type)?baseTerrainHeight(e.x,e.y):terrainHeight(e.x,e.y,e.angle))+(e.lift||0)+(e.isCar?vehicleSpec(e.type).height+.43:2.14),e.y);projection.project(camera);
+    el._used=inFrame;projection.set(e.x,(e.motion==='swim'?swimGround(e.x,e.y)-.67:e.isCar&&(isAircraft(e.type)||e.type==='train')?baseTerrainHeight(e.x,e.y):terrainHeight(e.x,e.y,e.angle))+(e.lift||0)+(e.isCar?vehicleSpec(e.type).height+.43:2.14),e.y);projection.project(camera);
     const visible=projection.z>0&&projection.z<1&&Math.abs(projection.x)<1.1&&Math.abs(projection.y)<1;
     el.hidden=!visible;if(!visible)return;
     el.style.left=(50+50*projection.x)+'%';el.style.top=(50-50*projection.y)+'%';
@@ -206,7 +208,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     if(kind!=='burst'&&kind!=='carExplosion'){
       const duration=effectDuration(kind);
       const height=terrainHeight(x,y)+lift,barrel=colors?.barrel;
-      drawShotStrokes(buildShotEffect(barrel||kind,x,y,angle,len,Math.max(.25,age/duration),!!barrel),height,duration,age);
+      drawShotStrokes(buildShotEffect(barrel||kind,x,y,angle,len,Math.max(.25,age/duration),!!barrel,colors?.drop),height,duration,age);
       if(colors?.flash)drawShotStrokes(muzzleFlash(barrel,x,y,angle),height,.095,age);
       return;
     }
@@ -243,6 +245,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     camera.lookAt(cameraAim);camera.updateMatrixWorld();
     sky.position.copy(camera.position);
     const epoch=state.epoch??Date.now();
+    crossingDisplay.update(state.crossings,epoch,dt);
     lighting?.update(p,ground,time,snap,scale,epoch);
     atmosphere?.update(epoch,camera);
     if(time-lastPropTick>.30 || snap){props=nearbyProps(p.x,p.y,320);lastPropTick=time;}
@@ -264,9 +267,9 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
       if(d<42)bloodMesh.draw(blood.actor(e));
       if(index<65&&e.motion!=='swim'){
         const floor=e.supportHeight||0,angle=e.angle||0,c=Math.cos(angle),s=Math.sin(angle);
-        const slope=floor>.12?{x:0,y:0}:terrainGradient(e.x,e.y,e.angle);
+        const railway=e.type==='train',slope=floor>.12||railway?{x:0,y:0}:terrainGradient(e.x,e.y,e.angle);
         const scale=1/(1+.08*Math.max(0,(e.lift||0)-floor));
-        shadowTransform.position.set(e.x,terrainHeight(e.x,e.y,e.angle)+floor+.10,e.y);
+        shadowTransform.position.set(e.x,(railway?baseTerrainHeight(e.x,e.y):terrainHeight(e.x,e.y,e.angle))+floor+.10,e.y);
         shadowTransform.rotation.set(-Math.atan(-slope.x*s+slope.y*c),-angle,Math.atan(slope.x*c+slope.y*s),'YXZ');
         const footprint=e.isCar?vehicleSpec(e.type):null;
         shadowTransform.scale.set(scale*(footprint?footprint.halfLength*2.1:1.1),1,scale*(footprint?footprint.halfWidth*2.2:.74));
@@ -317,7 +320,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   return {available:true,get drawCalls(){return renderer.info?.render?.calls;},mode:renderer.software?'mesh':'webgl',render,aim,projectTarget,effect,dispose(){
     active=false;canvas.removeEventListener('webglcontextlost',contextLost);labels.remove();
     for(const item of models.values())item.object.dispose?.();
-    incidents.dispose();wool.dispose();driverView.dispose();bloodMesh.dispose();pickupDisplay.dispose();city.dispose?.();
+    incidents.dispose();wool.dispose();driverView.dispose();bloodMesh.dispose();pickupDisplay.dispose();crossingDisplay.dispose();city.dispose?.();
     landingMarks?.dispose();
     atmosphere?.dispose();lighting?.dispose();shadows.geometry.dispose();shadows.material.map.dispose();shadows.material.dispose();
     sky.geometry.dispose();sky.material.map.dispose();sky.material.dispose();renderer.dispose();

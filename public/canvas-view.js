@@ -914,7 +914,7 @@ export function createCanvasView(canvas,spawn,onNotice){
   function effect(kind,x,y,angle=0,len=0,colors=[],lift=0,age=0){
     const debris=propDebris(kind,colors?.type,angle);
     if(effects.length>60)effects.shift();
-    effects.push({kind,x,y,angle,len,lift:lift+(debris?.height||0),born:clock-age,duration:debris?.lifetime,barrel:colors?.barrel,flash:colors?.flash,
+    effects.push({kind,x,y,angle,len,lift:lift+(debris?.height||0),born:clock-age,duration:debris?.lifetime,barrel:colors?.barrel,flash:colors?.flash,drop:colors?.drop,
       firstAge:colors?.barrel?age:null,
       fibers:debris?.strands||(kind==='meleeImpact'?impactFibers(angle,len):null)});
   }
@@ -998,15 +998,20 @@ export function createCanvasView(canvas,spawn,onNotice){
     groundTexture();
     if(isEnfer){
       const railStrip=(start,end,off,half,h,color)=>poly3([
-        [...railXY(start,off-half),h],[...railXY(end,off-half),h],
-        [...railXY(end,off+half),h],[...railXY(start,off+half),h]
-      ],color);
+        railXY(start,off-half),railXY(end,off-half),railXY(end,off+half),railXY(start,off+half)
+      ].map(([x,y])=>[x,y,h,baseTerrainHeight(x,y)]),color);
       for(const section of railSections){
         if(!seen({...section,r:8},streetViewRange))continue;
         const {start,end,center}=section;
         railStrip(start,end,0,3.57,.085,'#898082');
         for(const off of railGaugeOffsets)railStrip(start,end,off,.055,.198,'#c4b9ac');
         for(const offset of [-2.16,2.16])railStrip(center-.11,center+.11,offset,1.14,.15,'#6f5751');
+      }
+      for(const site of state.crossings||[]){
+        if(!seen({...site,r:12},streetViewRange))continue;
+        poly3(site.deck.map(([x,y])=>[x,y,.185,baseTerrainHeight(x,y)]),'#65636a');
+        for(let d=site.d-site.railDeckRadius;d<site.d+site.railDeckRadius;d+=2)
+          for(const off of railGaugeOffsets)railStrip(d,d+2,off,.05,.198,'#c4b9ac');
       }
       for(const station of railStations){
         if(!seen({...station,r:19},streetViewRange))continue;
@@ -1140,7 +1145,7 @@ export function createCanvasView(canvas,spawn,onNotice){
     for(const e of state.entities){
       const swimmer=e.motion==='swim'&&!e.isCar;
       const ground=terrainHeight(e.x,e.y);
-      const roadOffset=(e.isCar&&isAircraft(e.type)?baseTerrainHeight(e.x,e.y):terrainHeight(e.x,e.y,e.angle))-ground;
+      const roadOffset=(e.isCar&&(isAircraft(e.type)||e.type==='train')?baseTerrainHeight(e.x,e.y):terrainHeight(e.x,e.y,e.angle))-ground;
       const lift=swimmer?swimGround(e.x,e.y)-terrainHeight(e.x,e.y)-.67:(e.lift||0)+roadOffset,base=at(e.x,e.y,lift),high=e.isCar?vehicleSpec(e.type).height:1.78,top=at(e.x,e.y,lift+high);
       if(!base||!top||base.d>(e.isCar?160:96)||base.d<.61)continue;
       const ph=base.y-top.y;if(ph<2||base.x<-ph*2||base.x>w+ph*2)continue;
@@ -1180,6 +1185,26 @@ export function createCanvasView(canvas,spawn,onNotice){
       if(reach>44||!seen({x:p.x,y:p.y,r:.35},45)||!pickupClear(id,p.x,p.y,height,reach,time,destroyed))return;
       queue.push({z:depth(p.x,p.y),draw:()=>drawBlood(strands)});
     });
+    for(const crossing of state.crossings||[])for(const gate of crossing.gates){
+      const c=Math.cos(gate.angle),s=Math.sin(gate.angle),x=gate.x-c*gate.width/2,y=gate.y-s*gate.width/2;
+      const base=at(x,y,0),hinge=at(x,y,.92),top=at(x,y,2.15);
+      const arm=at(x+c*gate.width*(crossing.close?1:.07),y+s*gate.width*(crossing.close?1:.07),
+        .92+(crossing.close?0:gate.width*.99));
+      if(!base||!top||!arm||!hinge)continue;
+      queue.push({z:base.d,draw:()=>{
+        const line=Math.max(1,Math.min(6,f*.13/base.d));
+        const stroke=(a,b,color,width)=>{g.strokeStyle=color;g.lineWidth=width;g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.stroke();};
+        stroke(base,top,'#4c494a',line*1.6);
+        for(let i=0;i<10;i++){
+          const pt=t=>({x:hinge.x+(arm.x-hinge.x)*t,y:hinge.y+(arm.y-hinge.y)*t});
+          stroke(pt(i/10),pt((i+1)/10),i%2?'#bb5155':'#f7e3c4',line);
+        }
+        for(const side of [-1,1]){
+          const lit=crossing.warning&&Math.floor((state.epoch??0)/365)%2===(side+1)/2;
+          g.beginPath();g.arc(top.x+side*line,top.y,line*.82,0,Math.PI*2);g.fillStyle=lit?'#ff422e':'#4e282e';g.fill();
+        }
+      }});
+    }
     queue.sort((a,b)=>b.z-a.z);for(const o of queue)o.draw();
     for(let i=effects.length-1;i>=0;i--){const e=effects[i];
       if(e.firstAge!=null){e.born=time-e.firstAge;e.firstAge=null;}
@@ -1214,7 +1239,7 @@ export function createCanvasView(canvas,spawn,onNotice){
         const pp=at(e.x,e.y,.93+e.lift);if(!pp)continue;
         for(let j=0;j<8;j++){const v=j*2.39+age;g.fillStyle=j%2?'#f0c891':'#94b5a6';g.fillRect(pp.x+Math.cos(v)*age*80,pp.y+Math.sin(v)*age*80,3,3);}
       }else{
-        const strokes=buildShotEffect(e.barrel||e.kind,e.x,e.y,e.angle,e.len,age/duration,!!e.barrel);
+        const strokes=buildShotEffect(e.barrel||e.kind,e.x,e.y,e.angle,e.len,age/duration,!!e.barrel,e.drop);
         if(e.flash&&age<.095)strokes.push(...muzzleFlash(e.barrel,e.x,e.y,e.angle));
         for(const stroke of strokes){
           g.beginPath();g.strokeStyle=stroke.color;g.lineWidth=stroke.width;let pen=false;

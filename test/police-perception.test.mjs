@@ -26,7 +26,9 @@ test('search circles are tied to the sighting, and higher levels take longer to 
 test('unobserved actions, hearing, line of sight and incapacitated witnesses',()=>{
   const suspect={x:20,y:0};
   assert.equal(crimeHeardOrSeen('gunshot',suspect,[],clear),false);
-  assert.equal(crimeHeardOrSeen('gunshot',suspect,[eye],()=>false),true);
+  assert.equal(crimeHeardOrSeen('gunshot',suspect,[eye],()=>false),false);
+  assert.equal(crimeHeardOrSeen('gunshot',suspect,[eye],clear),true);
+  assert.equal(crimeHeardOrSeen('gunshot',{x:-13,y:0},[{...eye,type:'police'}],clear),true);
   assert.equal(crimeHeardOrSeen('stealService',suspect,[eye],()=>false),false);
   assert.equal(crimeHeardOrSeen('destroy',suspect,[{...eye,stunned:true}],clear),false);
   assert.equal(crimeHeardOrSeen('hitOfficer',suspect,[],clear),true);
@@ -35,11 +37,11 @@ test('unobserved actions, hearing, line of sight and incapacitated witnesses',()
 });
 test('units scale through five levels; patrol attempts arrest when no active threat',()=>{
   for(let i=0;i<=5;i++){
-    const units=responseUnits(i);assert.equal(units.length,i);
-    assert.equal(new Set(units.map(pair=>pair.join(':'))).size,i);
+    const units=responseUnits(i),count=i===5?7:i;assert.equal(units.length,count);
+    assert.equal(new Set(units.map(pair=>pair.join(':'))).size,count);
   }
   assert.equal(canUseForce(1,-Infinity,0),false);assert.equal(canUseForce(2,14,18),true);
-  assert.equal(canUseForce(2,14,25),false);assert.equal(canUseForce(3,-Infinity,20),true);
+  assert.equal(canUseForce(2,14,25),true);assert.equal(canUseForce(3,-Infinity,20),true);
   assert.equal(custodyTime(1.9,.4,false),0);assert.equal(custodyTime(2.3,.2,true),2.4);
 });
 test('pursuit stays active under observation, begins cooling after last observation',()=>{

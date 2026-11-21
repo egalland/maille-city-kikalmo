@@ -15,7 +15,7 @@ test('the Paris fleet fits its drivable colliders, places accessible doors and u
   }
   // Freight movements are scheduled on the active Enfer road corridors. The
   // archived city retains its original traffic mix.
-  const parisRoster=vehicleTypes.filter(type=>!isAircraft(type)&&!isTrain(type)&&!['boxtruck','tipper'].includes(type));
+  const parisRoster=vehicleTypes.filter(type=>!isAircraft(type)&&!isTrain(type)&&!['boxtruck','tipper','armored','tank'].includes(type));
   assert.deepEqual([...observed].sort(),parisRoster.sort());
   for(const v of parkedCars){
     const spec=vehicleSpec(v.type);

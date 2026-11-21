@@ -31,14 +31,14 @@ test('Knockouts persist over a page transfer, accept ambulance rescue and provid
   const overdue=createVitality(next.snapshot(),base+30000);assert(overdue.tick(base+30000));assert.equal(overdue.health,75);
 });
 
-test('NPCs retain hit points across encounters, get back up and gradually recover after a quiet interval',()=>{
+test('NPCs recover from wounds but lethal damage remains permanent',()=>{
   assert.equal(npcHealthAt({health:73,healthAt:base},base+9999),73);
   assert.equal(npcHealthAt({health:73,healthAt:base},base+11000),77);
   const state={health:0,healthAt:base,downUntil:base+6500};
   assert.equal(npcHealthAt(state,base+6400),0);
-  assert.equal(npcHealthAt(state,base+6550),65);
-  assert.equal(npcHealthAt(state,base+20000),79);
-  assert.equal(npcHealthAt(state,base+99999),100);
+  assert.equal(npcHealthAt(state,base+6550),0);
+  assert.equal(npcHealthAt(state,base+20000),0);
+  assert.equal(npcHealthAt(state,base+99999),0);
 });
 
 test('The 15 articulated points tumble, retain segment lengths, settle above the ground and replay identically for a late observer',()=>{

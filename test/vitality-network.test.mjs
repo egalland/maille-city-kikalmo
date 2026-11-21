@@ -39,7 +39,7 @@ function sharedWorld(t){
   return {browser,epoch,advance(ms){clock+=ms;}};
 }
 
-test('Concurrent browser hits accumulate once across a lost reply, preserve a knockout and resume from recovered NPC health',async t=>{
+test('Concurrent browser hits accumulate once across a lost reply, preserve a lethal injury across reconnects',async t=>{
   const {browser,epoch,advance}=sharedWorld(t);
   const target='npc-vitality-7',attempts=[],arrived=new Set();
   let openGate,replyLost=false;
@@ -84,15 +84,15 @@ test('Concurrent browser hits accumulate once across a lost reply, preserve a kn
   assert.equal(stateOf(a).downUntil,downUntil,'An extra hit must not extend the knockout');
 
   advance(2);hit(b,8);
-  await until(()=>[a,b].every(c=>observed(c).length===5),'The first post-knockout hit should use restored health');
-  assert.equal(stateOf(a).health,57,'The NPC rises with 65 HP and takes 8 damage');
-  assert.equal(stateOf(b).downUntil,0);assert.equal(stateOf(b).healthAt,downUntil+1);
+  await until(()=>[a,b].every(c=>observed(c).length===5),'A later hit must be acknowledged without reviving the NPC');
+  assert.equal(stateOf(a).health,0);
+  assert.equal(stateOf(b).downUntil,downUntil);assert.equal(stateOf(b).damage,0);
 
   advance(11500);hit(a,3);
-  await until(()=>[a,b].every(c=>observed(c).length===6),'Both browsers should see the regenerated health');
-  assert.equal(stateOf(b).health,60,'After the 10 s grace period the NPC regains 6 HP in 1.5 s, then takes 3 damage');
+  await until(()=>[a,b].every(c=>observed(c).length===6),'Both browsers retain the lethal injury');
+  assert.equal(stateOf(b).health,0);
   b.net.stop();assert(await b.net.start());
-  assert.equal(stateOf(b).health,60,'The D1 join snapshot should contain the last resolved health');
+  assert.equal(stateOf(b).health,0,'The D1 join snapshot should retain the lethal injury');
 });
 
 test('Peers receive bounded player vitality, a public avatar without linking data, and filtered shot geometry',async t=>{
@@ -233,22 +233,22 @@ test('shared street furniture settles concurrent hits, a lost reply and one fina
     return response;
   }), b=browser('B');
   await Promise.all([a.net.start(),b.net.start()]);
-  const impact=(client,impactId,extra={})=>client.net.emit('propDamage',{id,type:'bin',x:11,y:10,cause:'weapon',weapon:'pistol',damage:17,impactId,...extra});
+  const impact=(client,impactId,extra={})=>client.net.emit('propDamage',{id,type:'bin',x:11,y:10,cause:'weapon',weapon:'smg',damage:10,impactId,...extra});
   const hp=who=>who.net.world().propHealth[id]?.health;
   impact(a,'a1');impact(b,'b1');
-  await until(()=>attempts.length>=2 && hp(a)===8 && hp(b)===8,'Both players see 42 minus two shots despite retry');
+  await until(()=>attempts.length>=2 && hp(a)===9 && hp(b)===9,'Both players see 29 minus two shots despite retry');
   assert.equal(new Set(attempts).size,1);
   const c=browser('C');await c.net.start();
-  assert.equal(hp(c),8);assert(!c.net.world().destroyed.includes(id));
+  assert.equal(hp(c),9);assert(!c.net.world().destroyed.includes(id));
   impact(c,'invalid',{damage:0});impact(b,'mismatch',{type:'lamp'});
   b.net.emit('destroy',{id}); // Prior builds cannot remove scenery already tracked by durability.
   await until(()=>c.events.some(e=>e.type==='propDamageDenied')&&b.events.some(e=>e.type==='propDamageDenied'),'Rejected predictions roll back');
-  assert.equal(hp(b),8);
+  assert.equal(hp(b),9);
   impact(a,'a2');impact(b,'b2');
   await until(()=>[a,b,c].every(who=>hp(who)===0&&who.net.world().destroyed.includes(id)),'One final shared break');
   await until(()=>[a,b].some(who=>who.events.some(e=>e.type==='propDamageDenied'&&['a2','b2'].includes(e.data.impactId))),'The other impact cannot get credit for the break');
   assert.equal(c.events.filter(e=>e.type==='propDamage'&&e.data.health===0).length,1);
-  assert.equal(c.events.find(e=>e.type==='propDamage'&&e.data.health===0).data.damage,8);
+  assert.equal(c.events.find(e=>e.type==='propDamage'&&e.data.health===0).data.damage,9);
   assert.equal(c.events.filter(e=>e.type==='destroy'&&e.data.id===id).length,1);
   c.net.stop();await c.net.start();
   assert.equal(hp(c),0);assert.deepEqual(c.net.world().destroyed,[id]);

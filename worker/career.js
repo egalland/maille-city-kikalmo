@@ -2,10 +2,11 @@ import {districtEventsSchema,districtState,workDistrictEvent} from './district-e
 import {woolSchema,woolProgress,woolAction} from './lost-wool.js';
 import {careerContracts,careerPlaces,careerRadius,careerGarage} from '../public/career-catalog.js';
 import {outfitShop} from '../public/outfit-shop.js';
-import {atShopCounter,retailGoods,foodRecovery} from '../public/enfer-retail.js';
+import {atShopCounter,retailGoods,foodRecovery,retailClerkId} from '../public/enfer-retail.js';
 import {abandonedFor,replacementAt} from '../public/vehicle-lifecycle.js';
 import {isAircraft} from '../public/airfield.js';
 import {isVehicleType,vehicleSpec,isTrain} from '../public/vehicle-types.js';
+import {dealership,deliveryRange} from '../public/vehicle-dealership.js';
 
 export const careerSchema=[
   woolSchema,...districtEventsSchema,
@@ -19,6 +20,8 @@ export const careerSchema=[
       layer TEXT,wearer TEXT,dyes TEXT NOT NULL DEFAULT '[]',dye TEXT)`,
   `CREATE TABLE IF NOT EXISTS mc_laps(profile TEXT PRIMARY KEY,best INTEGER,public INTEGER,alias TEXT)`,
   `CREATE TABLE IF NOT EXISTS mc_shop_bags(profile TEXT PRIMARY KEY,goods TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS mc_vehicle_licenses(profile TEXT NOT NULL,model TEXT NOT NULL,car TEXT NOT NULL,
+    last_call INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(profile,model))`,
   'CREATE INDEX IF NOT EXISTS mc_ranked_laps ON mc_laps(public,alias) WHERE public IS NOT NULL',
   `CREATE TABLE IF NOT EXISTS mc_career_sessions (
     room TEXT NOT NULL, id TEXT NOT NULL, profile TEXT NOT NULL, PRIMARY KEY(room,id))`,
@@ -29,6 +32,7 @@ export const careerSchema=[
 const profileId=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const maxPoseAge=25000;
 const readCareer=`SELECT c.*,w.slot AS woolSlot,w.picked AS woolPicked,w.paid AS woolPaid,e.bank,e.licensed,e.revenue,l.best,l.public,o.armor,o.layer,o.wearer,o.dyes,o.dye,b.goods,
+    (SELECT json_group_array(model) FROM mc_vehicle_licenses WHERE profile=c.profile) AS vehicleLicenses,
     (SELECT json_group_array(json_object('name',alias,'ms',public)) FROM
       (SELECT alias,public FROM mc_laps WHERE public IS NOT NULL ORDER BY public,alias,profile LIMIT 5)) AS leaders
     FROM mc_careers c JOIN mc_enterprises e ON c.profile=e.profile
@@ -38,7 +42,7 @@ const readCareer=`SELECT c.*,w.slot AS woolSlot,w.picked AS woolPicked,w.paid AS
 const parse=data=>data?JSON.parse(data):null;
 function publicState(row,rider){
   const mission=parse(row.mission);
-  return {version:3,parkingOwner:row.profile,goods:parse(row.goods)||{},wool:woolProgress(row),armor:row.armor||0,armorId:row.layer,wearable:row.wearer===rider,dyes:parse(row.dyes)||[],dye:row.dye,bestLapMs:row.best,publicLapMs:row.public,leaders:parse(row.leaders)||[],bank:row.bank,licensed:!!row.licensed,revenue:row.revenue,revision:row.revision,cash:row.cash,completed:row.completed,reputation:row.reputation,owned:!!row.car,
+  return {version:3,parkingOwner:row.profile,goods:parse(row.goods)||{},vehicleLicenses:parse(row.vehicleLicenses)||[],wool:woolProgress(row),armor:row.armor||0,armorId:row.layer,wearable:row.wearer===rider,dyes:parse(row.dyes)||[],dye:row.dye,bestLapMs:row.best,publicLapMs:row.public,leaders:parse(row.leaders)||[],bank:row.bank,licensed:!!row.licensed,revenue:row.revenue,revision:row.revision,cash:row.cash,completed:row.completed,reputation:row.reputation,owned:!!row.car,
     mission:mission?{contract:mission.contract,stage:mission.stage,car:mission.car||null,started:mission.started,deadline:mission.deadline}:null};
 }
 async function hashProfile(profile){
@@ -46,7 +50,7 @@ async function hashProfile(profile){
   return Array.from(bytes,v=>v.toString(16).padStart(2,'0')).join('');
 }
 const near=(actor,place)=>(actor.lift||0)<1.5&&Math.hypot(actor.x-place.x,actor.y-place.y)<=careerRadius;
-const allowed=new Set(['incident','woolPick','woolReturn','state','start','cancel','advance','repair','buy','collect','license','collectRent','deposit','withdraw','publishLap','hideLap','buyArmor','buyDye','equipDye','buyProduct','eatProduct']);
+const allowed=new Set(['incident','woolPick','woolReturn','state','start','cancel','advance','repair','buy','collect','license','collectRent','deposit','withdraw','publishLap','hideLap','buyArmor','buyDye','equipDye','buyProduct','eatProduct','buyVehicleLicense','deliverVehicle']);
 export async function runCareer(db,b,room,now){
   if(room!=='enfer:public'||!profileId.test(b.profile)||!allowed.has(b.action))
     return {ok:false,error:'Demande de carrière invalide.'};
@@ -78,13 +82,14 @@ export async function runCareer(db,b,room,now){
   const down=actor.health===0||actor.downUntil>now;
   // Use one CAS plus a transaction marker for all dependent writes. A retry
   // or a second tab on the same profile can never spend or earn twice.
-  const marker=crypto.randomUUID(),eventOp='career:'+marker;
+  const marker=crypto.randomUUID();
   let guard='',guardArgs=[];
   const effects=[];
   let mission=previous,cash=row.cash,rep=row.reputation,completed=row.completed,car=row.car,vehicle,repaired,notice,food;
   let bank=row.bank,licensed=row.licensed,revenue=row.revenue;
   const hasMutation='EXISTS (SELECT 1 FROM mc_careers WHERE profile=? AND mutation=?)';
   const worldEvent=(type,data)=>{
+    const eventOp='career:'+marker+':'+type;
     effects.push(q(`INSERT INTO mc_events(room,player,op,name,type,data,at) SELECT ?,?,?,?,?,?,? WHERE ${hasMutation}`,
       room,b.id,eventOp,member.name,type,JSON.stringify(data),now,profile,marker));
     effects.push(q(`INSERT INTO mc_items(room,kind,item,seq,owner,data,at)
@@ -126,12 +131,56 @@ export async function runCareer(db,b,room,now){
       cash+=outcome.reward;
       effects.push(q(`UPDATE mc_lost_wool SET paid=1 WHERE profile=? AND slot=? AND ${hasMutation}`,profile,b.slot,profile,marker));
     }
+  }else if(b.action==='buyVehicleLicense'||b.action==='deliverVehicle'){
+    const model=dealership.get(b.model);
+    if(!model)return fail('Véhicule inconnu.');
+    if(actor.vehicle||actor.railRider||actor.lift>.65||actor.motion==='swim')return fail('La livraison et les achats se font à pied.');
+    const license=await q("SELECT car,last_call FROM mc_vehicle_licenses WHERE profile=? AND model=?",profile,model.id).first();
+    if(b.action==='buyVehicleLicense'){
+      if(!near(actor,careerPlaces.garage))return fail('Rejoins la concession au Garage des Deux Bornes.');
+      if(license)return fail('Tu possèdes déjà cette licence.');
+      if(cash<model.price)return fail('Solde insuffisant pour cette licence.');
+      cash-=model.price;
+      effects.push(q(`INSERT INTO mc_vehicle_licenses(profile,model,car) SELECT ?,?,? WHERE ${hasMutation}`,
+        profile,model.id,'licensed-'+crypto.randomUUID(),profile,marker));
+    }else{
+      if(!license)return fail('Achète la licence de ce véhicule.');
+      if(now-license.last_call<25_000)return fail('La prochaine livraison est disponible après 25 secondes.');
+      const pose=b.delivery;
+      if(!pose||![pose.x,pose.y,pose.angle].every(Number.isFinite)||Math.hypot(actor.x-pose.x,actor.y-pose.y)>deliveryRange||
+        Math.hypot(actor.x-pose.x,actor.y-pose.y)<3||Math.abs(pose.angle)>Math.PI+.01)return fail('Trouve un espace dégagé à proximité.');
+      const existing=await q(`SELECT v.owner,v.data,v.at,v.seq,m.seen,m.state,w.data AS wear,t.at AS retired
+        FROM mc_items v LEFT JOIN mc_members m ON m.room=v.room AND m.id=v.owner
+        LEFT JOIN mc_items w ON w.room=v.room AND w.item=v.item AND w.kind='vehicleDamage'
+        LEFT JOIN mc_items t ON t.room=v.room AND t.item=v.item AND t.kind='vehicleRetired'
+        WHERE v.room=? AND v.kind='vehicle' AND v.item=?`,room,license.car).first();
+      if(existing?.owner&&existing.seen>now-maxPoseAge&&parse(existing.state)?.vehicle?.id===license.car)return fail('Ce véhicule est déjà en circulation.');
+      const latest=parse(existing?.data),wear=parse(existing?.wear);
+      if(latest?.parkingSlot&&latest.expiresAt>now)return {ok:true,state:publicState(row,b.id),vehicle:latest,notice:'Ton véhicule est encore garé.'};
+      if(replacementAt(wear)>now||existing?.retired>now)return fail('La dépanneuse récupère encore le véhicule.');
+      const id='licensed-'+crypto.randomUUID();
+      if(existing){
+        guard+=" AND EXISTS (SELECT 1 FROM mc_items WHERE room=? AND kind='vehicle' AND item=? AND at=? AND seq=?)";
+        guardArgs.push(room,license.car,existing.at,existing.seq);
+        worldEvent('vehicleRetired',{id:license.car,until:now+60_000});
+        effects.push(q(`UPDATE mc_items SET at=? WHERE room=? AND kind='vehicleRetired' AND item=? AND ${hasMutation}`,
+          now+60_000,room,license.car,profile,marker));
+        effects.push(q(`DELETE FROM mc_items WHERE room=? AND kind='vehicle' AND item=? AND ${hasMutation}`,
+          room,license.car,profile,marker));
+      }
+      effects.push(q(`UPDATE mc_vehicle_licenses SET car=?,last_call=? WHERE profile=? AND model=? AND ${hasMutation}`,
+        id,now,profile,model.id,profile,marker));
+      vehicle={id,type:model.id,x:pose.x,y:pose.y,angle:pose.angle,color:model.color,occupied:false,owner:'',speed:0,moving:false,expiresAt:now+abandonedFor};
+      worldEvent('vehicle',vehicle);
+    }
   }else if(b.action==='buyProduct'||b.action==='eatProduct'){
     const product=retailGoods.get(b.product),bag=parse(row.goods)||{};
     if(!product)return fail('Article inconnu.');
     const count=bag[product.id]||0;
     if(b.action==='buyProduct'){
       if(atShopCounter(actor)?.id!==product.store)return fail('Présente-toi à pied devant la caisse de ce magasin.');
+      const clerk=await q("SELECT data FROM mc_items WHERE room=? AND kind='npc' AND item=?",room,retailClerkId(product.store,now)).first();
+      if(parse(clerk?.data)?.health===0)return fail('La caisse est fermée pour le moment.');
       if(cash<product.price)return fail('Solde insuffisant pour cet article.');
       if(count>=99)return fail('Ton sac contient déjà 99 exemplaires de cet article.');
       cash-=product.price;bag[product.id]=count+1;

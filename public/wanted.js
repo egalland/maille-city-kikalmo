@@ -1,7 +1,7 @@
 // Local pursuit uses a monotonic game clock in seconds. Snapshots contain ages,
 // so loading the next sector does not depend on the new page's clock origin.
 const previousThresholds=[0,18,55,110,185,280,320];
-export const wantedThresholds = Object.freeze([18, 55, 225, 475, 800]);
+export const wantedThresholds = Object.freeze([24, 110, 560, 1400, 2500]);
 
 export const wantedTuning = Object.freeze({
   repeatWindow: 6,
@@ -9,7 +9,7 @@ export const wantedTuning = Object.freeze({
   maxRepeatBonus: .6,
   calmDelay: 22,
   decayRate: 2.75,
-  maxPoints: 850
+  maxPoints: 2600
 });
 
 function rule(label, points) {
@@ -18,13 +18,15 @@ function rule(label, points) {
 
 export const wantedRules = Object.freeze({
   peaceful: rule('Conduite normale ou action sans infraction', 0),
-  gunshot: rule('Coup de feu', 5),
-  destroy: rule('Objet détruit', 10),
+  gunshot: rule('Coup de feu signalé', 2),
+  destroy: rule('Objet détruit', 4),
   stealVehicle: rule('Vol d’un véhicule en circulation', 24),
   stealService: rule('Vol d’un véhicule de service', 38),
-  hitCivilian: rule('Passant ou secouriste touché', 22),
-  hitPlayer: rule('Autre joueur touché', 28),
-  hitOfficer: rule('Policier ou membre du SWAT touché', 48)
+  hitCivilian: rule('Passant ou secouriste touché', 8),
+  hitPlayer: rule('Autre joueur touché', 10),
+  hitOfficer: rule('Agent touché', 15),
+  killCivilian: rule('Passant tué', 50),
+  killOfficer: rule('Agent tué', 68)
 });
 
 const maxRepeats = Math.round(wantedTuning.maxRepeatBonus / wantedTuning.repeatStep);
@@ -104,11 +106,11 @@ export function createWanted(initialSnapshot = null, startTime = 0) {
     advance(time);
     if (!isInfraction(action)) return state();
     const previous = recent(action);
-    const escalating=points>=wantedThresholds[1];
-    const bonus = escalating?0:Math.min(wantedTuning.maxRepeatBonus, previous.length * wantedTuning.repeatStep);
-    const weight=escalating&&minor.has(action)?.25:1;
-    const gain = Math.round(wantedRules[action].points * (1 + bonus) * weight * 10) / 10;
-    const total = Math.min(wantedTuning.maxPoints, points + gain);
+    if(action==='gunshot'&&previous.some(at=>clock-at<2.5)){lastGain=0;return state();}
+    const gain=wantedRules[action].points;
+    const cap=action==='gunshot'?wantedThresholds[0]:minor.has(action)?wantedThresholds[1]-1:
+      action.startsWith('hit')?wantedThresholds[3]-1:wantedTuning.maxPoints;
+    const total=Math.max(points,Math.min(cap,points+gain));
     lastGain = Math.round((total - points)*10)/10;
     lastAction = action;
     lastCrimeTime = clock;

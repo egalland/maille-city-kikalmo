@@ -9,10 +9,10 @@ export function impactEvent(at,angle,force,duration,seed){
 }
 export function pedestrianDamage(speed){return clamp(Math.round((Math.abs(speed)-1)*2.9),3,66);}
 export function npcVehicleDamage(speed){return clamp(Math.round((Math.abs(speed)-2.2)*7.6),6,100);}
-export const isLawOfficer=type=>type==='police'||type==='swat';
+export const isLawOfficer=type=>['police','swat','military','tankunit','airunit'].includes(type);
 export const npcMaxHealth=type=>type==='police'?70:type==='swat'?85:100;
 export const officerBodyLifetime=24000;
-export const npcIsDead=state=>!!state&&(state.dead===true||state.health===0&&isLawOfficer(state.type));
+export const npcIsDead=state=>!!state&&(state.dead===true||state.health===0);
 export function crashDamage(speed){return clamp(Math.round((Math.abs(speed)-8)*1.65),0,43);}
 export function createVitality(initial,now=Date.now(),recoveryDelay=koDurationMs){
   let health,medkits,downUntil,protectedUntil,hitAt,medicAt,lastTick,fall,lifeEvent=null,serial=0;

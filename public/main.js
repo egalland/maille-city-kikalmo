@@ -70,8 +70,8 @@ function setTouchAim(enabled) {
 const controlsAreTouch=()=>matchMedia('(pointer:coarse),(max-width:670px)').matches;
 renderIcons();
 const traversal=installTraversalControl($('#jump'),$('#traversalShortcut'),pressed=>game.action('jump',pressed));
-const driving=installDriveControls($('#driveControls'),(steering,throttle,vertical)=>{
-  game?.setDrive(steering,throttle);game?.setFlightVertical(vertical);
+const driving=installDriveControls($('#driveControls'),(steering,throttle,vertical,handbrake)=>{
+  game?.setDrive(steering,throttle);game?.setFlightVertical(vertical);game?.setHandbrake(handbrake);
 });
 function showFlightControls(active){
   $('#scene').toggleAttribute('data-piloting',active);
@@ -212,6 +212,7 @@ function onState(next){
   driving.setActive(drivingNow&&state.lifeState!=='down');
   $('#traversalShortcut').hidden=Boolean(state.inVehicle);
   $('#handbrakeShortcut').hidden=!drivingNow||Boolean(state.inAircraft);
+  $('#driveHandbrake').hidden=!drivingNow||Boolean(state.inAircraft||state.train);
   $('#handbrakeShortcut').lastChild.textContent=state.train?' Frein d’urgence · R pour inverser':' Frein à main';
   $('#railBoarding').hidden=state.inVehicle||!state.platform;
   $('#railPlatformName').textContent=state.platform||'';

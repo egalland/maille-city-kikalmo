@@ -23,12 +23,13 @@ export function canIdentify(observer,suspect,clear) {
 
 export function crimeHeardOrSeen(action,source,witnesses,clear) {
   // Direct victims can report an incident. An occupied vehicle also has a witness.
-  if(['hitCivilian','hitPlayer','hitOfficer','stealVehicle'].includes(action))return true;
-  const audible=action==='gunshot'?52:action==='destroy'?24:0;
+  if(['hitCivilian','hitPlayer','hitOfficer','killCivilian','killOfficer','stealVehicle'].includes(action))return true;
+  const audible=action==='gunshot'?14:action==='destroy'?12:0;
   return witnesses.some(w=>{
     if(w.down||w.stunned||w.noDriver)return false;
     const distance=gap(w,source);
-    return (audible>0&&distance<audible)||(distance<28&&canIdentify(w,source,clear));
+    return (audible>0&&distance<audible&&['police','swat'].includes(w.type)&&clear(w,source))||
+      (distance<36&&canIdentify(w,source,clear));
   });
 }
 
@@ -63,11 +64,11 @@ export function responseUnits(stars) {
   if(stars>=2)units.push(['police',1]);
   if(stars>=3)units.push(['swat',0]);
   if(stars>=4)units.push(['swat',1]);
-  if(stars>=5)units.push(['swat',2]);
+  if(stars>=5)units.push(['military',0],['tankunit',0],['airunit',0]);
   return units;
 }
-export function canUseForce(stars,threatAt,now) {
-  return stars>0&&(now-threatAt<10||stars>=3);
+export function canUseForce(stars) {
+  return stars>=2;
 }
 export function custodyTime(previous,dt,canSurrender){
   return canSurrender?Math.min(2.4,previous+dt):0;

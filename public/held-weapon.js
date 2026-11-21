@@ -4,10 +4,10 @@ import {isAircraft} from './airfield.js';
 
 const shapes={
   pistol:[.235,.084,false],smg:[.365,.100,true],shotgun:[.486,.077,true],
-  yarn:[.302,.128,false],ribbonbow:[.307,.248,true],pompom:[.388,.136,true],
+  yarn:[.302,.088,false],ribbonbow:[.467,.088,true],pompom:[.404,.136,true],
   confetti:[.408,.146,true],boomerang:[.198,.116,false],bubbles:[.298,.126,false],
   spool:[.272,.154,false],star:[.283,.149,false],chime:[.258,.164,false],
-  needle:[.432,.174,true],shuttle:[.399,.112,true],button:[.346,.150,true],spark:[.306,.126,false]
+  needle:[.516,.092,true],shuttle:[.399,.092,true],button:[.346,.101,true],spark:[.359,.090,true]
 };
 const bound=value=>Math.max(0,Math.min(1,value));
 
@@ -41,6 +41,8 @@ export function shotMuzzle(kind,actor,angle){
   if(actor.isCar||actor.vehicle){
     const vehicle=actor.vehicle||actor, spec=vehicleSpec(vehicle.type);
     const heading=vehicle.angle??actor.angle??angle;
+    if(vehicle.type==='tank')return {x:actor.x+Math.cos(angle)*3.05-Math.cos(heading)*.55,
+      y:actor.y+Math.sin(angle)*3.05-Math.sin(heading)*.55,height:1.93+(actor.lift||0),aircraft:false};
     const side=Math.sin(angle-heading)>.05?1:-1;
     const width=(vehicle.type==='airship'?.76:spec.halfWidth)+(spec.openSeat?.01:.09);
     const forward=vehicle.type==='bus'?3.55:spec.seatOffset;

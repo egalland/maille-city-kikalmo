@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {weaponCatalog,weaponList,starterWeapons,findableWeaponIds,inventoryWeapons} from '../public/weapon-catalog.js';
 import {resolveWeaponShot} from '../public/weapon-patterns.js';
 import {buildShotEffect,effectDuration} from '../public/weapon-effects.js';
-import {drawToyWeapon} from '../public/weapon-artwork.js';
+import {drawWeapon} from '../public/weapon-artwork.js';
 import {createPickupDisplay} from '../public/pickup-models.js';
 import {Scene} from '../public/three.js';
 
@@ -22,7 +22,7 @@ test('Every collectible has its own HUD artwork, readable effect geometry and tu
   const art=new Set();
   for(const w of weaponList){
     const {ctx,operations}=recorder();
-    assert(drawToyWeapon(ctx,w.id,0,0,32));assert(operations.length>20,w.id);
+    assert(drawWeapon(ctx,w.id,0,0,32));assert(operations.length>20,w.id);
     art.add(JSON.stringify(operations));
   }
   assert.equal(art.size,weaponList.length);
@@ -39,7 +39,7 @@ test('Every collectible has its own HUD artwork, readable effect geometry and tu
     const drops=findableWeaponIds.map((weapon,i)=>({id:weapon,weapon,x:i*2,y:4}));
     display.update(drops,origin,1.2);assert.equal(scene.children.length,drops.length);
     const models=scene.children.map(p=>p.children.find(c=>c.isGroup));
-    assert(models.every(g=>g?.children.length>=2));
+    assert(models.every(g=>g?.getObjectsByProperty("isMesh",true).some(mesh=>mesh.geometry.attributes.position.count>100)));
     display.update([],origin,1.6);assert.equal(scene.children.length,0);
     display.dispose();
   }finally{

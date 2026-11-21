@@ -15,10 +15,11 @@ import {yarnPalette} from './wool-art.js';
 import { buildings, streets, water, green, metadata, enclosureRows } from './paris-data.js';
 
 import {enferStops,enferDistrict,enferStreet} from './enfer-places.js';
-import { baseTerrainHeight, terrainHeight, buildingGround, waterLevel } from './terrain-height.js';
+import { baseTerrainHeight, terrainHeight, buildingGround, waterLevel, roadHeight, aircraftDeck } from './terrain-height.js';
 import {workshopId,workshopColliders} from './workshop.js';
 import {storeByBuilding,shopColliders} from './enfer-retail.js';
 import {railStations,railSections,railXY,railSpacing,railDistance,railPoint} from './enfer-rail.js';
+import {createRailCrossings} from './rail-crossings.js';
 import {airfields} from './airfield.js';
 import { terraceProfiles } from './street-terraces.js';
 import { authoredWeaponDrops } from './drop-id.js';
@@ -119,6 +120,8 @@ function monumentRect(m,left,right,front,back,minHeight=0) {
     poly:[[left,front],[right,front],[right,back],[left,back]].map(([x,z])=>modelXZ(m,x,z))};
 }
 const isEnfer=metadata.world==='enfer';
+export const railCrossings=isEnfer?createRailCrossings(streets,(road,i,x,y)=>
+  roadHeight(road,i,x,y)-baseTerrainHeight(x,y)>.9||aircraftDeck(x,y)-baseTerrainHeight(x,y)>2.2):[];
 function importedMonument(b) {
   if(isEnfer)return false;
   const center=b.poly.reduce((sum,p)=>[sum[0]+p[0]/b.poly.length,sum[1]+p[1]/b.poly.length],[0,0]);

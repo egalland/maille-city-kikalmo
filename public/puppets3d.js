@@ -9,6 +9,7 @@ import {jacketPattern,civilianJackets,serviceJackets,uniformBand,dressCivilian,t
 import {foxFaces,humanHead,humanNose,distantHead,distantNose,haircuts,distantSleeve,distantThigh,upperSleeve,foreSleeve,turnedCuff,trouserThigh,trouserCalf,boots} from './character-patterns.js';
 import {motionSeed,sampleLocomotion} from './locomotion-pose.js';
 import {heldWeapon,weaponPose} from './held-weapon.js';
+import {weaponCatalog} from './weapon-catalog.js';
 import * as THREE from './three.js';
 import { createStreetVehicle, isStreetVehicle } from './street-vehicles.js';
 import { vehicleSpec } from './vehicle-types.js';
@@ -459,24 +460,26 @@ function mountedPuppet(identity,mount,type){
   return createSaddleRig(puppetTemplate(look).near.clone(true),mount,type);
 }
 const weaponModels=new Map();
-function toyWeapon(kind){
+export function firearmModel(kind){
   if(weaponModels.has(kind))return weaponModels.get(kind);
   const model=new THREE.Group(),{length,bulk,twoHanded,palette}=weaponPose(kind,{});
   const part=(geom,x,y,z,w,h,d,color,roll=0,pitch=0)=>addPart(model,geom,x,y,z,w,h,d,color,roll,0,pitch);
   const axle=(x,r,w,tint)=>part(geo.cylinder,x,.056,0,r,w,r,tint,0,Math.PI/2);
   part(geo.box,-.031,-.037,0,.082,.146,bulk*.68,palette.cloth,0,-.23);
   part(geo.box,length*.28,.043,0,length*.78,.088,bulk,palette.cloth);
-  if(['pistol','smg','shotgun'].includes(kind)){
+  const profile=weaponCatalog[kind].profile;
+  if(profile!=='launcher'&&profile!=='revolver'){
     const action=joint(model,'weapon-action');
     addPart(kind==='shotgun'?model:action,geo.box,length*.46,.08,0,length*.84,.072,bulk*.79,palette.thread);
-    if(kind==='smg')part(geo.box,.065,-.065,0,.058,.123,.054,palette.accent,0,-.15);
+    if(profile==='compact'||profile==='assault')part(geo.box,.065,-.065,0,.058,.123,.054,palette.accent,0,-.15);
     if(kind==='shotgun')addPart(action,geo.box,length*.54,.018,0,.145,.059,bulk*1.06,palette.accent);
+    if(profile==='sniper'){
+      part(geo.box,length*.30,.128,0,.12,.039,.047,'#243039');
+      part(geo.box,length*.24,.101,0,.027,.03,.042,'#52616b');
+    }
     batchGroup(action);
-  }else if(kind==='ribbonbow'||kind==='needle'){
-    const span=bulk*.95,spanAt=length*.57;
-    cord(model,[[spanAt,-.075,-span],[length*.84,.05,-span*.70],[length*.86,.056,0],
-      [length*.84,.05,span*.70],[spanAt,-.075,span]],.017,palette.accent);
-    cord(model,[[spanAt,-.071,-span],[.028,.039,0],[spanAt,-.071,span]],.006,palette.trim);
+  }else if(profile==='revolver'){
+    axle(length*.33,bulk*.65,length*.23,palette.thread);
   }else{
     axle(length*.53,bulk*.56,length*.42,palette.thread);
     axle(length*.67,bulk*.59,.027,palette.accent);
@@ -523,7 +526,7 @@ export function createPuppet(type='fox',color,seed=0){
     const selected=heldWeapon(pose);
     if((equipment?.name??null)!==selected){
       equipment?.removeFromParent();
-      equipment=selected?toyWeapon(selected).clone(true):null;
+      equipment=selected?firearmModel(selected).clone(true):null;
       weaponAction=equipment?.getObjectByName('weapon-action');
       if(equipment){equipment.name=selected;near.add(equipment);}
     }
@@ -1216,9 +1219,53 @@ function createTrain(color){
     for(const {panel,center,direction} of doorPanels)panel.position.x=center+direction*open*.46;
   }};
 }
+function createArmoredVehicle(type,color){
+  const group=new THREE.Group(),turret=new THREE.Group(),tank=type==='tank';
+  const spec=vehicleSpec(type),l=spec.halfLength,w=spec.halfWidth;
+  const paint=/^#[a-f\d]{6}$/i.test(color||'')?color:tank?'#717650':'#5f7068';
+  const box=(g,x,y,z,a,h,d,col,pitch=0)=>addPart(g,geo.box,x,y,z,a,h,d,col,0,0,pitch);
+  box(group,-l*.17,1.03,0,l*1.59,.78,w*1.73,paint);
+  box(group,l*.57,.98,0,l*.43,.60,w*1.61,'#4e5851',.30);
+  box(group,l*.91,.78,0,l*.18,.22,w*1.82,'#48504b');
+  box(group,-l*.12,1.45,0,l*1.41,.22,w*1.88,'#737768');
+  for(const side of [-1,1]){
+    const z=side*w*.69;
+    if(tank)box(group,-l*.17,.53,z,l*1.61,.59,w*.48,'#343a39');
+    for(const fraction of tank?[-.82,-.59,-.35,-.11,.13,.37,.60]:[-.65,0,.65]){
+      const radius=tank?.32:.41;
+      const wheel=addPart(group,geo.cylinder,l*fraction,.43,z,radius,w*.39,radius,'#303538');
+      wheel.rotation.x=Math.PI/2;
+      const hub=addPart(group,geo.cylinder,l*fraction,.43,side*(Math.abs(z)+w*.20),.13,.056,.13,'#858276');
+      hub.rotation.x=Math.PI/2;
+    }
+    for(const part of [-.56,-.22,.12,.41])box(group,l*part,1.23,side*w*.90,l*.27,.28,.075,'#555d52');
+    box(group,l*.75,1.19,side*w*.59,.12,.15,.25,'#e5d9ad');
+  }
+  if(tank){
+    turret.position.set(-l*.14,1.55,0);
+    box(turret,-.17,.36,0,2.24,.63,2.02,paint);
+    box(turret,-.21,.72,0,1.25,.18,1.22,'#797d63');
+    box(turret,1.71,.38,0,2.60,.19,.21,'#4d584c');
+    box(turret,2.94,.38,0,.30,.26,.29,'#41483f');
+    box(turret,-.52,1.03,.55,.06,.57,.06,'#5e6457');
+  }else{
+    box(group,-.18,1.99,0,l*1.18,.99,w*1.74,paint);
+    box(group,l*.49,2.03,0,.085,.38,w*1.54,'#374952',.21);
+    for(const side of [-1,1]){
+      for(const x of [-.89,.31])box(group,x,2.04,side*w*.88,.59,.31,.065,'#3b5156');
+      box(group,-l*.30,2.50,side*.32,.43,.12,.23,side<0?'#6c93ce':'#a95454');
+    }
+  }
+  batchGroup(group);batchGroup(turret);if(tank)group.add(turret);
+  return {group,update(pose={},dt=.016){
+    const target=Number.isFinite(pose.turretAngle)?(pose.angle||0)-pose.turretAngle:0;
+    turret.rotation.y+=Math.atan2(Math.sin(target-turret.rotation.y),Math.cos(target-turret.rotation.y))*(1-Math.exp(-3.4*dt));
+  },dispose(){group.traverse(part=>{if(part.isMesh)part.geometry.dispose();});}};
+}
 export function createCar(type='car',color,seed=0){
   const kind=type?.type??type;
   if(kind==='train')return createTrain(color);
+  if(kind==='tank'||kind==='armored')return createArmoredVehicle(kind,color);
   if(kind==='helicopter'||kind==='airship'){
     const factory=kind==='helicopter'?createHelicopter:createAirship;
     return factory(THREE,{geo,addPart,batchGroup,cord,carTrim,updateSeatedFigures,clearCabin},color,seed);

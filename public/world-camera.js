@@ -17,7 +17,7 @@ export function createWorldCamera(spawn){
     x+=(p.x-x)*follow;y+=(p.y-y)*follow;
     floor=swimming?undefined:terrainHeight(p.x,p.y,p.angle,reset?undefined:floor);
     const aircraftGround=airborne?baseTerrainHeight(p.x,p.y):0;
-    const groundAt=airborne?()=>aircraftGround:swimming?(a,b)=>swimmingSurface(a,b,true)??terrainHeight(a,b):
+    const groundAt=airborne?()=>aircraftGround:car?.type==='train'?baseTerrainHeight:swimming?(a,b)=>swimmingSurface(a,b,true)??terrainHeight(a,b):
       (a,b)=>terrainHeight(a,b,p.angle,floor);
     const base=groundAt(x,y),offset=(p.lift||0)-(swimming?.55:0);
     const focus=offset+(car?Math.max(1.32,spec.height*.77):1.17);

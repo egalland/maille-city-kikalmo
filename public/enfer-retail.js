@@ -47,9 +47,10 @@ export const storeByBuilding=new Map(retailStores.map(store=>[store.building,sto
 export const retailGoods=new Map(retailStores.flatMap(store=>store.goods.map(([id,name,price])=>[id,{id,name,price,store:store.id}])));
 export const foodRecovery={baguette:10,brioche:15,tarte:21,pommes:10,jus:8,provisions:30,chocolat:12};
 export const retailClerks=retailStores.map(store=>({
-  id:'clerk-'+store.id,type:'walker',name:store.clerk,x:store.clerkX,y:store.clerkY,
-  angle:store.angle+Math.PI,color:store.coat,move:false,moving:false,speed:0
+  store:store.id,type:'walker',name:store.clerk,x:store.clerkX,y:store.clerkY,
+  angle:store.angle+Math.PI,color:store.coat,move:false,moving:false,speed:0,braced:true
 }));
+export const retailClerkId=(store,epoch)=>'clerk-'+store+'-'+Math.floor(epoch/1_800_000);
 export function atShopCounter(p){
   if(p.vehicle||p.passenger||p.airborne||p.swimming||p.motion==='swim'||(p.lift||0)>.35)return null;
   return retailStores.find(s=>Math.hypot(p.x-s.buyerX,p.y-s.buyerY)<=1.16)||null;

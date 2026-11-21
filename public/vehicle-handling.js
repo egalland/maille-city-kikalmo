@@ -12,7 +12,8 @@ const tuning={
   estate:[1530,.56,'front',1.01,5],camper:[2270,.43,'rear',.83,4],
   flatbed:[4190,.48,'rear',.87,5],motorbike:[229,.48,'rear',1.09,6],
   boxtruck:[7540,.43,'rear',.84,6],tipper:[9120,.39,'rear',.88,6],
-  cargo:[380,.47,'rear',.76,1],pickup:[2070,.57,'all',.95,5]
+  cargo:[380,.47,'rear',.76,1],pickup:[2070,.57,'all',.95,5],
+  armored:[5300,.54,'all',1.04,5],tank:[27300,.52,'all',1.10,3]
 };
 export function fleetHandling(type){
   const [mass,frontLoad,driveAxle,traction,gears]=tuning[type]||tuning.car;
@@ -44,9 +45,9 @@ export function stepRoadDrive(spec,{speed,pedal,grip,tyres,power,grounded,inclin
   const rolling=.22,aero=.00017+.60*spec.halfWidth*spec.height/spec.mass;
   const roadLoad=rolling+aero*magnitude*magnitude;
   if(handbrake&&grounded){
-    const bite=forces.brake*1.28+roadLoad+direction*9.81*Math.max(-.35,Math.min(.35,incline));
+    const bite=forces.brake*(magnitude>4?.67:1.28)+roadLoad+direction*9.81*Math.max(-.35,Math.min(.35,incline));
     return {speed:direction*Math.max(0,magnitude-Math.max(.5,bite)*dt),braking:true,
-      tractionYaw:forces.tractionYaw*.65};
+      tractionYaw:forces.tractionYaw};
   }
   if(handbrake)pedal=0;
   const condition=Math.sqrt(power);
@@ -67,6 +68,16 @@ export function stepRoadDrive(spec,{speed,pedal,grip,tyres,power,grounded,inclin
   if((braking||!pedal)&&Math.sign(next)!==direction)next=0;
   if(!pedal&&Math.abs(next)<.10)next=0;
   return {speed:next,braking,tractionYaw:forces.tractionYaw};
+}
+export function roadSteering(spec,speed,steer,tractionYaw,handbrake,grounded){
+  const pace=Math.abs(speed),wheel=Math.max(-1,Math.min(1,speed/6));
+  const sliding=handbrake&&grounded&&!spec.openSeat&&pace>4;
+  const yaw=Math.min(spec.steering*(sliding?1.68:1.06)/(1+pace*.024),tractionYaw*(sliding?2.55:1.13));
+  return {yaw:steer*wheel*yaw*(grounded?1:.18),sliding};
+}
+export function roadSlip(lateral,speed,angleDelta,sliding,dt){
+  const projected=lateral*Math.cos(angleDelta)-(sliding?speed*Math.sin(angleDelta):0);
+  return projected*Math.exp(-(sliding?1.08:5.15)*dt);
 }
 export function impactSpeeds(vehicle,other,normalSpeed){
   if(!other)return {own:normalSpeed,struck:0};

@@ -5,6 +5,35 @@ import {handleApi} from '../worker/game-api.js';
 import {careerPlaces,careerContracts,careerGarage} from '../public/career-catalog.js';
 import {retailStores} from '../public/enfer-retail.js';
 import {lotSpaces,parkingLots,parkingLease} from '../public/enfer-parking-lots.js';
+import {dealership} from '../public/vehicle-dealership.js';
+
+test('a vehicle license is bought once at the garage and supports free nearby delivery after reconnecting',async t=>{
+  const {DB,active,who,pose,post,drive,actor,tick}=await harness(t);
+  const initial=(await active(who,'state')).state,model='compact',price=dealership.get(model).price;
+  await DB.prepare('UPDATE mc_careers SET cash=? WHERE profile=?').bind(price+100,initial.parkingOwner).run();
+  const garage=careerPlaces.garage;
+  const buy=()=>post('career',who,{action:'buyVehicleLicense',model,revision:initial.revision});
+  assert.equal((await buy()).ok,false);
+  await pose(garage,{vehicle:null});
+  const purchases=(await Promise.all([buy(),buy()])).filter(result=>result.ok);
+  assert.equal(purchases.length,1);assert.equal(purchases[0].state.cash,100);
+  const returning={...actor(),profile:who.profile},target=careerPlaces.quay;
+  const onFoot=drive(target,{vehicle:null});
+  await post('join',returning,{state:onFoot});
+  const {state}=await active(returning,'state');
+  assert.deepEqual(state.vehicleLicenses,[model]);
+  const call=(delivery,revision=state.revision)=>post('career',returning,{action:'deliverVehicle',model,revision,delivery});
+  assert.equal((await call({...target,x:target.x+70,angle:0})).ok,false);
+  const delivery={x:target.x+7,y:target.y,angle:.3};
+  const first=await call(delivery);
+  assert.ok(first.ok,first.error);assert.equal(first.state.cash,100);assert.equal(first.vehicle.type,model);
+  assert.equal((await call(delivery,first.state.revision)).ok,false);
+  tick(26_000);await post('join',returning,{state:onFoot});
+  const second=await call(delivery,first.state.revision);
+  assert.ok(second.ok,second.error);assert.notEqual(second.vehicle.id,first.vehicle.id);
+  const rejoined=await post('join',who,{state:onFoot});
+  assert.ok(rejoined.world.vehicles[second.vehicle.id]);assert.equal(rejoined.world.vehicles[first.vehicle.id],undefined);
+});
 
 test('retail checks the correct counter, debits once and retains purchases across reconnects',async t=>{
   const {active,who,pose,post,drive,actor}=await harness(t);

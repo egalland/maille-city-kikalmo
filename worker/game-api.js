@@ -456,7 +456,6 @@ function npcHitStatement(q,{room,id,op,name,data,now},guard) {
   return q(`WITH input(src,stamp,severity,maximum) AS (VALUES (?,?,?,?)),
     previous AS (SELECT (SELECT data FROM mc_items WHERE room=? AND kind='npc' AND item=?) AS old,* FROM input),
     stats AS (SELECT *, coalesce(json_extract(old,'$.health'),maximum) AS hp,
-      coalesce(json_extract(old,'$.type'),json_extract(src,'$.type'),'') IN ('police','swat') AS officer,
       coalesce(json_extract(old,'$.healthAt'),stamp) AS last_hit,
       coalesce(json_extract(old,'$.downUntil'),0) AS down_at,
       coalesce(json_extract(old,'$.bleeding.at'),stamp) AS start_at,
@@ -465,17 +464,16 @@ function npcHitStatement(q,{room,id,op,name,data,now},guard) {
       max(0,cast((min(last_hit,end_at)-start_at)/1000 AS integer)) AS lost,
       max(severity,CASE WHEN end_at>stamp THEN coalesce(json_extract(old,'$.bleeding.severity'),0) ELSE 0 END) AS level FROM stats),
     remaining AS (SELECT *,
-      CASE WHEN down_at>stamp OR (officer AND hp=0) THEN 0
-        WHEN down_at>0 AND hp=0 THEN min(maximum,65+max(0,stamp-down_at-10000)*0.004)
+      CASE WHEN down_at>stamp OR hp=0 THEN 0
         ELSE min(maximum,max(min(hp,1),hp-lost)+max(0,stamp-last_hit-10000)*0.004) END AS current_hp FROM ticks),
     result AS (SELECT *, max(0,current_hp-json_extract(src,'$.damage')) AS next_hp,
       CASE WHEN severity>0 THEN json_object('at',stamp,'until',stamp+CASE level WHEN 1 THEN ? WHEN 2 THEN ? ELSE ? END,'severity',level)
         WHEN end_at>stamp THEN json_extract(old,'$.bleeding') END AS wound FROM remaining)
     INSERT OR IGNORE INTO mc_events (room,player,op,name,type,data,at)
       SELECT ?,?,?,?,'npc',
-        CASE WHEN down_at>stamp OR (officer AND hp=0) THEN json_remove(json_set(old,'$.damage',0),'$.bleeding')
+        CASE WHEN down_at>stamp OR hp=0 THEN json_remove(json_set(old,'$.damage',0),'$.bleeding')
         WHEN next_hp<=0 THEN json_set(json_remove(src,'$.bleeding'),'$.health',0,'$.healthAt',stamp,'$.downUntil',stamp+6500,'$.stunnedUntil',stamp+6500,
-          '$.dead',json(CASE WHEN officer THEN 'true' ELSE 'false' END),
+          '$.dead',json('true'),
           '$.ragdoll',json_object('at',stamp,'until',stamp+6500,'angle',coalesce(json_extract(src,'$.ragdoll.angle'),json_extract(src,'$.angle'),0),
           'force',coalesce(json_extract(src,'$.ragdoll.force'),0.8),'seed',coalesce(json_extract(src,'$.ragdoll.seed'),stamp%65536)))
         ELSE json_set(src,'$.health',next_hp,'$.healthAt',stamp,'$.downUntil',0,'$.bleeding',json(wound)) END,stamp FROM result ${guard.clause}`,

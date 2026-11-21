@@ -1,7 +1,7 @@
 import {paintKnit,yarnPalette as dye} from './wool-art.js';
 // The same felt inventory label is used by the hardware and software renderers.
 import {weaponCatalog} from './weapon-catalog.js';
-import {drawToyWeapon} from './weapon-artwork.js';
+import {drawWeapon} from './weapon-artwork.js';
 
 const patches=new Map();
 export const pickupRange=110;
@@ -33,7 +33,7 @@ export function pickupPatch(kind){
   c.restore();
   c.save();c.translate(60,46);c.scale(.84,.78);c.translate(-60,-46);
   pennant(c);c.strokeStyle='#e0c59a';c.lineWidth=1.45;c.setLineDash([3,3.4]);c.stroke();c.restore();
-  drawToyWeapon(c,kind,16,16,88,52);
+  drawWeapon(c,kind,16,16,88,52);
   c.fillStyle='#e6bf7e';c.beginPath();c.ellipse(60,76,2.1,2.1,0,0,Math.PI*2);c.fill();
   patches.set(kind,canvas);return canvas;
 }

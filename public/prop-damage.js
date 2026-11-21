@@ -1,7 +1,7 @@
 // Shared gameplay units. These profiles cover street furniture with solid collision bodies.
 const profiles = Object.freeze({
   crate:   { material: 'wood', maxHealth: 24 },
-  bin:     { material: 'metal', maxHealth: 42 },
+  bin:     { material: 'metal', maxHealth: 29 },
   bench:   { material: 'wood', maxHealth: 72 },
   postbox: { material: 'metal', maxHealth: 82 },
   bollard: { material: 'iron', maxHealth: 112 },
@@ -12,6 +12,10 @@ const profiles = Object.freeze({
 
 export const propMaxHealth = type => Object.hasOwn(profiles, type) ? profiles[type].maxHealth : 0;
 export const propMaterial = type => Object.hasOwn(profiles, type) ? profiles[type].material : null;
+const crushSpeed={bin:7,crate:5,bench:15,postbox:19};
+export function crushableProp(type,speed,damage,health){
+  return Object.hasOwn(crushSpeed,type)&&speed>=crushSpeed[type]&&damage>=(health??propMaxHealth(type));
+}
 
 export function applyPropDamage(type, previousHealth, rawDamage) {
   const maxHealth = propMaxHealth(type);

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTrafficFlow } from '../public/traffic-flow.js';
 import { vehicleSpec } from '../public/vehicle-types.js';
+import { crossingBarriers,crossingSignal } from '../public/rail-crossings.js';
 
 const origin=1811000000000,dt=1/30;
 function lane(routeId,distance){
@@ -29,6 +30,23 @@ function overlap(a,b){
   const bh=b.angle===0?sb.halfLength:sb.halfWidth,bv=b.angle===0?sb.halfWidth:sb.halfLength;
   return Math.abs(a.x-b.x)<ah+bh&&Math.abs(a.y-b.y)<av+bv;
 }
+
+test('a train closes both barriers in advance; opposing trains hold the queue until both tracks clear',()=>{
+  const site={id:'crossing',d:600,gates:[
+    {x:-6,y:0,angle:Math.PI/2,width:8},{x:6,y:0,angle:-Math.PI/2,width:8}
+  ]};
+  const east=d=>({d,direction:1,speed:12}),west=d=>({d,direction:-1,speed:12});
+  assert.deepEqual(crossingSignal(site,[east(535)]),{warning:true,close:false});
+  assert.deepEqual(crossingSignal(site,[east(555)]),{warning:true,close:true});
+  assert.equal(crossingSignal(site,[east(620),west(610)]).close,true);
+  assert.deepEqual(crossingSignal(site,[east(620),west(580)]),{warning:false,close:false});
+  const flow=createTrafficFlow(straight),seeds=[seed('front','east',-25),seed('rear','east',-37,8,'bus')];
+  const held=run(flow,seeds,25,{blockers:crossingBarriers(site),recycleAfter:5,observer:{x:-6,y:1.5}});
+  assert.ok(held.every(cars=>cars.length===2&&cars.every(car=>car.x+vehicleSpec(car.type).halfLength< -6)));
+  assert.ok(held.at(-1).every(car=>car.speed<.10));
+  const cleared=run(flow,seeds,10,{from:25,observer:{x:-6,y:1.5}}).at(-1);
+  assert.ok(cleared.every(car=>car.x>12&&car.speed>4));
+});
 
 test('a queue brakes for a player in its lane, keeps bumper gaps and starts again',()=>{
   const flow=createTrafficFlow(straight),seeds=[seed('front','east',-20),seed('rear','east',-34,8,'bus')];
