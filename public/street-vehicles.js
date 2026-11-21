@@ -298,7 +298,7 @@ export function createStreetVehicle(THREE,art,type,color,seed=0){
       pivot.rotation.y=w.front?-steering:0;
       pivot.rotation.x=twoWheeler(type)?roll:0;
       const flat=(e.parts&wheelPart(w.front,w.p[2]>0))!==0||(w.p[2]===0&&(e.parts&wheelPart(w.front,true))!==0);
-      pivot.position.y=w.r*(flat?.75:1);pivot.scale.y=flat?.68:1;
+      pivot.position.y=w.r*(flat?.89:1);pivot.scale.y=flat?.89:1;
       spin.rotation.z=phase/w.r;
     }
     if(model.mount){
@@ -368,7 +368,7 @@ export function drawStreetVehicle(c,e,x,y,height,time=0,viewAngle=0,weave=null){
       if(body){const tx=px*cp-py*sp;py=px*sp+py*cp+bob;px=tx;}
       const zz=pz*cb+py*sb;py=py*cb-pz*sb;
       const flat=section.r&&(e.parts&(section.p[2]===0?wheelPart(section.front,true)|wheelPart(section.front,false):wheelPart(section.front,section.p[2]>0)));
-      return project(px,flat?py*.76:py,zz);
+      return project(px,flat?py*.89:py,zz);
     }
     for(const v of section.parts){
       if(height<22&&((v.kind==='rod'&&v.r*size<.33)||(v.kind==='egg'&&v.size[0]*size<.7)))continue;

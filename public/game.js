@@ -52,7 +52,7 @@ import { vehicleSpec, isVehicleType, vehicleDoorways, isTrain } from './vehicle-
 import { weaponCatalog as weapons, starterWeapons, weaponList } from './weapon-catalog.js';
 import { resolveWeaponShot,weaponShotShape } from './weapon-patterns.js';
 import { renderShotRay,shotMuzzle } from './held-weapon.js';
-import { effectDuration } from './weapon-effects.js';
+import { effectDuration,rocketFlightTime } from './weapon-effects.js';
 import { createShotPlayback } from './shot-playback.js';
 import { applyPropDamage, propMaxHealth, vehiclePropDamage,crushableProp } from './prop-damage.js';
 import { chooseTouchShot, traceShot, targetHeight } from './aim-assist.js';
@@ -163,6 +163,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   const shotPlayback=createShotPlayback();
   const incapacitated=()=>life.down||!!life.ragdoll;
   let shotContacts=null;
+  const rocketImpacts=[];
   function emit(type,data){
     if(shotContacts&&data.cause==='weapon'&&['propDamage','vehicleDamage','npc'].includes(type)){
       shotContacts.push({type,data});return true;
@@ -1355,7 +1356,11 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
           value.previousOwner=value.owner;value.occupied=false;value.owner='';value.expiresAt||=lastSeen+disconnectedFor;
         }
       }
-      if(parkingExpired(value,epoch))carsShared.delete(key);
+      if(parkingExpired(value,epoch)&&!activeIds.has(key)){
+        const wear=vehicleWear.get(key);
+        carsShared.delete(key);displacedCars.delete(key);
+        if(!wear?.explodeAt&&!wear?.disabledAt&&!wear?.fireAt){vehicleWear.delete(key);exploded.delete(key);}
+      }
     }
     for(const [id,wear] of vehicleWear)if(wreckExpired(wear,epoch))retireVehicle(id,replacementAt(wear));
     for(const [id,until] of retiredVehicles)if(until<=epoch)retiredVehicles.delete(id);
@@ -1850,8 +1855,33 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     const a=shot.angle;
     if(!car){p.angle=a;aimElevation=Math.atan(shot.slope||0);shotFacingUntil=time+.29;}
     publish();
-    const peerHits=[];
-    const pattern=resolveWeaponShot(weapon,a,angle=>trace(angle,aimLock),targets,visible,shot);
+    const kind=weapon,actor={...p,aiming:true,aimElevation,vehicle:car?{...car,angle:p.angle}:null};
+    const viewAt=peerViewTime(epoch),pattern=resolveWeaponShot(kind,a,angle=>trace(angle,aimLock),targets,visible,shot);
+    const rays=pattern.rays.map(r=>({x:r.origin.x,y:r.origin.y,angle:r.angle,length:r.length,
+      ...(Number.isFinite(r.origin.z)?{z:r.origin.z,rise:r.slope*r.length}:{})}));
+    showWeaponShot(kind,rays,actor);
+    audio.gunshot(kind);
+    if(kind==='rocket'&&rays.length){
+      const delay=rocketFlightTime(rays[0].length);
+      rocketImpacts.push({due:time+delay,run:()=>applyWeaponShot(kind,actor,source,pattern,rays,firedAt,viewAt)});
+    }else applyWeaponShot(kind,actor,source,pattern,rays,firedAt,viewAt);
+    if(!ammo[kind])readyReload();
+  }
+  function rocketExplosion(epicenter,ray,age=0){
+    const ground=terrainHeight(epicenter.x,epicenter.y);
+    const lift=Number.isFinite(ray.z)?Math.max(0,ray.z+ray.rise-ground-.25):0;
+    view.effect('carExplosion',epicenter.x,epicenter.y,0,0,[],lift,age);
+    const distance=dist(epicenter,p);
+    if(age<.24&&distance<125){
+      const volume=1-distance/132;
+      audio.grit(.54,.39*volume,590,soundPan(epicenter,distance));
+      tone(78,.67,'triangle',.20*volume,22);
+      if(distance<22)impact=Math.max(impact,(1-distance/22)*.82);
+    }
+    alertCrowd(epicenter,58,true);
+  }
+  function applyWeaponShot(weapon,actor,source,pattern,rays,firedAt,viewAt){
+    const peerHits=[],w=weapons[weapon];
     const severity=['gunshot','destroy','hitCivilian','hitPlayer','hitOfficer'];
     let worst=w.noise?0:-1,unsettled=1;
     // A fan or chain can hit multiple targets. Charge a single offence after all its hits settle.
@@ -1863,7 +1893,8 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     let allyContact=false;
     for(const {target,damage:baseDamage,zone} of pattern.hits){
       const amount=target.hitKind==='npc'?npcWeaponDamage(baseDamage,target.type,zone):baseDamage;
-      const direction=Math.atan2(target.y-p.y,target.x-p.x),force=clamp(amount/45,.12,1);
+      const origin=weapon==='rocket'&&pattern.impact?pattern.impact:actor;
+      const direction=Math.atan2(target.y-origin.y,target.x-origin.x),force=clamp(amount/45,.12,1);
       if(target.hitKind==='prop'){
         unsettled++;
         damageProp(target,amount,{cause:'weapon',weapon},direction,settleShot);
@@ -1877,7 +1908,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         const height=Number.isFinite(ray?.origin.z)?
           clamp((ray.origin.z+ray.slope*ray.length-terrainHeight(target.x,target.y)-(target.lift||0))/spec.height,.04,.97):
           screenY!=null&&top&&bottom&&bottom.y-top.y>.008?clamp((bottom.y-screenY)/(bottom.y-top.y),.04,.97):.60;
-        const part=vehiclePart(target,entry,height),open=(vehicleWear.get(vehicleId(target))?.parts||0)&1;
+        const part=weapon==='rocket'?(ray?'engine':impactPanel(target,origin.x-target.x,origin.y-target.y)):vehiclePart(target,entry,height),open=(vehicleWear.get(vehicleId(target))?.parts||0)&1;
         damageChassis(target,{cause:'weapon',weapon,part:part==='body'?impactPanel(target,entry.x-target.x,entry.y-target.y):part});
         if((part==='glass'||spec.openSeat&&height>.53)&&(target.peer||target.occupied||target.routeId)){
           const injury=Math.round(amount*(open||spec.openSeat?1:.54));
@@ -1906,21 +1937,16 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         worst=Math.max(worst,3);
       }
     }
-    const rays=pattern.rays.map(r=>({x:r.origin.x,y:r.origin.y,angle:r.angle,length:r.length,
-      ...(Number.isFinite(r.origin.z)?{z:r.origin.z,rise:r.slope*r.length}:{})}));
-    showWeaponShot(weapon,rays,{...p,aiming:true,aimElevation,vehicle:car?{...car,angle:p.angle}:null});
     if(pattern.impact){
-      view.effect('burst',pattern.impact.x,pattern.impact.y);
-      alertCrowd(pattern.impact,weapon==='rocket'?58:33,true);
+      if(weapon==='rocket')rocketExplosion(pattern.impact,rays[0]);
+      else {view.effect('burst',pattern.impact.x,pattern.impact.y);alertCrowd(pattern.impact,33,true);}
     }
     const contacts=shotContacts;shotContacts=null;
-    if(rays.length)emit('fire',{...rays[0],kind:weapon,lift:p.lift,shotId,firedAt,viewAt:peerViewTime(epoch),
+    if(rays.length)emit('fire',{...rays[0],kind:weapon,lift:actor.lift,shotId,firedAt,viewAt,
       hits:peerHits,...(rays.length>1?{rays}:{}),...(pattern.impact?{impact:pattern.impact}:{})});
     for(const contact of contacts)emit(contact.type,{...contact.data,shotId});
     settleShot(false);
     if(allyContact)onNotice('Tir allié bloqué');
-    audio.gunshot(weapon);
-    if(!ammo[weapon])readyReload();
   }
   function updateSuspension(spec,dt){
     if(!car)return;
@@ -2189,7 +2215,8 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     const d=event.data,effect=weapons[d.kind]?.effect||'shot';
     if(dist(d,p)>=180)return;
     if(age<.2&&Number.isFinite(d.angle))witnessedShots.set(event.player,{angle:d.angle,kind:d.kind,elevation:Math.atan((d.rise||0)/Math.max(.1,d.length)),at:epoch-age*1000});
-    if(age<effectDuration(effect)){
+    const flight=d.kind==='rocket'?rocketFlightTime(d.length):0;
+    if(age<(flight||effectDuration(effect))){
       const rays=(Array.isArray(d.rays)?d.rays.slice(0,13):[d]).filter(r=>[r.x,r.y,r.angle,r.length].every(Number.isFinite));
       const seen=remotes.find(e=>e.id===event.player);
       const vehicle=d.fromVehicle?(seen?.vehicle||{type:d.fromVehicle,angle:d.angle}):null;
@@ -2202,9 +2229,14 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       if(profile?.noise){alertCrowd(d,d.kind==='rocket'?51:36,true);audio.gunshot(d.kind,volume,soundPan(d,dist(d,p)),dist(d,p));}
       else if(profile)tone(profile.frequency,.08,'sine',.045*volume,profile.frequency*.42);
     }
-    if(age<.55&&d.impact&&dist(d.impact,d)<100){
-      view.effect('burst',d.impact.x,d.impact.y,0,0,[],0,age);
-      alertCrowd(d.impact,d.kind==='rocket'?58:33,true);
+    if(d.impact&&dist(d.impact,d)<100){
+      if(flight){
+        if(age<flight)rocketImpacts.push({due:time+flight-age,run:()=>rocketExplosion(d.impact,d)});
+        else if(age-flight<1.2)rocketExplosion(d.impact,d,age-flight);
+      }else if(age<.55){
+        view.effect('burst',d.impact.x,d.impact.y,0,0,[],0,age);
+        alertCrowd(d.impact,33,true);
+      }
     }
   }
   function frame(t){
@@ -2213,6 +2245,9 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     const dt=clamp((t-previousFrame)/1000,.001,.075);
     previousFrame=t;time+=dt;epoch=net?.serverTime?.()||Date.now();
     shotPlayback.flush(epoch,playRemoteShot);
+    for(let i=rocketImpacts.length-1;i>=0;i--){
+      if(rocketImpacts[i].due<=time)rocketImpacts.splice(i,1)[0].run();
+    }
     receivePeerSnapshots();
     popTick-=dt;if(popTick<=0){syncPeers();if(p.wanted)dispatchPursuit();popTick=.24;}
     knownByPolice=false;

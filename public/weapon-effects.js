@@ -1,6 +1,7 @@
 import {weaponCatalog,weaponList} from './weapon-catalog.js';
 
 const lifetimes={shot:.13,rocket:.43,fist:.18,yarn:.32,ribbon:.36,pompom:.44,confetti:.38,boomerang:.48,bubbles:.5,spool:.42,star:.36,chime:.48};
+export const rocketFlightTime=length=>Math.max(.092,length/205);
 const byEffect=Object.fromEntries(weaponList.map(w=>[w.effect,w.palette]));
 const effectName=kind=>weaponCatalog[kind]?.effect||kind;
 export function effectDuration(kind){return lifetimes[effectName(kind)]||.17;}
@@ -26,9 +27,19 @@ export function buildShotEffect(kind,x,y,angle,length,progress=.5,barrel=false,d
   }else if(key==='shot'){
     line('#ffdb9a',1.45,[pt(0,0,1.03),pt(len,0,1.01+drop)]);
   }else if(key==='rocket'){
-    const at=len*u,tail=Math.max(0,at-Math.min(8,len*.7));
-    curve('#d7d3c6',3.6,10,t=>{const d=tail+(at-tail)*t;return pt(d,.09*Math.sin(t*12+u*7),1.03+drop*d/len);});
-    line('#ffc281',3,[pt(Math.max(0,at-.6),0,1.03+drop*at/len),pt(at,0,1.03+drop*at/len)]);
+    const tip=len*u,body=Math.max(0,tip-.76),tail=Math.max(0,body-8.5);
+    const flame=Math.max(0,body-.85),height=d=>1.03+drop*d/len;
+    for(const [color,width,offset] of [['#77706b',6.8,.15],['#bfb6a5',3.4,-.08]]){
+      curve(color,width,14,t=>{
+        const d=tail+(flame-tail)*t;
+        return pt(d,offset*Math.sin(t*11+u*7),height(d)+.15*(1-t));
+      });
+    }
+    line('#ff6f27',7,[pt(flame,0,height(flame)),pt(body,0,height(body))]);
+    line('#fff3bb',3,[pt((flame+body)/2,0,height((flame+body)/2)),pt(body,0,height(body))]);
+    line('#242b26',8,[pt(body,0,height(body)),pt(tip,0,height(tip))]);
+    line('#9da581',3.4,[pt(body,0,height(body)+.059),pt(tip,0,height(tip)+.045)]);
+    for(const side of [-1,1])line('#d0bd90',2.1,[pt(body,side*.18,height(body)),pt((tip+body)/2,0,height((tip+body)/2))]);
   }else if(key==='yarn'||key==='ribbon'){
     const ribbon=key==='ribbon',turns=ribbon?2.5:3.75;
     for(let j=0;j<(ribbon?2:1);j++)curve(j?pal.trim:pal.accent,j?1.3:2.4,24,t=>{

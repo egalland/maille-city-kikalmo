@@ -15,7 +15,7 @@ import {createBleedFibers} from './bleed-fibers.js';
 import {createBleedMesh} from './bleed-mesh.js';
 import {fiberLifetime,impactFibers} from './puppet-combat.js';
 import {baseTerrainHeight,terrainHeight,terrainGradient,walkingPose} from './terrain-height.js';
-import {buildShotEffect,effectDuration,muzzleFlash} from './weapon-effects.js';
+import {buildShotEffect,effectDuration,muzzleFlash,rocketFlightTime} from './weapon-effects.js';
 import {propDebris} from './prop-wear.js';
 import { vehicleSpec } from './vehicle-types.js';
 import * as THREE from './three.js';
@@ -205,6 +205,16 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
       }
       return;
     }
+    if(kind==='rocket'){
+      const max=rocketFlightTime(len);
+      if(age>=max)return;
+      const height=terrainHeight(x,y)+lift;
+      const strokes=progress=>shotStrokeMesh(buildShotEffect(kind,x,y,angle,len,progress,false,colors?.drop),height);
+      const mesh=strokes(age/max);
+      if(mesh){scene.add(mesh);effects.push({mesh,life:max-age,max,rocket:strokes,fresh:true});}
+      if(colors?.flash)drawShotStrokes(muzzleFlash('rocket',x,y,angle),height,.095,age);
+      return;
+    }
     if(kind!=='burst'&&kind!=='carExplosion'){
       const duration=effectDuration(kind);
       const height=terrainHeight(x,y)+lift,barrel=colors?.barrel;
@@ -288,6 +298,11 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
       const e=effects[i];
       if(e.fresh)e.fresh=false;else e.life-=dt;
       if(e.life<=0){scene.remove(e.mesh);e.mesh.geometry.dispose();e.mesh.material.dispose();effects.splice(i,1);continue;}
+      if(e.rocket){
+        const mesh=e.rocket(1-e.life/e.max);
+        if(mesh){scene.remove(e.mesh);e.mesh.geometry.dispose();e.mesh.material.dispose();e.mesh=mesh;scene.add(mesh);}
+        continue;
+      }
       if(e.vy!==undefined){e.vy-=7*dt;e.mesh.position.x+=e.vx*dt;e.mesh.position.z+=e.vz*dt;e.mesh.position.y=Math.max(terrainHeight(e.mesh.position.x,e.mesh.position.z)+.02,e.mesh.position.y+e.vy*dt);if(!e.fiber)e.mesh.rotation.z+=dt*6;}
       e.mesh.material.opacity=Math.min(1,e.shot?1.72*e.life/e.max:e.life*(e.fiber?10:5));
     }

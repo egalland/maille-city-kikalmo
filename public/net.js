@@ -254,7 +254,6 @@ export function createNet(options={}) {
       if(Number.isSafeInteger(data.cursor))cursor=joining?data.cursor:Math.max(cursor,data.cursor);
       if(data.now-lastPickupPrune>5000){
         for(const [item,until] of Object.entries(context.pickups))if(until<=data.now)delete context.pickups[item];
-        for(const [id,vehicle] of Object.entries(context.vehicles))if(parkingExpired(vehicle,data.now))delete context.vehicles[id];
         pruneVehicleWorld(context,data.now);
         lastPickupPrune=data.now;
       }

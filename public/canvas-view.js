@@ -23,7 +23,7 @@ import {pavedStreetWidth,streetHasCentreMarking,streetVerge} from './street-scal
 import {baseTerrainHeight,terrainHeight,terrainGradient,roadHeight,buildingGround,waterLevel,walkingPose} from './terrain-height.js';
 import {terracePanels} from './street-terraces.js';
 import {propDebris,propWearProfile,propWearStage,trackPropWear} from './prop-wear.js';
-import {buildShotEffect,effectDuration,muzzleFlash} from './weapon-effects.js';
+import {buildShotEffect,effectDuration,muzzleFlash,rocketFlightTime} from './weapon-effects.js';
 import {isAircraft} from './airfield.js';
 import { vehicleSpec } from './vehicle-types.js';
 // Perspective software renderer for browsers without a WebGL 2 context.
@@ -952,7 +952,7 @@ export function createCanvasView(canvas,spawn,onNotice){
   function effect(kind,x,y,angle=0,len=0,colors=[],lift=0,age=0){
     const debris=propDebris(kind,colors?.type,angle);
     if(effects.length>60)effects.shift();
-    effects.push({kind,x,y,angle,len,lift:lift+(debris?.height||0),born:clock-age,duration:debris?.lifetime,barrel:colors?.barrel,flash:colors?.flash,drop:colors?.drop,
+    effects.push({kind,x,y,angle,len,lift:lift+(debris?.height||0),born:clock-age,duration:kind==='rocket'?rocketFlightTime(len):debris?.lifetime,barrel:colors?.barrel,flash:colors?.flash,drop:colors?.drop,
       firstAge:colors?.barrel?age:null,
       fibers:debris?.strands||(kind==='meleeImpact'?impactFibers(angle,len):null)});
   }
@@ -1342,7 +1342,7 @@ export function createCanvasView(canvas,spawn,onNotice){
         const pp=at(e.x,e.y,.93+e.lift);if(!pp)continue;
         for(let j=0;j<8;j++){const v=j*2.39+age;g.fillStyle=j%2?'#f0c891':'#94b5a6';g.fillRect(pp.x+Math.cos(v)*age*80,pp.y+Math.sin(v)*age*80,3,3);}
       }else{
-        const strokes=buildShotEffect(e.barrel||e.kind,e.x,e.y,e.angle,e.len,age/duration,!!e.barrel,e.drop);
+        const strokes=buildShotEffect(e.barrel||e.kind,e.x,e.y,e.angle,e.len,age/duration,!!e.barrel&&e.kind!=='rocket',e.drop);
         if(e.flash&&age<.095)strokes.push(...muzzleFlash(e.barrel,e.x,e.y,e.angle));
         for(const stroke of strokes){
           g.beginPath();g.strokeStyle=stroke.color;g.lineWidth=stroke.width;let pen=false;

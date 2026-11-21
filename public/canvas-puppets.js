@@ -472,8 +472,8 @@ function drawCarBody(c,o,x,groundY,height,time=0,viewAngle=0){
   };
   c.save();c.translate(x,groundY);c.scale(factor,factor);c.lineJoin='round';c.lineCap='round';
   function wheel(a,z){
-    const flat=(o.parts&wheelPart(a>0,z>0))!==0,drop=flat?.18:0;
-    c.save();if(flat)c.transform(1,0,0,.72,0,0);
+    const flat=(o.parts&wheelPart(a>0,z>0))!==0,drop=flat?.025:0;
+    c.save();if(flat)c.transform(1,0,0,.89,0,0);
     const p=project(a,.33-drop,z);const width=.13+.25*Math.abs(sn),ang=drive?t*(4+Math.abs(speed)*.4):.6;
     beadAt(p,width,.36,trim.tyre,trim.ink,.038);
     beadAt([p[0],p[1]-.012],width*.78,.278,trim.binding,trim.welt,.022);

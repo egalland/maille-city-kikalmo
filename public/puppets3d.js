@@ -1035,12 +1035,12 @@ function createCarBody(type='car',color,seed=0){
   const wheelRadius=bus?.48:isVan?.434:type==='compact'?.304:type==='sport'?.34:.372;
   const axleZ=bus?1.10:isVan?.94:type==='compact'?.68:type==='sport'?.82:.805;
   const axles=bus?[-2.50,2.73]:isVan?[-1.54,1.45]:type==='compact'?[-1.06,1.03]:type==='sport'?[-1.31,1.36]:[-1.22,1.25];
-  const wheels=[];
+  const wheels=[],units=frame.scale;
+  const rollingRadius=wheelRadius*Math.min(units.x,units.y);
   for(const x of axles)for(const s of [-1,1]){
-    const wheel=carWheel(wheelRadius,s,type);
-    wheel.userData.front=x>0;
-    wheel.position.set(x,wheelRadius,s*axleZ);
-    frame.add(wheel);wheels.push(wheel);
+    const pivot=new THREE.Group(),spin=carWheel(rollingRadius,s,type);
+    pivot.position.set(x*units.x,rollingRadius,s*axleZ*units.z);
+    pivot.add(spin);group.add(pivot);wheels.push({pivot,spin,front:x>0,side:s});
   }
   let spin=0,previousSpeed=0,lastHeading=null,pitch=0,roll=0,compression=0,steer=0;
   const clamp=(v,lo,hi)=>Math.min(hi,Math.max(lo,v));
@@ -1062,11 +1062,13 @@ function createCarBody(type='car',color,seed=0){
     const wear=1-chassisHealth(pose.chassisHp)/100;
     body.scale.set(1+compression*.12-wear*.071,1-compression*.6-wear*.096,1+compression*.34+wear*.018);
     body.rotation.z=pitch;body.rotation.x=roll;
-    spin-=speed*dt/wheelRadius;
+    spin-=speed*dt/rollingRadius;
     for(const wheel of wheels){
-      const flat=(pose.parts&wheelPart(wheel.userData.front,wheel.position.z>0))!==0;
-      wheel.position.y=wheelRadius*(flat?.73:1);wheel.scale.set(1,flat?.65:1,1);
-      wheel.rotation.order='YXZ';wheel.rotation.y=wheel.userData.front?-steer:0;wheel.rotation.z=spin;
+      const flat=(pose.parts&wheelPart(wheel.front,wheel.side>0))!==0;
+      wheel.pivot.position.y=rollingRadius*(flat?.89:1);
+      wheel.pivot.scale.set(1,flat?.89:1,1);
+      wheel.pivot.rotation.y=wheel.front?-steer:0;
+      wheel.spin.rotation.z=spin;
     }
     if(beacon){
       // The little purls of the beacon breathe without changing anyone else's shared material.

@@ -72,6 +72,22 @@ test('a vehicle license is bought once at the garage and supports free nearby de
   assert.ok(rejoined.world.vehicles[second.vehicle.id]);assert.equal(rejoined.world.vehicles[first.vehicle.id],undefined);
 });
 
+test('an expired street car loses its old damage, while a parked car keeps it',async t=>{
+  const {DB,who,post,drive,tick}=await harness(t);
+  const spot=careerPlaces.market;
+  for(const [id,expiresAt] of [['street-returns',Date.now()+3000],['still-parked',Date.now()+60_000]]){
+    const item=(kind,data)=>DB.prepare("INSERT INTO mc_items(room,kind,item,seq,data,owner,at) VALUES('enfer:public',?,?,0,?,'',?)")
+      .bind(kind,id,JSON.stringify(data),Date.now()).run();
+    await item('vehicle',{id,type:'compact',...spot,expiresAt});
+    await item('vehicleDamage',{id,type:'compact',hp:47,parts:132,...spot});
+  }
+  tick(3200);
+  const world=(await post('join',who,{state:drive(spot,{vehicle:null})})).world;
+  assert.equal(world.vehicles['street-returns'],undefined);
+  assert.equal(world.vehicleDamage['street-returns'],undefined);
+  assert.equal(world.vehicleDamage['still-parked'].hp,47);
+});
+
 test('the Mont Renaud garage installs a part once and keeps it on the next delivery',async t=>{
   const {DB,active,who,pose,post,drive,tick}=await harness(t);
   const model='compact',price=dealership.get(model).price,part=tuningCatalog.get('engine');

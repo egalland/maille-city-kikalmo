@@ -20,6 +20,12 @@ export function replacementAt(wear){
 }
 
 export function pruneVehicleWorld(world,now){
+  for(const [id,vehicle] of Object.entries(world.vehicles)){
+    if(!parkingExpired(vehicle,now))continue;
+    delete world.vehicles[id];
+    const wear=world.vehicleDamage[id];
+    if(!wear?.explodeAt&&!wear?.disabledAt&&!wear?.fireAt)delete world.vehicleDamage[id];
+  }
   for(const [id,wear] of Object.entries(world.vehicleDamage)){
     if(!wreckExpired(wear,now))continue;
     const returnsAt=replacementAt(wear);

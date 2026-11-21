@@ -166,7 +166,7 @@ function confirmFinishingShot(h,prop){
 function startGame(t,options={}){
   const globals=['window','document','requestAnimationFrame','cancelAnimationFrame'];
   const saved=new Map(globals.map(k=>[k,globalThis[k]]));
-  const hooks={notices:[],actions:[],loadouts:[],players:[],world:{pickups:{}}};
+  const hooks={notices:[],actions:[],effects:[],loadouts:[],players:[],world:{pickups:{}}};
   const canvas=Object.assign(new EventTarget(),{focus(){},setPointerCapture(){}});
   const net={id:'self-id',status:'online',world:()=>hooks.world,peers:()=>hooks.players,onEvent:fn=>{hooks.receive=fn;},
     publish:pose=>{hooks.published=pose;},emit:(name,data)=>{hooks.actions.push({name,data});return true;},
@@ -182,7 +182,7 @@ function startGame(t,options={}){
     canvas.dispatchEvent(Object.assign(new Event('pointerup'),{button:0,pointerType:'mouse',pointerId:1}));
   };
   hooks.game=createGame({canvas,net,onState:s=>{hooks.state=s;},onNotice:s=>hooks.notices.push(s),onLoadoutChange:l=>hooks.loadouts.push(l),
-    buildView:()=>({available:true,mode:'canvas',aim:()=>hooks.aim??SPAWN.angle,projectTarget:options.projectTarget,effect(){},render:s=>{hooks.scene=s;},dispose(){}}),...options});
+    buildView:()=>({available:true,mode:'canvas',aim:()=>hooks.aim??SPAWN.angle,projectTarget:options.projectTarget,effect(...args){hooks.effects.push(args);},render:s=>{hooks.scene=s;},dispose(){}}),...options});
   hooks.net=net;hooks.canvas=canvas;
   t.after(()=>{
     hooks.game.destroy();
@@ -228,6 +228,22 @@ test('Walking onto a pickup waits for the global claim, recovers on reconnect an
   reply({ok:true,availableAt:h.epoch+600});await Promise.resolve();h.step(12);
   assert.equal(h.state.weapon,'pistol');assert.equal(game.selectWeapon('yarn'),true);assert.equal(h.state.ammo,6);
   assert.equal(h.loadouts.length,1);
+});
+
+test('a rocket travels before detonating once at the same point as its network hit',t=>{
+  const h=startGame(t,{loadout:['rocket']});
+  assert.ok(h.game.selectWeapon('rocket'));
+  h.step(20);
+  h.game.action('fire',true);h.game.action('fire',false);h.step(1);
+  assert.ok(h.effects.some(e=>e[0]==='rocket'));
+  assert.ok(!h.effects.some(e=>e[0]==='carExplosion'));
+  assert.ok(!h.actions.some(e=>e.name==='fire'&&e.data.kind==='rocket'));
+  h.step(28);
+  const fire=h.actions.find(e=>e.name==='fire'&&e.data.kind==='rocket').data;
+  const blasts=h.effects.filter(e=>e[0]==='carExplosion');
+  assert.equal(blasts.length,1);
+  assert.deepEqual(blasts[0].slice(1,3),[fire.impact.x,fire.impact.y]);
+  assert.ok(fire.impact.radius>6);
 });
 
 test('A sector validates claimed equipment, hides consumed drops, and leaves legacy unearned weapons locked',t=>{

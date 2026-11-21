@@ -371,6 +371,17 @@ async function sweepVehicles(db,room,now,joining){
       (SELECT item FROM mc_items WHERE room=? AND kind='vehicleDamage' AND ${end} BETWEEN 1 AND ?)`).bind(room,room,now-wreckFor),
     db.prepare(`UPDATE mc_items SET kind='vehicleRetired',at=${end}+?,data='{}',owner=''
       WHERE room=? AND kind='vehicleDamage' AND ${end} BETWEEN 1 AND ?`).bind(wreckFor+replacementDelay,room,now-wreckFor),
+    db.prepare(`WITH expired AS MATERIALIZED (
+      SELECT v.item FROM mc_items v
+      WHERE v.room=? AND v.kind='vehicle' AND json_extract(v.data,'$.type')<>'train'
+      AND CASE WHEN v.owner<>'' THEN v.at+?
+        ELSE coalesce(json_extract(v.data,'$.expiresAt'),v.at+?) END<=?
+      AND NOT EXISTS (SELECT 1 FROM mc_members m WHERE m.room=v.room AND m.id=v.owner
+        AND m.seen>? AND json_extract(m.state,'$.vehicle.id')=v.item)
+      AND NOT EXISTS (SELECT 1 FROM mc_items w WHERE w.room=v.room AND w.item=v.item AND w.kind='vehicleDamage'
+        AND (coalesce(json_extract(w.data,'$.fireAt'),0)>0 OR ${end.replaceAll('data','w.data')}>0)))
+      DELETE FROM mc_items WHERE room=? AND kind IN ('vehicle','vehicleDamage') AND item IN (SELECT item FROM expired)`)
+      .bind(room,disconnectedFor,abandonedFor,now,now-GONE,room),
     db.prepare("DELETE FROM mc_items WHERE room=? AND kind='vehicleRetired' AND at<=?").bind(room,now),
     db.prepare('DELETE FROM mc_cash_drops WHERE room=? AND expires<?').bind(room,now)
   ]);

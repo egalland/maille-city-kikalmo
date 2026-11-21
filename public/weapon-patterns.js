@@ -47,6 +47,8 @@ export function resolveWeaponShot(kind,angle,trace,targets=[],visible,firstRay=n
   const mode=shape,primary=rays[0];
   if(!(mode.area||mode.chain)||!primary)return {rays,hits,impact:null};
   let origin=tip(primary),sourceId=primary.hit?.id;
+  // Start visibility just outside the sampled impact surface, on the incoming side.
+  const splashSight=kind==='rocket'&&primary.surface?tip({...primary,length:Math.max(0,primary.length-.35)}):null;
   const impact=mode.area?{...origin,radius:mode.area}:null;
   if(typeof visible!=='function'||(mode.chain&&!primary.hit))return {rays,hits,impact};
   for(let i=0;i<mode.limit;i++){
@@ -54,7 +56,7 @@ export function resolveWeaponShot(kind,angle,trace,targets=[],visible,firstRay=n
     const options=targets.filter(t=>!used.has(t.id)&&!t.stunned&&Number.isFinite(t.x+t.y))
       .map(target=>({target,d:distance(origin,target)})).filter(r=>r.d<=reach)
       .sort((a,b)=>a.d-b.d||String(a.target.id).localeCompare(String(b.target.id)));
-    const next=options.find(r=>visible(origin,r.target,sourceId));
+    const next=options.find(r=>visible(splashSight||origin,r.target,sourceId));
     if(!next)break;
     add(next.target,weapon.damage*(mode.area?1-.6*next.d/reach:Math.pow(.78,i+1)));
     if(mode.chain){

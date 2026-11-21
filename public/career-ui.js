@@ -29,6 +29,11 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
   const detail=document.getElementById('careerDetail'),action=document.getElementById('careerAction'),pin=document.getElementById('careerPin');
   badge.hidden=false;
   badge.onclick=open;
+  const vehicleShop=document.getElementById('vehicleShopBadge');
+  if(vehicleShop){
+    vehicleShop.hidden=false;
+    vehicleShop.onclick=()=>{staged='dealership';open();};
+  }
   let state=null,pending=false,lastRead=-Infinity,lastIssue='',manual=null,lastPanelKey='',panelBody=null,staged=null;
   let nextAction=null,transferAmount=25,incident=null,incidentReadDue=0;
   net.onEvent?.(e=>{if(e.type==='districtUpdate'||e.type==='cash')incidentReadDue=0;});
@@ -107,7 +112,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       if(which==='collectRent')notify('Recettes encaissées · +'+money(state.cash-before.cash));
       if(which==='deposit'||which==='withdraw')notify('Virement effectué · '+money(amount));
       if(which==='repair')notify('Véhicule réparé au garage.');
-      if(which==='buyVehicleLicense')notify('Licence achetée · '+dealership.get(model).name);
+      if(which==='buyVehicleLicense')notify(dealership.get(model).name+' ajouté à Mon garage');
       if(which==='installTuning')notify(tuningCatalog.get(upgrade).name+' installé');
       if(which==='deliverVehicle'&&data.vehicle){
         if(!state.mission)manual={...data.vehicle,name:dealership.get(model).name};
@@ -409,14 +414,18 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       shop.append(dyes);return shop;
     }
     function dealershipPage(){
-      const page=make('section','career-garage');
-      page.append(make('h3','','Boutique de véhicules'),make('p','',
-        'Achète un véhicule aux Deux Bornes ou à Mont Renaud. Tu peux ensuite le faire livrer près de toi depuis ce menu.'));
-      if(!atelier){
-        const route=control('Guider vers la concession',()=>guide('garage'));route.disabled=!!job;page.append(route);
+      const page=make('div','career-jobs');
+      const models=[...dealership.values()],ownedModels=models.filter(model=>state?.vehicleLicenses?.includes(model.id));
+      const catalog=make('div','career-garage'),garage=make('div','career-garage');
+      garage.append(make('h3','','Mon garage'));
+      if(!ownedModels.length)garage.append(make('p','',state?'Tes véhicules achetés apparaîtront ici.':'Chargement du garage…'));
+      catalog.append(make('h3','','Concession'),make('p','',
+        'Paie avec les francs gagnés en jeu. Tes achats sont enregistrés et tu peux faire livrer tes véhicules depuis Mon garage.'));
+      if(!atelier)for(const site of tuningSites){
+        const route=control(site.name,()=>guide(site));route.disabled=!!job;catalog.append(route);
       }
-      for(const model of dealership.values()){
-        const owned=state?.vehicleLicenses?.includes(model.id),row=make('div','career-dye');
+      for(const model of models){
+        const owned=ownedModels.includes(model),row=make('div','career-dye');
         const summon=()=>{
           if(!owned)return send('buyVehicleLicense',{model:model.id});
           const delivery=game.vehicleDeliverySpot?.(model.id);
@@ -425,9 +434,10 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
         };
         const button=control(owned?'Faire livrer':'Acheter · '+money(model.price),summon);
         button.disabled=!state||pending||!nowOnline()||car.inVehicle||car.lifeState==='down'||!owned&&(!atelier||state.cash<model.price);
-        button.setAttribute('aria-label',(owned?'Faire livrer ':'Acheter la licence de ')+model.name);
-        row.append(make('span','',model.name),button);page.append(row);
+        button.setAttribute('aria-label',(owned?'Faire livrer ':'Acheter ')+model.name);
+        row.append(make('span','',model.name),button);(owned?garage:catalog).append(row);
       }
+      page.append(garage,catalog);
       return page;
     }
     function tuningPage(){

@@ -20,7 +20,7 @@ export function chassisDamage(type,{cause,speed,weapon,part,swingKind}){
   if(cause==='melee')return swingKind==='kick'?2:1;
   if(cause==='weapon'){
     if(!Object.hasOwn(weaponCatalog,weapon)||weapon==='fist')return 0;
-    const factor=part==='engine'?.50:part==='glass'?.09:(partMask[part]&30)?.10:.31;
+    const factor=weapon==='rocket'?(part==='engine'?1.04:.64):part==='engine'?.50:part==='glass'?.09:(partMask[part]&30)?.10:.31;
     return Math.max(1,Math.round(weaponCatalog[weapon].damage*factor*vulnerability));
   }
   if(cause!=='crash'||!Number.isFinite(speed))return 0;
