@@ -213,6 +213,11 @@ function onState(next){
   $('#traversalShortcut').hidden=Boolean(state.inVehicle);
   $('#handbrakeShortcut').hidden=!drivingNow||Boolean(state.inAircraft);
   $('#handbrakeShortcut').lastChild.textContent=state.train?' Frein d’urgence · R pour inverser':' Frein à main';
+  $('#railBoarding').hidden=state.inVehicle||!state.platform;
+  $('#railPlatformName').textContent=state.platform||'';
+  $('#railPlatformStatus').textContent=state.nearTrain?'Train à quai':'En attente du prochain train';
+  $('#railBoardPassenger').hidden=!state.nearTrain;
+  $('#railBoardDriver').hidden=!state.railCanDrive;
   $('#district').textContent=state.district;
   const street=state.street||'';
   $('#street').textContent=street===state.district?'':street;
@@ -227,14 +232,14 @@ function onState(next){
   driveHint.textContent=state.train?(atPlatform?state.railStation+' · E pour descendre':state.railDestination+' · '+state.railDistance+' m'):
     'E · Se garer et sortir';
   const condition=$('#chassisStatus'),integrity=Math.round(state.vehicleHealth??100);
-  condition.textContent=state.train?'↑ Traction · ↓ Frein · R Inverser':integrity===0?'En panne':'Carrosserie · '+integrity+' %';
+  condition.textContent=state.train?(state.passenger?'Voyage en train':'↑ Traction · ↓ Frein · R Inverser'):integrity===0?'En panne':'Carrosserie · '+integrity+' %';
   const wear=chassisStage(integrity);
   condition.dataset.damaged=wear>=2?'severe':wear===1?'worn':'';
   const ride=$('#ride');
   ride.classList.toggle('near',Boolean(state.inVehicle||state.nearVehicle));
   const vehicle=state.inVehicle?state.vehicleName:state.nearVehicleName;
   const exitVerb=state.canPark?'Se garer et sortir':state.canBail?'Sauter en vol':state.canBailRoad?'Sauter en marche':'Sortir';
-  const rideVerb=state.inVehicle?exitVerb:state.nearPassengerSeat?'Monter en passager':state.boarding?'Conducteur en sortie…':state.jackTarget?'Prendre le volant':state.nearVehicle?'Monter':'Véhicule';
+  const rideVerb=state.inVehicle?exitVerb:state.nearPassengerSeat||state.nearTrain?'Monter en passager':state.boarding?'Conducteur en sortie…':state.jackTarget?'Prendre le volant':state.nearVehicle?'Monter':'Véhicule';
   const rideLabel=vehicle?rideVerb+' · '+vehicle:'Monter ou descendre du véhicule';
   ride.setAttribute('aria-label',rideLabel);
   const passengerExit=$('#passengerExit');
@@ -334,6 +339,8 @@ $('#recenter').onpointerdown=e=>{e.preventDefault();game.action('recenter');};
 $('#ride').onpointerdown=e=>{e.preventDefault();game.action('vehicle');};
 $('#driveExit').onclick=()=>{driving.release();game.action('vehicle');};
 $('#trainReverse').onclick=()=>{driving.release();game.action('reverseTrain');};
+$('#railBoardPassenger').onclick=()=>game.action('trainPassenger');
+$('#railBoardDriver').onclick=()=>game.action('trainDriver');
 $('#driveLamps').onclick=()=>game.action('headlamps');
 $('#driveHorn').onclick=()=>game.action('horn');
 $('#driveCamera').setAttribute('aria-label','Changer la caméra de conduite');

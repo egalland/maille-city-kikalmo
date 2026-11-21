@@ -13,12 +13,14 @@ export const frontageSigns=[
   {name:'BOULANGERIE',caption:'LE FOUR DES TISSERANDS',color:'#78453b',awning:'#b85d47',wares:'bread'},
   {name:'FLEURISTE',caption:'LES GLYCINES',color:'#476457',awning:'#718e73',wares:'flowers'},
   {name:'LIBRAIRIE',caption:'LES PAGES COUSUES',color:'#4e5278',awning:'#8a7499',wares:'books'},
-  {name:'AUCHAN',caption:'NOYON · MONT RENAUD',color:'#a5373e',awning:'#dc6663',wares:'groceries'},
+  {name:'AUCHAN',caption:'MONT RENAUD',color:'#a5373e',awning:'#dc6663',wares:'groceries'},
   {name:'ACTION',caption:'MAISON ET LOISIRS',color:'#295886',awning:'#547bac',wares:'home'},
   {name:'KIABI',caption:'VÊTEMENTS ET ACCESSOIRES',color:'#334765',awning:'#8a9cbb',wares:'clothes'},
   {name:'INTERSPORT',caption:'SPORT ET PLEIN AIR',color:'#36567b',awning:'#c46059',wares:'sports'},
-  {name:'GARE DE NOYON',caption:'LIGNE DE L’OISE',color:'#265468',awning:'#699594'},
-  {name:'HALTE DE L’OISE',caption:'LIGNE DE L’OISE',color:'#37615b',awning:'#7ea180'}
+  {name:'LES FILATURES',caption:'BOUCLE DES MAILLES',color:'#265468',awning:'#699594'},
+  {name:'LES AULNES',caption:'BOUCLE DES MAILLES',color:'#37615b',awning:'#7ea180'},
+  {name:'LES PRÉS',caption:'BOUCLE DES MAILLES',color:'#6d5b40',awning:'#a38a67'},
+  {name:'LES VERRIÈRES',caption:'BOUCLE DES MAILLES',color:'#385863',awning:'#7b9d9f'}
 ];
 // Facades facing the public contract stops in the pilot district.
 export const careerFronts=new Map([
@@ -41,7 +43,7 @@ export const neighborhoodShops=[
   {id:'four-tisserands',name:'Boulangerie · Le Four des Tisserands',building:'317661398',edge:7,style:9,x:-25.85,y:-276.88},
   {id:'glycines',name:'Fleuriste · Les Glycines',building:'317662645',edge:9,style:10,x:138.96,y:-204.71},
   {id:'pages-cousues',name:'Librairie · Les Pages Cousues',building:'317662704',edge:6,style:11,x:55.54,y:-116.77},
-  commercialStore('bobines','galerie-bobines','Auchan Noyon · Mont Renaud',12,0,8,20,12,5.9),
+  commercialStore('bobines','galerie-bobines','Auchan · Mont Renaud',12,0,8,20,12,5.9),
   commercialStore('action-noyon','action-mont-renaud','Action · Mont Renaud',13,16,6.5,7.6,8,5.35),
   commercialStore('kiabi-noyon','kiabi-mont-renaud','Kiabi · Mont Renaud',14,28,6.5,8.2,8,5.55),
   commercialStore('sport-noyon','intersport-mont-renaud','Intersport · Mont Renaud',15,38,6.5,7.6,8,5.55)

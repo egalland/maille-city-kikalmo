@@ -52,8 +52,8 @@ test('the bundled Noyonnais map opens on usable streets and includes water, terr
   assert.equal(districtAt(SPAWN.x,SPAWN.y),'Les Vieilles Mailles');
   assert.ok(coreDestinations.filter(p=>!p.rail).every(p=>!/Noyon|Pontoise|Couarcy/i.test(p.label)));
   const stations=coreDestinations.filter(p=>p.rail);
-  assert.deepEqual(stations.map(p=>p.label),['Halte de l’Oise','Gare de Noyon']);
-  assert.equal(coreDestinations.length,13);
+  assert.deepEqual(stations.map(p=>p.label),['Halte des Aulnes','Gare des Filatures','Gare des Verrières','Gare des Prés']);
+  assert.equal(coreDestinations.length,15);
   for(const point of coreDestinations){
     assert.equal(blocked(point.x,point.y,.65),false,point.label);
     if(!point.rail)assert.ok(streetAt(point.x,point.y));

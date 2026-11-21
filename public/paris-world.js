@@ -707,7 +707,7 @@ export const props=[];
 const heights={tree:3.5,lamp:5,bollard:.87,bench:.85,hydrant:.85,bin:1.1,postbox:1.2};
 const radii={tree:.42,lamp:.20,bollard:.22,bench:.85,hydrant:.31,bin:.34,postbox:.36};
 function onRailway(x,y){
-  if(!isEnfer||x< -320||x>910||y<253||y>780)return false;
+  if(!isEnfer||x< -370||x>1490||y<246||y>1320)return false;
   const point=railPoint(railDistance(x,y));
   return Math.hypot(x-point.x,y-point.y)<4.2||railStations.some(s=>Math.hypot(s.x-x,s.y-y)<19);
 }

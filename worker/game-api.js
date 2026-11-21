@@ -11,7 +11,7 @@ import {propMaxHealth, vehiclePropDamage} from '../public/prop-damage.js';
 import {validFlightPath,sampleAutorotation,flightSampleMs} from '../public/autorotation.js';
 import {airfields,isAircraft,flightCeiling} from '../public/airfield.js';
 import {isVehicleType,vehicleSpec,isTrain} from '../public/vehicle-types.js';
-import {railTrain,validatedRailPose,atRailStation,railDistance} from '../public/enfer-rail.js';
+import {railTrain,validatedRailPose,atRailStation,autonomousRail} from '../public/enfer-rail.js';
 import {chassisDamage,partMask,incendiaryImpact,ignitionHealth,meleeWearFloor,vehicleBurnDelay,blastRadius,blastDamage} from '../public/vehicle-damage.js';
 import {meleeMoves} from '../public/melee-moves.js';
 import {cleanTrafficPacket} from '../public/traffic-sync.js';
@@ -176,6 +176,8 @@ function playerState(raw,now,room,previous) {
   const s=dict(raw), result={...pose(s),...vitalityFields(s,now,room===worldKeys.enfer),...movementFields(s,now,previous),...meleeState(s,now)};
   const appearance=normalizeAppearance(s.appearance);if(appearance)result.appearance=appearance;
   if (!Number.isFinite(s.x) || !Number.isFinite(s.y)) return {};
+  if(room===worldKeys.enfer&&!s.vehicle&&railTrain(s.railRider)&&validatedRailPose(s.railRider,result))
+    result.railRider=s.railRider;
   const traffic=cleanTrafficPacket(s.traffic,now);if(traffic)result.traffic=traffic;
   if (s.vehicle && key(s.vehicle.id)){
     result.vehicle={...pose(s.vehicle),id:key(s.vehicle.id)};
@@ -234,8 +236,8 @@ function eventData(type,raw,now) {
       const out={...result,id:d.id,occupied,...(!occupied&&d.shifted?{shifted:true}:{}),...(!occupied?{expiresAt:now+abandonedFor}:{})};
       if(isTrain(out.type)||railTrain(out.id)){
         const track=isTrain(out.type)&&validatedRailPose(out.id,out);
-        if(!track||d.eject||d.shifted||d.roadCoast||!atRailStation(railDistance(track.x,track.y)))return null;
-        return {...out,...track,speed:0,moving:false,...(!occupied?{expiresAt:now+43_200_000}:{})};
+        if(!track||d.eject||d.shifted||d.roadCoast||occupied&&!atRailStation(track.d))return null;
+        return {...out,...track,...(occupied?{speed:0,moving:false}:{railAt:now,expiresAt:now+604_800_000})};
       }
       if(!occupied&&isAircraft(out.type)&&validFlightPath(d.flightPath,out.type)){
         out.flightPath=d.flightPath;out.lift=d.flightPath[0][1];
@@ -331,6 +333,10 @@ function shared(rows,now) {
       if(r.owner&&r.driverSeen>now-GONE&&(r.driverCar===r.item||r.at>now-6500))
         world.vehicles[r.item]={...vehicle,owner:r.owner,lastSeen:r.at};
       else{
+        if(isTrain(vehicle.type)){
+          world.vehicles[r.item]={...vehicle,railAt:r.owner?r.at:vehicle.railAt??r.at,occupied:false,owner:'',expiresAt:r.at+604_800_000};
+          continue;
+        }
         const expiresAt=r.owner?r.at+disconnectedFor:vehicle.expiresAt||r.at+abandonedFor;
         const home=!vehicle.flightPath&&isAircraft(vehicle.type)&&vehicle.lift>.35?airfields.find(site=>site.type===vehicle.type):null;
         if(expiresAt>now)world.vehicles[r.item]={...vehicle,...(home?{x:home.x,y:home.y,angle:home.angle,lift:0,bank:0,carPitch:0}:{}),occupied:false,owner:'',expiresAt};
@@ -674,6 +680,13 @@ async function sync(db,b,now,room) {
     if((type==='vehicleShunt'||type==='vehicleDamage')&&(isTrain(data.type)||railTrain(data.id)))continue;
     if(requiresCar&&isTrain(data.type)&&(room!==worldKeys.enfer||!Number.isFinite(actor.x+actor.y)||
       Math.hypot(actor.x-data.x,actor.y-data.y)>23))continue;
+    if(requiresCar&&isTrain(data.type)&&data.occupied){
+      const row=await q("SELECT data,at FROM mc_items WHERE room=? AND kind='vehicle' AND item=?",room,data.id).first();
+      const record=row?JSON.parse(row.data):null;
+      const pose=autonomousRail(railTrain(data.id),now,record?{...record,railAt:record.railAt??row.at}:null);
+      if(!pose.doors||Math.hypot(pose.x-data.x,pose.y-data.y)>6)continue;
+      Object.assign(data,{x:pose.x,y:pose.y,angle:pose.angle,d:pose.d,direction:pose.direction});
+    }
     if(requiresCar&&data.eject&&(!Number.isFinite(actor.x+actor.y)||actor.health===0||actor.vehicle||
       Math.hypot(actor.x-data.x,actor.y-data.y)>6.8))continue;
     if (requiresCar) {

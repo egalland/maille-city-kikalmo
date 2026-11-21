@@ -1174,7 +1174,7 @@ function roadsterWreck(spec){
 }
 
 function createTrain(color){
-  const group=new THREE.Group(),paint=/^#[a-f\d]{6}$/i.test(color||'')?color:'#427b86';
+  const group=new THREE.Group(),doorPanels=[],paint=/^#[a-f\d]{6}$/i.test(color||'')?color:'#427b86';
   const box=(x,y,z,w,h,d,t)=>addPart(group,geo.box,x,y,z,w,h,d,t);
   box(0,.63,0,15.1,.44,2.32,'#40393c');
   box(0,1.86,0,15.52,2.50,2.75,paint);
@@ -1199,12 +1199,22 @@ function createTrain(color){
     for(const x of [-6.5,-3.45,-1.75,0,1.75,3.45,6.5])
       box(x,2.38,z,1.32,.73,.065,'#567783');
     for(const x of [-5.0,5.0]){
-      box(x,1.87,z,.95,1.87,.078,'#d6c094');
-      box(x,2.37,z+side*.046,.52,.72,.032,'#455e6a');
+      box(x,1.87,z,.99,1.94,.06,'#39454d');
+      for(const direction of [-1,1]){
+        const panel=new THREE.Group(),center=x+direction*.238;
+        addPart(panel,geo.box,0,1.87,z+side*.041,.454,1.87,.06,'#d6c094');
+        addPart(panel,geo.box,0,2.37,z+side*.078,.29,.72,.032,'#455e6a');
+        panel.position.x=center;doorPanels.push({panel,center,direction});
+      }
     }
   }
   batchGroup(group);
-  return {group,update(){}};
+  for(const {panel} of doorPanels){batchGroup(panel);group.add(panel);}
+  let open=0;
+  return {group,update(pose={},dt=.016){
+    open+=((pose.doors?1:0)-open)*(1-Math.exp(-8*dt));
+    for(const {panel,center,direction} of doorPanels)panel.position.x=center+direction*open*.46;
+  }};
 }
 export function createCar(type='car',color,seed=0){
   const kind=type?.type??type;

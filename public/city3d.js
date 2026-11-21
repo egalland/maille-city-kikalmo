@@ -592,6 +592,7 @@ function addBuilding(b,building,detail,skyline=false,heritageDetail=false){
   if(specialFootprint(String(building.id),cx,cz))return;
   const id=hash(building.id),h=Math.max(1.9,Math.min(260,Number(building.h)||14));
   if(isEnfer){
+    if(building.station){paintStationBuilding(b,building,detail&&!skyline);return;}
     const site=heritageByFootprint.get(String(building.id));
     if(site)addHeritageBuilding(b,site,building,detail||heritageDetail,skyline);
     else addEnferBuilding(b,building,poly,detail,skyline,h);
@@ -696,7 +697,7 @@ function paintRailSection(b,{start,end},detail){
   }
 }
 function paintRailStation(b,station){
-  const d=station.d,h=railwayPlatformLength/2,signStyle=station.id==='gare-noyon'?16:17;
+  const d=station.d,h=railwayPlatformLength/2,signStyle=station.style;
   const p=(along,across)=>railXY(d+along,across);
   for(const side of [-1,1]){
     const v=side*railwayPlatformOffset,edge=v-side*1.44;
@@ -711,12 +712,71 @@ function paintRailStation(b,station){
     strip(b,'felt',p(-9,v+side*.46),p(9,v+side*.46),2.12,3.14,'#54666b');
     strip(b,'plain',p(-9,v-side*.58),p(9,v-side*.58),.13,3.12,'#d4ad79');
     for(const facing of [-1,1]){
-      const face=(along,h)=>{const [x,z]=p(along*facing,v+side*.89+facing*.045);return [x,h,z];};
-      b.face('sign'+signStyle,face(-2.6,2.21),face(2.6,2.21),face(2.6,2.91),face(-2.6,2.91),
+      const face=(along,h)=>{const [x,z]=p(-7+along*facing,v+side*.89+facing*.045);return [x,h,z];};
+      b.face('sign'+signStyle,face(-1.93,2.48),face(1.93,2.48),face(1.93,3.03),face(-1.93,3.03),
         white,[[0,0],[1,0],[1,1],[0,1]]);
     }
   }
   strip(b,'pave',p(-19,-7.55),p(-19,7.55),2.3,.22,'#ae9c88',1);
+  strip(b,'pave',p(0,station.side*7.1),p(0,station.side*10.82),5.6,.115,'#bcb09e',2);
+}
+function paintStationBuilding(b,building,detail){
+  const station=building.station,big=station.style===16,glass=station.style===19;
+  const wide=big?13.5:glass?10.5:7.1,depth=big?8.5:6.5,eaves=big?5.72:4.05;
+  const faceColor=big?'#a45e51':glass?'#627e82':'#a88b72',roof=big?'#525963':'#52666b';
+  const base=(u,v)=>railXY(station.d+u,station.side*(10.8+v));
+  const point=(u,v,h)=>{const [x,y]=base(u,v);return [x,h,y];};
+  const panel=(l,r,lo,hi,v,color,mat='felt')=>{
+    const a=point(l,v,lo),d=point(r,v,lo),e=point(r,v,hi),f=point(l,v,hi);
+    const uv=[[1,0],[0,0],[0,1],[1,1]];
+    if(station.side>0)b.face(mat,d,a,f,e,color,uv);
+    else b.face(mat,a,d,e,f,color,uv);
+  };
+  for(let i=0;i<4;i++){
+    const a=building.poly[i],d=building.poly[(i+1)%4];
+    b.wall(big?'enfer0':'felt',a,d,0,eaves,big?white:faceColor,5,2);
+    b.wall('felt',a,d,0,.38,'#8d8b84');
+  }
+  const crest=building.h,mid=depth/2;
+  for(const side of [-1,1]){
+    const u=side*wide;
+    b.tri('felt',point(u,0,eaves),point(u,depth,eaves),point(u,mid,crest),faceColor);
+    b.tri('felt',point(u,depth,eaves),point(u,0,eaves),point(u,mid,crest),faceColor);
+  }
+  for(const [front,frontH,back,backH] of [[0,eaves,mid,crest],[mid,crest,depth,eaves]]){
+    const a=point(-wide-.22,front,frontH),d=point(wide+.22,front,frontH),e=point(wide+.22,back,backH),f=point(-wide-.22,back,backH);
+    b.face('tileRoof',a,d,e,f,roof,[[0,0],[8,0],[8,2],[0,2]]);
+    b.face('tileRoof',f,e,d,a,roof,[[0,2],[8,2],[8,0],[0,0]]);
+  }
+  if(!detail)return;
+  panel(-wide,wide,eaves-.23,eaves-.05,-.035,'#d9c29e');
+  panel(-2.8,2.8,.05,eaves-.98,-.07,'#49686e');
+  for(const x of [-2.52,0,2.52])panel(x-.055,x+.055,.03,eaves-1.0,-.10,'#d9d1b7');
+  panel(-2.63,2.63,2.24,2.34,-.11,'#d9d1b7');
+  for(const x of [-wide+2.16,-wide*.48,wide*.48,wide-2.16]){
+    for(const floor of big?[0,1]:[0]){
+      const sill=1.05+floor*2.57;
+      panel(x-.82,x+.82,sill-.13,sill+1.41,-.05,'#e0c7a8');
+      panel(x-.68,x+.68,sill,sill+1.26,-.071,'#658990');
+      panel(x-.045,x+.045,sill,sill+1.27,-.102,'#ddd2b4');
+    }
+  }
+  panel(-3.45,3.45,eaves-.88,eaves-.29,-.13,white,'sign'+station.style);
+  const front=point(0,-.19,eaves+.84);
+  const cap=Math.min(wide*.63,8.4);
+  b.face('felt',point(-cap,-3.0,3.04),point(cap,-3.0,3.04),point(cap,-.05,3.43),point(-cap,-.05,3.43),'#556d72');
+  b.face('felt',point(-cap,-.05,3.43),point(cap,-.05,3.43),point(cap,-3.0,3.04),point(-cap,-3.0,3.04),'#45585e');
+  for(const u of [-cap+.36,cap-.36]){
+    const [x,z]=base(u,-2.78);b.box(x,0,z,.18,3.15,.18,'#394e56');
+  }
+  if(big){
+    const a=point(-2.55,0,eaves),d=point(2.55,0,eaves),peak=point(0,-.035,eaves+2.08);
+    const reverse=station.side>0;
+    b.tri('felt',...(reverse?[d,a,peak]:[a,d,peak]),'#bd7965');
+    const [x,y,z]=front;b.ball(x,y,z,.5,.5,.055,'#f1d6a4',14,7,'plain');
+    panel(-.036,.036,eaves+.84,eaves+1.17,-.255,'#384253');
+    panel(0,.29,eaves+.815,eaves+.875,-.258,'#384253');
+  }
 }
 function paintMallPylon(b){
   const point=(u,h,off=0)=>{const [x,z]=montRenaudPoint(u,-3.9+off);return [x,h,z];};
