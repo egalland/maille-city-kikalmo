@@ -2,20 +2,20 @@
 export const enferPoint=(lon,lat)=>[(lon-3)*72300,(49.58-lat)*111230];
 const places=[
   ['noyon','Parvis des Tisserands',2.999934,49.582548,/parvis notre dame/,[3.00064,49.58218],'Les Vieilles Mailles'],
-  ['gare','Gare de la Filature',3.01116,49.57812,/avenue de la gare/,null,'La Filature'],
-  ['pont-eveque','Le Port des Écheveaux',2.98515,49.56341,null],
+  ['gare','Avenue de la Gare · La Filature',3.01116,49.57812,/avenue de la gare/,null,'La Filature'],
+  ['pont-eveque','Le Port des Écheveaux',2.98515,49.56341,null,[2.98515,49.56320]],
   ['sempigny','Les Saules',2.99450,49.55850,/grande rue/],
   ['morlincourt','Les Briqueteries',3.035225,49.570207,/rue de la mairie/],
   ['pontoise','Le Bout-du-Pont',3.047439,49.553589,null],
   ['varesnes','La Basse Prairie',3.0604217,49.56658382,null],
   ['salency','Les Hauts de Lande',3.053515,49.586347,null],
   ['behericourt','L’Orée',3.06350,49.59670,null],
-  ['trois-ponts','Passage des Trois Arches',2.99122,49.56178,/rue des 3 ponts/],
+  ['trois-ponts','Passage des Trois Arches',2.99160,49.56164,/rue des 3 ponts/,[2.99211,49.56122],null,true],
   ['couarcy','Pont des Bobines',3.04222,49.55129,/rue de couarcy/]
 ];
-export const enferStops=places.map(([key,name,lon,lat,road,targetLabel])=>{
+export const enferStops=places.map(([key,name,lon,lat,road,targetLabel,,onRoad])=>{
   const [x,y]=enferPoint(lon,lat);
-  return [key,name,x,y,road,targetLabel?enferPoint(...targetLabel):[x+24,y]];
+  return [key,name,x,y,road,targetLabel?enferPoint(...targetLabel):[x+24,y],onRoad];
 });
 const labels=places.slice(0,9).map(([key,name,lon,lat,,,district])=>{
   const [x,y]=enferPoint(lon,lat);

@@ -1,5 +1,5 @@
 import {cameraDistance,swimmingSurface,insideRetail} from './paris-world.js';
-import {baseTerrainHeight,terrainHeight} from './terrain-height.js';
+import {aircraftDeck,baseTerrainHeight,terrainHeight} from './terrain-height.js';
 import {isAircraft} from './airfield.js';
 import {vehicleSpec} from './vehicle-types.js';
 
@@ -26,7 +26,12 @@ export function createWorldCamera(spawn){
     const far=cameraConfig?.mode==='near'?5.1:road&&car.type!=='train'?9.05:8.15;
     const reach=car?far+Math.max(0,spec.halfLength-2)*1.24+(airborne?2.8:0)+Math.min(heli?5.5:2.25,Math.abs(speed)*.065):indoors?1.75:5.25;
     const c=Math.cos(yaw),s=Math.sin(yaw),back=yaw+Math.PI;
-    const cast=extra=>Math.max(.18,cameraDistance(x,y,focus,back,reach,height+extra,destroyed,car ? .27 : .18,groundAt));
+    // When the pivot is on the span, keep the rear arm above its deck even
+    // if the endpoint overhangs the bank or a different road below.
+    const deck=aircraftDeck(x,y),onDeck=!airborne&&!swimming&&car?.type!=='train'&&
+      deck>baseTerrainHeight(x,y)+.5&&Math.abs(deck-base)<.45;
+    const cameraGround=onDeck?(a,b)=>Math.max(groundAt(a,b),base-.25):groundAt;
+    const cast=extra=>Math.max(.18,cameraDistance(x,y,focus,back,reach,height+extra,destroyed,car ? .27 : .18,cameraGround));
     let extra=reset?0:liftOffset,available=cast(extra);
     if(road&&available<Math.min(3.75,spec.halfLength+.85)){
       const raised=cast(1.8);
@@ -37,7 +42,7 @@ export function createWorldCamera(spawn){
     }
     liftOffset=extra;
     arm=reset?available:Math.min(available,arm+(available-arm)*ease(7,dt));
-    const endGround=groundAt(x-c*reach,y-s*reach);
+    const endGround=cameraGround(x-c*reach,y-s*reach);
     const lift=base+focus+(endGround-base+height+extra-focus)*arm/reach+.12;
     const shake=(vehicleImpact||0)*Math.sin(time*35)*.19;
     const look=road?Math.min(3.35,.55+arm*.32):car?5.8:indoors?2.15:4.15;
