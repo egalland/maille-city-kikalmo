@@ -43,6 +43,20 @@ test('the two-layer clearance volume stops the body and outboard rotor independe
   assert.equal(aircraftObstructed('helicopter',{x:0,y:0},0,9,collider),false);
 });
 
+test('helicopter leans nose-down into forward motion and banks into either turn',()=>{
+  const world={ground:()=>0,water:()=>null,contact:()=>null};
+  const initial={x:0,y:0,angle:0,lift:15,verticalSpeed:0,speed:38};
+  const fly=(pose,input,seconds=1)=>Array.from({length:seconds*50}).reduce(
+    value=>stepAircraft('helicopter',value,input,.02,world),pose);
+  const right=fly(initial,{throttle:1,steer:1});
+  assert.ok(right.bank>.42&&right.pitch<-.24&&right.angle>0);
+  const left=fly(initial,{throttle:1,steer:-1});
+  assert.ok(left.bank<-.42&&left.angle<0);
+  assert.ok(fly(right,{throttle:1}).bank<.08);
+  const reverse=fly({...initial,speed:-8},{throttle:-1});
+  assert.ok(reverse.pitch>.06);
+});
+
 test('rotors are independent of the fuselage, and the two actual occupants leave empty seats',()=>{
   for(const field of airfields){
     const model=createCar(field.type,field.color,12);
@@ -135,14 +149,15 @@ test('a second client receives flight-height, heading and attitude and can only 
   };
   for(const field of airfields){
     const pilot=user(),rider=user();
-    const pose={x:10,y:12,angle:.9,speed:0,health:100},craft={id:'air-'+field.id,type:field.type,...pose,bank:.13,carPitch:-.09};
+    const bank=field.type==='helicopter'?.49:.13,carPitch=field.type==='helicopter'?-.32:-.09;
+    const pose={x:10,y:12,angle:.9,speed:0,health:100},craft={id:'air-'+field.id,type:field.type,...pose,bank,carPitch};
     await post(pilot,'join',{state:pose});await post(rider,'join',{state:pose});
     const fly=lift=>({state:{...pose,lift,verticalSpeed:4,vehicle:craft,motion:'carAir'}});
     await post(pilot,'sync',{...fly(55),events:[{type:'vehicle',op:'take',data:{...craft,occupied:true}}]});
     const ask=op=>post(rider,'sync',{events:[{type:'seat',op,data:{car:craft.id,driver:pilot.id}}]});
     let body=await ask('sky');
     const remote=body.players.find(p=>p.id===pilot.id);
-    assert.equal(remote.lift,55);assert.equal(remote.vehicle.bank,.13);assert.equal(remote.angle,.9);
+    assert.equal(remote.lift,55);assert.equal(remote.vehicle.bank,bank);assert.equal(remote.vehicle.carPitch,carPitch);assert.equal(remote.angle,.9);
     assert.ok(body.players.every(p=>!p.passenger));
     await post(pilot,'sync',fly(0));body=await ask('ground');
     assert.deepEqual(body.players.find(p=>p.id===rider.id).passenger,{car:craft.id,driver:pilot.id});

@@ -221,7 +221,7 @@
 }
 @media(max-height:500px) and (pointer:coarse){#guard:not([hidden]){left:116px;bottom:25px}}
 
-#flightAltimeter[hidden],#flightShortcut[hidden],#traversalShortcut[hidden],#handbrakeShortcut[hidden]{display:none}
+#flightAltimeter[hidden],#flightShortcut[hidden],#traversalShortcut[hidden],#handbrakeShortcut[hidden],#hornShortcut[hidden],#driveHorn[hidden]{display:none}
 #flightAltimeter{color:#a7ebd0;font-size:.8em;white-space:nowrap}
 .drive-controls .flight-collective{display:none}
 @media(pointer:coarse),(max-width:670px){

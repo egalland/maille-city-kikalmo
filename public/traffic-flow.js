@@ -485,6 +485,7 @@ export function createTrafficFlow(sample,chooseDetour){
         const close=observer&&distanceSquared(observer,car.pose)<12**2;
         const waitingAtLight=car.pose.junction?.signal && !mayEnter(car,car.pose.junction,epoch)||
           fixed.some(body=>body.railGate&&distanceSquared(body,car.body)<42**2);
+        car.waitingAtSignal=!!waitingAtLight;
         if(waitingAtLight)car.stalledSince=null;
         const recycle=!waitingAtLight&&recycleAfter>0&&stalled>=recycleAfter*(close?2:1);
         if(!advanced||recycle){
@@ -495,7 +496,7 @@ export function createTrafficFlow(sample,chooseDetour){
     }
     return states.filter(c=>cars.has(c.seed.id)).map(c=>({...c.seed,...c.pose,isCar:true,
       routeDistance:c.distance,routeLength:c.pose.routeLength||c.seed.routeLength,
-      moving:c.speed>.07,move:c.speed>.07,speed:c.speed,brake:c.target<c.speed-.25||c.target<.45,
+      moving:c.speed>.07,move:c.speed>.07,speed:c.speed,brake:c.target<c.speed-.25||c.target<.45,waitingAtSignal:c.waitingAtSignal,
       ...(observer?{distanceSq:distanceSquared(observer,c.pose)}:{})}));
   }
   return {step,reset};

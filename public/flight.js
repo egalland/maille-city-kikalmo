@@ -84,8 +84,15 @@ export function stepAircraft(type,pose,input,dt,world){
     }
   }else speed=0;
   if(impactKind==='landing'&&type==='helicopter')kick=Math.max(kick,Math.min(.3,impact*.03));
+  const helicopter=type==='helicopter',airClearance=constrain((altitude-floor-.22)/2.6,0,1);
+  const motionTilt=-.27*constrain(speed/45,-.70,1);
+  const accelerationTilt=dt>0?-.015*constrain((speed-oldSpeed)/dt,-8,8):0;
+  const turn=Math.abs(angle-pose.angle)>.00001?input.steer||0:0;
+  const pitchTarget=helicopter?airClearance*constrain(motionTilt+accelerationTilt,-.38,.27):hovering?-speed/spec.forward*.12:0;
+  const bankTarget=helicopter?airClearance*turn*(.16+.40*constrain(Math.abs(speed)/44,0,1)):
+    hovering?(input.steer||0)*(.08+.12*Math.abs(speed)/spec.forward):0;
   return {x,y,angle,altitude,verticalSpeed:vertical,speed,lift:Math.max(0,altitude-world.ground(x,y)),recovery,kick,
-    pitch:approach(pose.pitch||0,(hovering?-speed/spec.forward*.12:0)+Math.abs(kick)*.9,(kick?2.9:.44)*dt),
-    bank:approach(pose.bank||0,(hovering?(input.steer||0)*(.08+.12*Math.abs(speed)/spec.forward):0)+kick,(kick?3.7:.65)*dt),
+    pitch:approach(pose.pitch||0,pitchTarget+Math.abs(kick)*.9,(kick?2.9:helicopter?1.12:.44)*dt),
+    bank:approach(pose.bank||0,constrain(bankTarget+kick,-.68,.68),(kick?3.7:helicopter?1.65:.65)*dt),
     impact,impactKind};
 }

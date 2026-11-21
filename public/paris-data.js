@@ -47,7 +47,11 @@ const data=await selectData();
 selectSectorTerrain(data.relief);
 export const {buildings,streets,water,green,metadata}=data;
 export const isEnfer=metadata.world==='enfer';
-export const enclosureRows=isEnfer?[...(await import('./enfer-enclosures.js')).enclosureRows,...marketHedges]:[];
+export const enclosureRows=isEnfer?[
+  ...(await import('./enfer-enclosures.js')).enclosureRows,
+  ...marketHedges,
+  ...(await import('./enfer-cadastre-borders.js')).cadastralBorders
+]:[];
 if(isEnfer){
   // The frontage shell and the survey block for the petrol canopy are
   // replaced by the modeled entrance and open pump shelter.

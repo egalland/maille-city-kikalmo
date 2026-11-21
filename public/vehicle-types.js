@@ -10,16 +10,16 @@ const powerBandKph={sport:240,gt:276,supercar:318,motorbike:232,helicopter:300};
 function define(type,label,length,width,height,forward,reverse,accel,brake,steering,cruise,openSeat=false){
   specs[type]=Object.freeze({...fleetHandling(type),label,eyeHeight:cabEye[type]??height*.80,seatOffset:seatOffsets[type]??length*.08,halfLength:length/2,halfWidth:width/2,height,forward,powerBand:powerBandKph[type]?powerBandKph[type]/3.6:forward,reverse,accel,brake,steering,cruise,openSeat});
 }
-define('car','Berline rétro',4.12,1.80,1.72,170/3.6,7,4.7,14,1.26,1.00);
-define('compact','Citadine',3.42,1.62,1.65,145/3.6,6.5,3.9,14.8,1.62,.94);
-define('sedan','Grande berline',4.58,1.87,1.56,203/3.6,7.2,5.4,13.1,1.18,1.04);
-define('taxi','Taxi parisien',4.62,1.86,1.85,174/3.6,7,4.25,14,1.23,1.02);
+define('car','Berline rétro',3.89,1.70,1.53,170/3.6,7,4.7,14,1.26,1.00);
+define('compact','Citadine',3.28,1.60,1.49,145/3.6,6.5,3.9,14.8,1.62,.94);
+define('sedan','Grande berline',4.38,1.81,1.48,203/3.6,7.2,5.4,13.1,1.18,1.04);
+define('taxi','Taxi parisien',4.37,1.80,1.73,174/3.6,7,4.25,14,1.23,1.02);
 define('van','Fourgonnette',4.84,2.02,2.17,140/3.6,5,3.15,11.5,.99,.86);
 define('bus','Autobus parisien',8.50,2.45,2.95,101/3.6,3.7,1.85,8.8,.67,.72);
 define('sport','Coupé sport',4.24,1.91,1.26,270/3.6,8,8.1,17.5,1.32,1.16);
 define('gt','Méridienne GT',4.70,2.00,1.44,305/3.6,8.3,9.35,16.5,1.27,1.10);
 define('supercar','Aiguille R',4.48,2.08,1.27,355/3.6,8.5,11.6,18.5,1.38,1.12);
-define('police','Voiture de police',4.32,1.83,1.84,215/3.6,7.2,6.55,16,1.32,1.03);
+define('police','Voiture de police',4.23,1.79,1.67,215/3.6,7.2,6.55,16,1.32,1.03);
 define('ambulance','Ambulance',5.06,2.08,2.32,154/3.6,5.2,3.5,13.8,.97,.90);
 define('firetruck','Fourgon de pompiers',5.72,2.26,2.49,108/3.6,4.5,2.25,11.8,.86,.79);
 define('swat','Fourgon d’intervention',5.17,2.14,2.33,143/3.6,5.3,3.35,13.4,.98,.87);

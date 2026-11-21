@@ -23,7 +23,7 @@ export function createWorldCamera(spawn){
     const focus=offset+(car?Math.max(1.32,spec.height*.77):1.17);
     const outdoorHeight=(car?Math.max(2.92,spec.height+1.05):2.18)+pitch*2.8;
     const height=offset+(indoors?1.9+Math.max(-.25,Math.min(.32,pitch)):outdoorHeight);
-    const far=cameraConfig?.mode==='near'?5.1:8.15;
+    const far=cameraConfig?.mode==='near'?5.1:road&&car.type!=='train'?9.05:8.15;
     const reach=car?far+Math.max(0,spec.halfLength-2)*1.24+(airborne?2.8:0)+Math.min(heli?5.5:2.25,Math.abs(speed)*.065):indoors?1.75:5.25;
     const c=Math.cos(yaw),s=Math.sin(yaw),back=yaw+Math.PI;
     const cast=extra=>Math.max(.18,cameraDistance(x,y,focus,back,reach,height+extra,destroyed,car ? .27 : .18,groundAt));

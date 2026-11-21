@@ -188,7 +188,7 @@ function playerState(raw,now,room,previous) {
       Object.assign(result,{x:train.x,y:train.y,angle:train.angle,speed:train.speed,lift:.18});
     }
     if(isAircraft(result.vehicle.type))Object.assign(result.vehicle,{lift:result.lift||0,
-      bank:num(s.vehicle.bank,0,-.25,.25),carPitch:num(s.vehicle.carPitch,0,-.2,.2)});
+      bank:num(s.vehicle.bank,0,-.68,.68),carPitch:num(s.vehicle.carPitch,0,-.42,.42)});
     for(const k of ['brake','headlamps','fare'])if(typeof s.vehicle[k]==='boolean')result.vehicle[k]=s.vehicle[k];
   }
   else result.vehicle=null;
@@ -671,8 +671,8 @@ async function sync(db,b,now,room) {
         AND json_extract(data,'$.expiresAt')>?)`,args:[room,id,now-320,data.id,room,data.id,now]};
     }
     if(type==='horn'){
-      if(!actor.vehicle||!Number.isFinite(actor.x+actor.y))continue;
-      data.x=actor.x;data.y=actor.y;op='horn-'+Math.floor(now/800);
+      if(!actor.vehicle||isAircraft(actor.vehicle.type)||!Number.isFinite(actor.x+actor.y))continue;
+      data.x=actor.x;data.y=actor.y;data.vehicleType=actor.vehicle.type;op='horn-'+Math.floor(now/800);
     }
     const requiresCar=type==='vehicle';
     if((type==='vehicleShunt'||type==='vehicleDamage')&&(isTrain(data.type)||railTrain(data.id)))continue;

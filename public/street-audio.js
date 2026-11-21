@@ -1,7 +1,8 @@
 import {broadcastBeat,readRadio} from './car-radio.js';
+import {engineTone,vehicleSoundProfile} from './vehicle-audio-profiles.js';
 const floor=.001;
 export function createStreetAudio(){
-  let context,master,bed,noise,roll,engine,rotorPulse,rotorDepth,siren,enabled=false,footAt=0;
+  let context,master,bed,noise,roll,own,ambient,siren,enabled=false,footAt=0;
   let beat=-1,lastChirp=0,radio=readRadio();
   function toggle(on){
     enabled=on;
@@ -24,9 +25,7 @@ export function createStreetAudio(){
         const breeze=context.createBiquadFilter();breeze.type='lowpass';breeze.frequency.value=480;
         roll=context.createGain();roll.gain.value=.018;
         bed.connect(breeze).connect(roll).connect(master);bed.start();
-        engine=loop('triangle');siren=loop('sine');
-        rotorPulse=context.createOscillator();rotorDepth=context.createGain();rotorDepth.gain.value=0;
-        rotorPulse.connect(rotorDepth).connect(engine.gain.gain);rotorPulse.start();
+        own=motor();ambient=motor();siren=loop('sine');
       }
       if(context.state==='suspended')void context.resume().catch(()=>{});
     }catch{}
@@ -36,12 +35,44 @@ export function createStreetAudio(){
     gain.gain.value=floor;oscillator.connect(gain).connect(master);oscillator.start();
     return {oscillator,gain};
   }
-  function tone(hz,seconds=.08,wave='triangle',volume=.04,end=hz){
+  function motor(){
+    const core=context.createOscillator(),harmonic=context.createOscillator(),partial=context.createGain();
+    const filter=context.createBiquadFilter(),body=context.createGain(),level=context.createGain();
+    const rumble=context.createGain(),dust=context.createBufferSource(),pulse=context.createOscillator(),mod=context.createGain();
+    const direction=context.createStereoPanner?.();
+    core.type='triangle';harmonic.type='sawtooth';partial.gain.value=.17;
+    body.gain.value=.75;level.gain.value=floor;rumble.gain.value=floor;mod.gain.value=0;
+    filter.type='lowpass';filter.Q.value=.64;filter.frequency.value=440;
+    core.connect(filter);harmonic.connect(partial).connect(filter);
+    dust.buffer=noise;dust.loop=true;dust.connect(rumble).connect(filter);
+    filter.connect(body).connect(level);
+    if(direction)level.connect(direction).connect(master);else level.connect(master);
+    pulse.connect(mod).connect(body.gain);
+    core.start();harmonic.start();pulse.start();dust.start(0,Math.random());
+    return {core,harmonic,filter,level,rumble,pulse,mod,direction};
+  }
+  function setMotor(voice,listener,t){
+    if(!listener){voice.level.gain.setTargetAtTime(floor,t,.15);return;}
+    const sound=engineTone(listener.type,listener.speed||0),rate=listener.doppler??1;
+    voice.core.frequency.setTargetAtTime(sound.frequency*rate,t,.09);
+    voice.harmonic.frequency.setTargetAtTime(sound.frequency*1.998*rate,t,.087);
+    voice.filter.frequency.setTargetAtTime(sound.cutoff,t,.12);
+    voice.rumble.gain.setTargetAtTime(sound.rumble,t,.14);
+    voice.level.gain.setTargetAtTime(sound.volume*(listener.volume??1),t,.16);
+    voice.pulse.frequency.setTargetAtTime(sound.pulse||9,t,.23);
+    voice.mod.gain.setTargetAtTime(sound.pulse?.49:0,t,.3);
+    voice.direction?.pan.setTargetAtTime(listener.pan||0,t,.13);
+  }
+  function tone(hz,seconds=.08,wave='triangle',volume=.04,end=hz,pan=0){
     if(!enabled||context?.state!=='running')return;
     const t=context.currentTime,o=context.createOscillator(),g=context.createGain();o.type=wave;o.frequency.setValueAtTime(hz,t);
     o.frequency.exponentialRampToValueAtTime(Math.max(16,end),t+seconds);
     g.gain.setValueAtTime(Math.max(floor,volume),t);g.gain.exponentialRampToValueAtTime(floor,t+seconds);
-    o.connect(g).connect(master);o.start(t);o.stop(t+seconds+.015);
+    const direction=pan&&context.createStereoPanner?.();
+    if(direction){direction.pan.value=pan;o.connect(g).connect(direction).connect(master);}
+    else o.connect(g).connect(master);
+    o.onended=()=>{g.disconnect();direction?.disconnect();};
+    o.start(t);o.stop(t+seconds+.015);
   }
   function grit(seconds,volume,frequency){
     if(!enabled||context?.state!=='running')return;
@@ -50,15 +81,11 @@ export function createStreetAudio(){
     gain.gain.setValueAtTime(volume,t);gain.gain.exponentialRampToValueAtTime(floor,t+seconds);
     node.connect(filter).connect(gain).connect(master);node.start(t,Math.random());node.stop(t+seconds);
   }
-  function update({speed,driving,vehicleType,walking,city,sirenDistance,time,epoch,weather}){
+  function update({speed,driving,vehicleType,nearby,walking,city,sirenDistance,time,epoch,weather}){
     if(!enabled||context?.state!=='running')return;
     const t=context.currentTime;
-    const helicopter=vehicleType==='helicopter',blimp=vehicleType==='airship',rate=Math.abs(speed);
-    const pitch=helicopter?58+rate*.9:blimp?42+rate*1.3:32+rate*2.3;
-    engine.oscillator.frequency.setTargetAtTime(pitch,t,.08);
-    rotorPulse.frequency.setTargetAtTime(helicopter?11+rate*.09:6.4+rate*.11,t,.35);
-    rotorDepth.gain.setTargetAtTime(driving?(helicopter?.028:blimp?.012:0):0,t,.22);
-    engine.gain.gain.setTargetAtTime(driving?.035+Math.min(.045,Math.abs(speed)*.002):floor,t,.15);
+    setMotor(own,driving?{type:vehicleType,speed}:null,t);
+    setMotor(ambient,nearby,t);
     siren.oscillator.frequency.setTargetAtTime(680+215*Math.sin(time*5.6),t,.07);
     siren.gain.gain.setTargetAtTime(Math.max(floor,.10*(1-sirenDistance/145)),t,.11);
     roll.gain.setTargetAtTime((city?.027:.018)+(weather?.rain||0)*.044,t,.5);
@@ -72,5 +99,12 @@ export function createStreetAudio(){
     }
     if(walking&&time>footAt){footAt=time+Math.max(.23,.60-speed*.061);grit(.085,.035,500);}
   }
-  return {toggle,unlock,tone,grit,update,setRadio(value){radio=Boolean(value);},horn(volume=1){tone(185,.38,'sawtooth',.044*volume);tone(233,.34,'triangle',.062*volume);},dispose:()=>context?.close().catch(()=>{})};
+  function horn(type,volume=1,duration=.36,pan=0){
+    const pair=vehicleSoundProfile(type).horn;
+    if(!pair)return;
+    tone(pair[0],duration,'triangle',.085*volume,pair[0]*.986,pan);
+    tone(pair[1],duration*.96,'triangle',.071*volume,pair[1],pan);
+    tone(pair[0]*2,duration*.51,'sine',.030*volume,pair[0]*2,pan);
+  }
+  return {toggle,unlock,tone,grit,update,horn,setRadio(value){radio=Boolean(value);},dispose:()=>context?.close().catch(()=>{})};
 }

@@ -52,7 +52,7 @@ export function parkingBay(p,type){
   return spaces.find(bay=>{
     const delta=p.angle-bay.angle,dx=p.x-bay.x,dy=p.y-bay.y;
     const c=Math.cos(bay.angle),s=Math.sin(bay.angle),a=Math.abs(Math.sin(delta)),b=Math.abs(Math.cos(delta));
-    return Math.abs(dx*c+dy*s)+spec.halfLength*b+spec.halfWidth*a<=2.64&&
+    return a<.47&&Math.abs(dx*c+dy*s)+spec.halfLength*b+spec.halfWidth*a<=2.64&&
       Math.abs(-dx*s+dy*c)+spec.halfWidth*b+spec.halfLength*a<=1.66;
   })||null;
 }

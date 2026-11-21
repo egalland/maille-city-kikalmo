@@ -212,6 +212,8 @@ function onState(next){
   driving.setActive(drivingNow&&state.lifeState!=='down');
   $('#traversalShortcut').hidden=Boolean(state.inVehicle);
   $('#handbrakeShortcut').hidden=!drivingNow||Boolean(state.inAircraft);
+  $('#hornShortcut').hidden=!drivingNow||Boolean(state.inAircraft);
+  $('#driveHorn').hidden=!drivingNow||Boolean(state.inAircraft);
   $('#driveHandbrake').hidden=!drivingNow||Boolean(state.inAircraft||state.train);
   $('#handbrakeShortcut').lastChild.textContent=state.train?' Frein d’urgence · R pour inverser':' Frein à main';
   $('#railBoarding').hidden=state.inVehicle||!state.platform;
