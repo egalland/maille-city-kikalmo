@@ -65,8 +65,9 @@ export function sampleLocomotion(e={},time=0,seed=0){
   const squash=(.020*double*pace+.009*breath*(1-pace))*grounded+stretch*effort;
   function side(sign){
     const swing=step*sign,weight=clamp(.5+.5*Math.cos(phase)*sign);
-    const regularThigh=(.53+.35*run+.08*personality)*swing*pace+.17*grade*pace;
-    const regularShin=-(.11+.61*weight*(.56+.44*run))*pace;
+    const injured=e.limp&&sign<0?.48:1;
+    const regularThigh=(.53+.35*run+.08*personality)*swing*pace*injured+.17*grade*pace;
+    const regularShin=-(.11+.61*weight*(.56+.44*run))*pace*injured;
     const regularArm=-(.46+.38*run)*swing*pace-.09+.032*breath;
     return {
       thigh:mix(regularThigh,thigh+sign*lead*stagger,effort),

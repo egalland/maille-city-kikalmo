@@ -1,6 +1,12 @@
 import {broadcastBeat,readRadio} from './car-radio.js';
 import {engineTone,vehicleSoundProfile} from './vehicle-audio-profiles.js';
+import {weaponCatalog} from './weapon-catalog.js';
 const floor=.001;
+const reports={
+  sidearm:[4100,310,.075,.23],revolver:[3500,240,.105,.27],compact:[5300,360,.065,.20],
+  shotgun:[2500,145,.19,.31],double:[2900,166,.17,.31],rifle:[4700,212,.114,.25],
+  assault:[5050,206,.103,.26],sniper:[3800,172,.175,.29],launcher:[1500,98,.26,.32]
+};
 export function createStreetAudio(){
   let context,master,bed,noise,roll,own,ambient,siren,enabled=false,footAt=0;
   let beat=-1,lastChirp=0,radio=readRadio();
@@ -81,6 +87,30 @@ export function createStreetAudio(){
     gain.gain.setValueAtTime(volume,t);gain.gain.exponentialRampToValueAtTime(floor,t+seconds);
     node.connect(filter).connect(gain).connect(master);node.start(t,Math.random());node.stop(t+seconds);
   }
+  function gunshot(kind,volume=1,pan=0,distance=0){
+    const profile=reports[weaponCatalog[kind]?.profile];
+    if(!profile||!enabled||context?.state!=='running'||volume<=0)return;
+    const [crack,body,tail,level]=profile,t=context.currentTime;
+    const output=context.createGain(),direction=context.createStereoPanner?.();
+    output.gain.value=Math.min(1,volume);
+    if(direction){direction.pan.value=pan;output.connect(direction).connect(master);}else output.connect(master);
+    const cutoff=1+distance/42,layers=[
+      ['highpass',crack/cutoff,.023,level,0],
+      ['lowpass',body*2.45/cutoff,tail,level*.85,.002],
+      ['bandpass',1040/cutoff,tail*.95,level*.14,.055],
+      ['bandpass',2100/cutoff,.050,level*.20,.022]
+    ];
+    const offset=Math.random()*.6;
+    for(const [type,hz,duration,peak,delay] of layers){
+      const node=context.createBufferSource(),filter=context.createBiquadFilter(),gain=context.createGain(),start=t+delay;
+      filter.type=type;filter.frequency.value=Math.max(80,hz);
+      gain.gain.setValueAtTime(peak,start);gain.gain.exponentialRampToValueAtTime(.0001,start+duration);
+      node.buffer=noise;node.connect(filter).connect(gain).connect(output);
+      node.onended=()=>{node.disconnect();filter.disconnect();gain.disconnect();};
+      node.start(start,offset+delay);node.stop(start+duration);
+    }
+    setTimeout(()=>{output.disconnect();direction?.disconnect();},(tail+.13)*1000);
+  }
   function update({speed,driving,vehicleType,nearby,walking,city,sirenDistance,time,epoch,weather}){
     if(!enabled||context?.state!=='running')return;
     const t=context.currentTime;
@@ -106,5 +136,5 @@ export function createStreetAudio(){
     tone(pair[1],duration*.96,'triangle',.071*volume,pair[1],pan);
     tone(pair[0]*2,duration*.51,'sine',.030*volume,pair[0]*2,pan);
   }
-  return {toggle,unlock,tone,grit,update,horn,setRadio(value){radio=Boolean(value);},dispose:()=>context?.close().catch(()=>{})};
+  return {toggle,unlock,tone,grit,gunshot,update,horn,setRadio(value){radio=Boolean(value);},dispose:()=>context?.close().catch(()=>{})};
 }

@@ -27,9 +27,9 @@ export function resolveWeaponShot(kind,angle,trace,targets=[],visible,firstRay=n
   const weapon=weaponCatalog[kind];
   const rays=[],hits=[],used=new Set();
   if(!weapon||!Number.isFinite(angle)||typeof trace!=='function')return {rays,hits,impact:null};
-  const add=(target,damage)=>{
+  const add=(target,damage,zone)=>{
     if(!target||target.id===undefined||used.has(target.id))return;
-    used.add(target.id);hits.push({target,damage:Math.max(1,Math.round(damage))});
+    used.add(target.id);hits.push({target,damage:Math.max(1,Math.round(damage)),...(zone?{zone}:{})});
   };
   const shape=weaponShotShape(kind);
   for(const spread of shape.spreads){
@@ -37,7 +37,7 @@ export function resolveWeaponShot(kind,angle,trace,targets=[],visible,firstRay=n
     const result=(spread===0&&firstRay)||trace(direction);
     if(!result?.origin||!Number.isFinite(result.length))continue;
     const ray={...result,angle:result.angle??direction};rays.push(ray);
-    add(ray.hit,weapon.damage);
+    add(ray.hit,weapon.damage,ray.zone);
   }
   if(kind==='chime'&&rays.length){
     const length=Math.max(...rays.map(r=>r.length));

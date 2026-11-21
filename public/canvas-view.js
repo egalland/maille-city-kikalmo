@@ -1341,5 +1341,13 @@ export function createCanvasView(canvas,spawn,onNotice){
     const d=(terrainHeight(p.x,p.y)+(p.lift||0)+.87-camH)/height;
     return d>0&&d<180?Math.atan2(camY+dy*d-p.y,camX+dx*d-p.x):Math.atan2(dy,dx);
   }
-  return {available:true,mode:'canvas',render,aim,projectTarget,effect,dispose(){running=false;effects.length=0;if(surface!==canvas)surface.remove();}};
+  function aimRay(clientX,clientY){
+    const b=canvas.getBoundingClientRect();if(!drawn||!b.width||!b.height)return null;
+    const s=clientX==null?0:((clientX-b.left)/b.width*w-w*.5)/f;
+    const v=clientY==null?0:(h*.5-(clientY-b.top)/b.height*h)/f;
+    const forward=cos-v*sin,d=Math.hypot(forward,s);
+    if(d<.01)return null;
+    return {x:camX,y:camY,z:camH,angle:Math.atan2(fy*forward+fx*s,fx*forward-fy*s),slope:(v*cos+sin)/d};
+  }
+  return {available:true,mode:'canvas',render,aim,aimRay,projectTarget,effect,dispose(){running=false;effects.length=0;if(surface!==canvas)surface.remove();}};
 }

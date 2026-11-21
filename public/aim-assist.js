@@ -43,7 +43,7 @@ export function targetHeight(target){
   return target.isCar?1.05:1.12+(Number.isFinite(target.lift)?target.lift:0);
 }
 
-export function chooseTouchShot({position,yaw,muzzle,range,targets,wanted,previousId,project,trace,direct}){
+export function chooseTouchShot({position,yaw,muzzle,range,targets,wanted,previousId,project,trace,direct,reticleY}){
   const ranked=[];
   for(const target of targets){
     if(target.self||target.stunned||!Number.isFinite(target.x)||!Number.isFinite(target.y))continue;
@@ -53,7 +53,7 @@ export function chooseTouchShot({position,yaw,muzzle,range,targets,wanted,previo
     const current=target.id===previousId;
     if(error>cone+(current?1.5*radians:0))continue;
     const projected=project?.(target.x,target.y,targetHeight(target));
-    if(project&&(!projected||!(projected.x>=0&&projected.x<=1)||!(Math.abs(projected.y-.5)<=.33)))continue;
+    if(project&&(!projected||!(projected.x>=0&&projected.x<=1)||Math.abs(projected.y-(reticleY??.5))>(reticleY==null?.33:.18)))continue;
     // A direct, visible hit always wins. The assist cannot replace someone already in the line of fire.
     if(direct.hit?.id===target.id)return {target,shot:direct};
     const officer=wanted>0&&target.hitKind==='npc'&&(target.type==='police'||target.type==='swat');
@@ -63,7 +63,7 @@ export function chooseTouchShot({position,yaw,muzzle,range,targets,wanted,previo
   }
   ranked.sort((a,b)=>a.score-b.score||String(a.target.id).localeCompare(String(b.target.id)));
   for(const {target,angle} of ranked){
-    const shot=trace(angle);
+    const shot=trace(angle,target);
     if(shot.hit?.id===target.id)return {target,shot};
   }
   return null;

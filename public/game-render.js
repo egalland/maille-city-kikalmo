@@ -308,6 +308,13 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     return {x:(1+projection.x)/2,y:(1-projection.y)/2,depth};
   }
   const ray=new THREE.Raycaster(),floor=new THREE.Plane(new THREE.Vector3(0,1,0),-.87),point=new THREE.Vector3();
+  function aimRay(x,y){
+    const r=canvas.getBoundingClientRect();if(!inFrame||!r.width||!r.height)return null;
+    ray.setFromCamera(new THREE.Vector2(x==null?0:(x-r.left)/r.width*2-1,y==null?0:1-(y-r.top)/r.height*2),camera);
+    const {origin,direction}=ray.ray,d=Math.hypot(direction.x,direction.z);
+    if(d<.01)return null;
+    return {x:origin.x,y:origin.z,z:origin.y,angle:Math.atan2(direction.z,direction.x),slope:direction.y/d};
+  }
   function aim(x,y,p){
     const r=canvas.getBoundingClientRect();if(!r.width||!r.height)return null;
     ray.setFromCamera(new THREE.Vector2((x-r.left)/r.width*2-1,1-(y-r.top)/r.height*2),camera);
@@ -317,7 +324,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   }
   function contextLost(event){event.preventDefault();if(active)onLost(new Error('Contexte WebGL interrompu.'));}
   canvas.addEventListener('webglcontextlost',contextLost);
-  return {available:true,get drawCalls(){return renderer.info?.render?.calls;},mode:renderer.software?'mesh':'webgl',render,aim,projectTarget,effect,dispose(){
+  return {available:true,get drawCalls(){return renderer.info?.render?.calls;},mode:renderer.software?'mesh':'webgl',render,aim,aimRay,projectTarget,effect,dispose(){
     active=false;canvas.removeEventListener('webglcontextlost',contextLost);labels.remove();
     for(const item of models.values())item.object.dispose?.();
     incidents.dispose();wool.dispose();driverView.dispose();bloodMesh.dispose();pickupDisplay.dispose();crossingDisplay.dispose();city.dispose?.();

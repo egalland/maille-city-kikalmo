@@ -14,3 +14,4 @@
 .drive-hud{position:absolute;top:98px;right:24px;display:flex;align-items:center;gap:7px;background:#1a2229ed;border:1px solid #567971;border-radius:4px;padding:5px 8px;color:#a1e7d0;font-size:12px}.drive-hud[hidden]{display:none}.drive-hud b{font:650 11px var(--mono);color:#e4f4eb}.drive-hud i{font-size:15px}.touch-actions #ride.near{color:#9ce9cf;border-color:#83c8b4;background:#27413ace}
 @media(max-width:670px){.drive-hud{top:172px;right:10px;font-size:10px}.drive-hud span{display:none}}
 @media(min-width:671px) and (pointer:coarse){.drive-hud{top:220px;right:15px}.drive-hud span{display:none}}
+#touchAimPoint{position:absolute;left:50%;top:50%;translate:-50% -50%;width:8px;height:8px;border:1px solid #fff0d6;border-radius:50%;box-shadow:0 0 2px #251b29;pointer-events:none;z-index:1}

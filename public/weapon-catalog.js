@@ -7,7 +7,9 @@ const arsenal={
   bubbles:['Pistolet-mitrailleur','Tir groupé à courte portée','compact'],spool:['Carabine à ricochets','Ricochets à courte distance','rifle'],
   star:['Fusil d’assaut','Rafale de trois tirs','assault'],chime:['Canon à dispersion','Gerbe très large','launcher'],
   needle:['Fusil de précision','Tir à très longue portée','sniper'],shuttle:['Carabine tactique','Double tir','assault'],
-  button:['Fusil à canon court','Cinq plombs','shotgun'],spark:['Carabine à rebonds','Jusqu’à deux ricochets','compact']
+  button:['Fusil à canon court','Cinq plombs','shotgun'],spark:['Carabine à rebonds','Jusqu’à deux ricochets','compact'],
+  service:['Pistolet de service','Semi-automatique, chargeur de 15','sidearm'],
+  marksman:['Fusil semi-automatique à lunette','Tir de précision coup par coup','sniper']
 };
 const meleePalette=Object.freeze({accent:'#f7c08d',thread:'#be856c',cloth:'#523f4c',trim:'#ffeac3'});
 const firearmPalette=Object.freeze({accent:'#a1acb3',thread:'#747f88',cloth:'#323943',trim:'#d9a88b'});
@@ -34,7 +36,9 @@ const entries=[
   defineWeapon('needle',5,.7,94,25,1.42,114),
   defineWeapon('shuttle',12,.35,53,14,1.38,132),
   defineWeapon('button',7,.61,29,12,1.51,106),
-  defineWeapon('spark',9,.45,38,16,1.55,153)
+  defineWeapon('spark',9,.45,38,16,1.55,153),
+  defineWeapon('service',15,.24,61,20,1.14,148),
+  defineWeapon('marksman',10,.49,89,27,1.58,106)
 ];
 export const weaponCatalog=Object.freeze(Object.fromEntries(entries.map(w=>[w.id,w])));
 export const weaponList=Object.freeze(entries);

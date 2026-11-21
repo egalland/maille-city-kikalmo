@@ -51,6 +51,15 @@ let settingsSound=read('sound.v2','true')==='true',panels=null,game=null, state=
 let touchAimEnabled=read('touchAimAssist','true')==='true';
 
 const aimMarker=$('#touchAimMarker');
+const aimPoint=$('#touchAimPoint');
+function showAimPoint(y){
+  const visible=y!=null&&controlsAreTouch();
+  if(visible){
+    const top=(y*100).toFixed(2)+'%';
+    if(aimPoint.style.top!==top)aimPoint.style.top=top;
+  }
+  aimPoint.hidden=!visible;
+}
 function showAimLock(point) {
   const visible=touchAimEnabled && combat.aiming && point &&
     Number.isFinite(point.x) && point.x>=0 && point.x<=1 &&
@@ -277,7 +286,7 @@ function onState(next){
 function setName(value){const clean=net.setName(value);write('name',clean);$('#playerName').textContent=clean;}
 function setSound(value){settingsSound=Boolean(value);write('sound.v2',String(settingsSound));game?.setSound(settingsSound);const sound=$('#sound');sound.setAttribute('aria-pressed',String(settingsSound));const label=settingsSound?'Couper le son':'Activer le son';sound.title=label;sound.setAttribute('aria-label',label);sound.querySelector('i').innerHTML=icon(settingsSound?'volume':'volumeOff');}
 $('#playerName').textContent=name;
-game=createGame({canvas:city,minimap:$('#minimap'),net,onState,onNotice:notify,onAimLock:showAimLock,loadout,onLoadoutChange:saveLoadout,initialPursuit:loadPursuit(),initialVitality:loadVitality(),skin:chosenSkin.id});
+game=createGame({canvas:city,minimap:$('#minimap'),net,onState,onNotice:notify,onAimLock:showAimLock,onAimPoint:showAimPoint,loadout,onLoadoutChange:saveLoadout,initialPursuit:loadPursuit(),initialVitality:loadVitality(),skin:chosenSkin.id});
 const sectorPosition=new URL(location.href).searchParams;
 const positionKey='position.v1.'+(isEnfer?'enfer':(sectorPosition.get('lon')||'paris')+':'+(sectorPosition.get('lat')||''));
 function savePosition(){

@@ -7,7 +7,8 @@ const shapes={
   yarn:[.302,.088,false],ribbonbow:[.467,.088,true],pompom:[.404,.136,true],
   confetti:[.408,.146,true],boomerang:[.198,.116,false],bubbles:[.298,.126,false],
   spool:[.272,.154,false],star:[.283,.149,false],chime:[.258,.164,false],
-  needle:[.516,.092,true],shuttle:[.399,.092,true],button:[.346,.101,true],spark:[.359,.090,true]
+  needle:[.516,.092,true],shuttle:[.399,.092,true],button:[.346,.101,true],spark:[.359,.090,true],
+  service:[.262,.078,false],marksman:[.483,.106,true]
 };
 const bound=value=>Math.max(0,Math.min(1,value));
 
@@ -25,13 +26,13 @@ export function weaponPose(kind,pose){
   const recoil=shot**3*(kind==='shotgun'?.10:kind==='smg'?.043:.065);
   const ready=pose.aiming||pose.engaged?1:Math.min(1,shot*3.6);
   const loading=Number.isFinite(pose.reload)?Math.sin(Math.PI*bound(pose.reload)):0;
-  const pitch=-.78*(1-ready)+4.2*recoil-.57*loading;
+  const pitch=-.78*(1-ready)+4.2*recoil-.57*loading+(pose.aimElevation||0)*ready;
   const c=Math.cos(pitch),s=Math.sin(pitch);
   const grip=[.158+ready*.159-recoil-.074*loading,.675+ready*.212+.55*recoil+.051*loading,.218-.058*ready];
   function point(forward,up,side=0){
     return [grip[0]+forward*c-up*s,grip[1]+forward*s+up*c,grip[2]+side];
   }
-  const cycle=kind==='shotgun'?.066*shot**2:kind==='pistol'||kind==='smg'?.04*shot**4:0;
+  const cycle=kind==='shotgun'?.066*shot**2:['pistol','smg','service','marksman'].includes(kind)?.04*shot**4:0;
   return {length,bulk,twoHanded,grip,pitch,cycle,muzzle:point(length,.056),
     support:point(twoHanded?.088-(kind==='shotgun'?cycle*.55:0):.014,-.039,-.052),supporting:twoHanded||ready>.72||loading>.15,
     palette:weaponCatalog[kind].palette};

@@ -46,6 +46,27 @@ test('one pull writes its trace and bounded hit together, even after concurrent 
   assert.equal(after.events.filter(e=>e.type==='hit').length,2);
 });
 
+test('an elevated shot authorizes a nearby NPC wound, including a helmet or a lethal head hit',async t=>{
+  const w=world(t),a=await w.player(0,0);
+  for(const [id,type,y,zone,health] of [
+    ['wound-legs','human',0,'legs',89],['helmet','swat',0,'head',77],
+    ['head','human',0,'head',0],['away','human',5,'head',null]
+  ]){
+    w.advance(400);
+    const fire=w.packet([],{length:9.48,z:1.03,rise:zone==='legs'?-.6:.5});
+    const res=await w.api('sync',a,{events:[
+      {op:fire.shotId,type:'fire',data:fire},
+      {op:crypto.randomUUID(),type:'npc',data:{id,type,x:10,y,angle:0,cause:'weapon',weapon:'pistol',zone,damage:100,shotId:fire.shotId}}
+    ]});
+    const result=res.events.find(e=>e.type==='npc'&&e.data.id===id);
+    if(health===null)assert.equal(result,undefined);
+    else {
+      assert.equal(result?.data.health,health,id);
+      if(zone==='legs')assert.equal(result.data.legUntil,w.now+6500);
+    }
+  }
+});
+
 test('a moving target is checked at its displayed position with a bounded rewind; a district transfer clears history',async t=>{
   const w=world(t),a=await w.player(0,0),b=await w.player(10,0,{vy:7});
   w.advance(300);

@@ -477,6 +477,8 @@ export function firearmModel(kind){
       part(geo.box,length*.30,.128,0,.12,.039,.047,'#243039');
       part(geo.box,length*.24,.101,0,.027,.03,.042,'#52616b');
     }
+    if(kind==='service')part(geo.box,length*.52,.084,0,.049,.026,bulk*.56,'#252b30');
+    if(kind==='marksman')part(geo.box,.062,-.048,0,.079,.095,.056,'#46515b',0,-.12);
     batchGroup(action);
   }else if(profile==='revolver'){
     axle(length*.33,bulk*.65,length*.23,palette.thread);

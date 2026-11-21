@@ -22,6 +22,7 @@ export function rendererFallback(createPrimary,createCompatible,{forceCompatible
       }
     },
     aim(...args){return current.aim(...args);},
+    aimRay(...args){return current.aimRay?.(...args);},
     projectTarget(...args){return current.projectTarget(...args);},
     effect(...args){return current.effect(...args);},
     dispose(){disposed=true;current.dispose();}

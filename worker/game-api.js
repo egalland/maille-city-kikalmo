@@ -7,6 +7,7 @@ import {abandonedFor,disconnectedFor,wreckFor,wreckExpired,replacementDelay} fro
 import {parkingBay,parkingLease} from '../public/enfer-parking-lots.js';
 import {hitSeverity, woundDuration, activeBleeding} from '../public/bleeding.js';
 import {weaponCatalog} from '../public/weapon-catalog.js';
+import {isHitZone,npcWeaponDamage} from '../public/shot-volume.js';
 import {propMaxHealth, vehiclePropDamage} from '../public/prop-damage.js';
 import {validFlightPath,sampleAutorotation,flightSampleMs} from '../public/autorotation.js';
 import {airfields,isAircraft,flightCeiling} from '../public/airfield.js';
@@ -267,6 +268,7 @@ function eventData(type,raw,now) {
       if(isVehicleType(d.vehicleType))state.vehicleType=d.vehicleType;
       if(Number.isFinite(d.threatX+d.threatY)){state.threatX=num(d.threatX);state.threatY=num(d.threatY);}
       if(d.cause==='weapon'||d.cause==='melee')delete state.ragdoll;
+      if(d.cause==='weapon'&&isHitZone(d.zone))state.zone=d.zone;
       if(d.cause==='melee'){
         const hit=impactFields(type,d,now),{recoil}=recoilState(d.recoil,now);
         if(!hit||!recoil||!Number.isFinite(d.x)||!Number.isFinite(d.y)||!Number.isFinite(d.recoil.fromX)||
@@ -476,7 +478,9 @@ function npcHitStatement(q,{room,id,op,name,data,now},guard) {
           '$.dead',json('true'),
           '$.ragdoll',json_object('at',stamp,'until',stamp+6500,'angle',coalesce(json_extract(src,'$.ragdoll.angle'),json_extract(src,'$.angle'),0),
           'force',coalesce(json_extract(src,'$.ragdoll.force'),0.8),'seed',coalesce(json_extract(src,'$.ragdoll.seed'),stamp%65536)))
-        ELSE json_set(src,'$.health',next_hp,'$.healthAt',stamp,'$.downUntil',0,'$.bleeding',json(wound)) END,stamp FROM result ${guard.clause}`,
+        ELSE json_set(src,'$.health',next_hp,'$.healthAt',stamp,'$.downUntil',0,'$.bleeding',json(wound),
+          '$.legUntil',CASE WHEN json_extract(src,'$.zone')='legs' THEN stamp+6500
+            ELSE max(stamp,coalesce(json_extract(old,'$.legUntil'),0)) END) END,stamp FROM result ${guard.clause}`,
       JSON.stringify(data),now,hitSeverity(data.cause,data.damage,data.weapon),npcMaxHealth(data.type),room,data.id,
       woundDuration(1),woundDuration(2),woundDuration(3),room,id,op,name,...guard.args);
 }
@@ -639,15 +643,20 @@ async function sync(db,b,now,room) {
       if(!guard)continue;
       op='contact-'+data.swingAt.toString(36);
     }
-    if(data.cause==='weapon'&&['propDamage','npc','vehicleDamage'].includes(type)&&(room===worldKeys.enfer||input.data?.shotId)){
+    if(data.cause==='weapon'&&['propDamage','npc','vehicleDamage'].includes(type)&&(room===worldKeys.enfer||input.data?.shotId||data.zone)){
       const shotId=input.data?.shotId,kind=input.data?.weapon;
       if(!key(shotId)||!Object.hasOwn(weaponCatalog,kind)||kind==='fist'||!Number.isFinite(data.x+data.y))continue;
       if(Math.hypot(data.x-actor.x,data.y-actor.y)>weaponCatalog[kind].range+15)continue;
-      if(type==='npc'){data.weapon=kind;data.damage=Math.min(data.damage||0,weaponCatalog[kind].damage);}
+      if(type==='npc'){
+        data.weapon=kind;data.damage=Math.min(data.damage||0,npcWeaponDamage(weaponCatalog[kind].damage,data.type,data.zone));
+      }
       data.shotId=shotId;
+      const location=data.zone?` AND EXISTS (SELECT 1 FROM json_each(json_extract(data,'$.contacts')) WHERE
+        abs(json_extract(value,'$.x')-?)<1.35 AND abs(json_extract(value,'$.y')-?)<1.35)`:'';
       guard={clause:`WHERE EXISTS (SELECT 1 FROM mc_events WHERE room=? AND player=? AND op=? AND type='shot' AND at>=?
-        AND json_extract(data,'$.kind')=?) AND NOT EXISTS (SELECT 1 FROM mc_events WHERE room=? AND player=? AND type=? AND at>=?
-        AND json_extract(data,'$.shotId')=? AND json_extract(data,'$.id')=?)`,args:[room,id,'fire:'+shotId,now-2600,kind,room,id,type,now-2600,shotId,data.id]};
+        AND json_extract(data,'$.kind')=?${location}) AND NOT EXISTS (SELECT 1 FROM mc_events WHERE room=? AND player=? AND type=? AND at>=?
+        AND json_extract(data,'$.shotId')=? AND json_extract(data,'$.id')=?)`,
+        args:[room,id,'fire:'+shotId,now-2600,kind,...(data.zone?[data.x,data.y]:[]),room,id,type,now-2600,shotId,data.id]};
     }
     if(type==='propDamage'){
       if(!Number.isFinite(actor.x)||!Number.isFinite(actor.y))continue;

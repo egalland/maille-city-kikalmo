@@ -27,7 +27,9 @@ export function rememberFirePose(stmts,q,room,id,previous,seen,current){
 }
 function validateRay(r,range){
   if(!validRay(r)||r.length>range+.1)return null;
-  return {x:r.x,y:r.y,angle:r.angle,length:Math.min(r.length,range)};
+  const elevated=r.z!==undefined||r.rise!==undefined;
+  if(elevated&&(!Number.isFinite(r.z)||!Number.isFinite(r.rise)||r.z< -150||r.z>2000||Math.abs(r.rise)>r.length*2.5+.01))return null;
+  return {x:r.x,y:r.y,angle:r.angle,length:Math.min(r.length,range),...(elevated?{z:r.z,rise:r.rise}:{})};
 }
 export function prepareFire(data,now,validTarget){
   if(!data||typeof data.shotId!=='string'||!SHOT_ID.test(data.shotId)||typeof data.kind!=='string'||!Object.hasOwn(weaponCatalog,data.kind)||data.kind==='fist'||
@@ -51,6 +53,7 @@ export function prepareFire(data,now,validTarget){
   }
   const shot={...primary,shotId:data.shotId,firedAt:data.firedAt,kind:data.kind,lift:clamp(Number.isFinite(data.lift)?data.lift:0,0,64)};
   if(rays.length>1)shot.rays=rays;
+  if(Number.isFinite(shot.z))shot.contacts=rays.filter(ray=>Number.isFinite(ray.z)).map(end);
   if(shape.area)shot.impact={...end(primary),radius:shape.area};
   const limit=shape.spreads.length+(shape.limit||0);
   const hits=Array.isArray(data.hits)?data.hits.slice(0,limit*2).filter(h=>h&&validTarget(h.target)&&Number.isFinite(h.damage)&&h.damage>0):[];

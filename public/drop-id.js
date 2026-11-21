@@ -7,6 +7,8 @@ const featuredCells=new Map([
   ['0:-4','bubbles'],['-1:-5','spool'],['18:6','star'],['24:7','chime']
 ]);
 export const dropCellSize=220;
+const newArms=['service','marksman'];
+const originalArms=findableWeaponIds.filter(id=>!newArms.includes(id));
 export function encodeDropId(weapon,x,y){
   if(!findableWeaponIds.includes(weapon)||!Number.isFinite(x)||!Number.isFinite(y)||Math.abs(x)>100000||Math.abs(y)>100000)return null;
   return 'wp-'+weapon+':'+Math.round(x*10)+':'+Math.round(y*10);
@@ -27,7 +29,9 @@ export function gridDrop(ix,iy){
   // The central 110 m of each 220 m cell keeps neighbouring boxes at least 110 m apart.
   const offset=salt=>55+(mixDropSeed(ix,iy,salt)%1101)/10;
   const x=Math.round((ix*dropCellSize+offset(2953))*10)/10,y=Math.round((iy*dropCellSize+offset(6539))*10)/10;
-  const weapon=featuredCells.get(ix+':'+iy) || findableWeaponIds[mixDropSeed(ix,iy,13011)%findableWeaponIds.length];
+  const rollout=mixDropSeed(ix,iy,17623)%17;
+  const original=originalArms[mixDropSeed(ix,iy,13011)%originalArms.length];
+  const weapon=featuredCells.get(ix+':'+iy) || (original==='spark'?original:newArms[rollout]||original);
   return {id:encodeDropId(weapon,x,y),weapon,x,y};
 }
 export const authoredWeaponDrops=Object.freeze([
