@@ -6,6 +6,7 @@ import {parkingLots} from './enfer-parking-lots.js';
 import {neighborhoodShops} from './enfer-frontage.js';
 import {railStations} from './enfer-rail.js';
 import {marketServices} from './mont-renaud.js';
+import {tuningSites} from './vehicle-tuning.js';
 // Give directions to the public-facing pavement. A point at the centre of a
 // building could put the last leg of the route inside its collision polygon.
 export const heritageWaypoints=heritageSites.filter(site=>site.approach).map(site=>({
@@ -15,6 +16,7 @@ export const heritageWaypoints=heritageSites.filter(site=>site.approach).map(sit
 const neighborhoodPins=new Map([...parkingLots.map(p=>[p.id,'P']),...neighborhoodShops.map(p=>[p.id,'C']),...railStations.map(p=>[p.id,'T']),
   ...marketServices.map((p,i)=>[p.id,i?'S':'D'])]);
 export const placeSymbols={...Object.fromEntries(heritageWaypoints.map(p=>[p.id,p.symbol])),...Object.fromEntries(neighborhoodPins),market:'M',garage:'G',station:'S',quay:'Q',police:'P',helipad:'H',mooring:'A'};
+for(const site of tuningSites)placeSymbols[site.id]='G';
 let goal=null,route=[],districtRouter=null,cityRouter=null,origin=null;
 const inDistrict=(x,y,margin)=>Math.abs(x-careerPlaces.market.x)<=margin&&Math.abs(y-careerPlaces.market.y)<=margin;
 function itinerary(streets,player,target){
@@ -51,7 +53,7 @@ export function paintCareerNavigation(c,player,streets,{px,py,w,h,full,overview}
   const localPlaces=overview?[]:[...Object.values(careerPlaces),...airfields];
   // At region scale the churches and town halls in the same village coincide.
   if(!full||Math.abs(px(100)-px(0))>=24)localPlaces.push(...heritageWaypoints);
-  if(!full||Math.abs(px(100)-px(0))>=20)localPlaces.push(...marketServices,...parkingLots,...neighborhoodShops,...railStations);
+  if(!full||Math.abs(px(100)-px(0))>=20)localPlaces.push(...marketServices,...parkingLots,...neighborhoodShops,...railStations,...tuningSites.slice(1));
   const pins=goal?[...localPlaces.filter(p=>p.id!==goal.id),goal]:localPlaces;
   for(const p of pins){
     const active=p.id===goal?.id,r=active?8:6.5;

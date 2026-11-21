@@ -925,7 +925,7 @@ export function createCanvasView(canvas,spawn,onNotice){
     return clear;
   }
   function queuePickup(p,time,destroyed){
-    const kind=p.ammoOnly?'ammo':p.weapon,style=pickupStyle(kind);
+    const kind=p.cash?'cash':p.ammoOnly?'ammo':p.weapon,style=pickupStyle(kind);
     if(!style||!Number.isFinite(p.x+p.y)||!seen({x:p.x,y:p.y,r:1.25},pickupRange))return;
     const reach=Math.hypot(p.x-camX,p.y-camY);if(reach>pickupRange||reach<.43)return;
     const phase=pickupPhase(p.id),height=pickupLift(time,phase);

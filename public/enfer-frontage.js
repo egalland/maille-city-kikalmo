@@ -29,7 +29,9 @@ export const frontageSigns=[
   {name:'BUREAU VALLÉE',caption:'PAPETERIE',color:'#2f7066',awning:'#a8c99d'},
   {name:'SORTIE',caption:'← ALLÉE DE CIRCULATION',color:'#4f626b',awning:'#9fb7bb'},
   {name:'MONT RENAUD',caption:'AUCHAN · GALERIE · DRIVE',color:'#932d3a',awning:'#e1b7ae'},
-  {name:'BRICOMARCHÉ',caption:'BRICOLAGE ET JARDIN',color:'#633037',awning:'#d9c8b3'}
+  {name:'BRICOMARCHÉ',caption:'BRICOLAGE ET JARDIN',color:'#633037',awning:'#d9c8b3'},
+  {name:'McDonald’s',caption:'RESTAURANT',color:'#24463a',awning:'#e5b93d',wares:'food'},
+  {name:'BUFFALO GRILL',caption:'RESTAURANT',color:'#733930',awning:'#c84942',wares:'food'}
 ];
 // Facades facing the public contract stops in the pilot district.
 export const careerFronts=new Map([
@@ -37,9 +39,9 @@ export const careerFronts=new Map([
   ['317662711',{style:6,edge:3}],['317662614',{style:7,edge:4}],['317661252',{style:8,edge:1}]
 ]);
 const featured=new Map([['317661403',0],['317660774',1],['317660755',2],['317661049',3]]);
-const commercialStore=(id,building,name,style,edge,a,b,clockwise)=>{
+const commercialStore=(id,building,name,style,edge,a,b,clockwise,fraction=.5)=>{
   const dx=b[0]-a[0],dy=b[1]-a[1],angle=Math.atan2(clockwise?-dx:dx,clockwise?dy:-dy);
-  const door=[(a[0]+b[0])/2,(a[1]+b[1])/2,angle];
+  const door=[a[0]+dx*fraction,a[1]+dy*fraction,angle];
   return {id,building,name,style,edge,door,mall:true,x:door[0]-Math.cos(angle)*2,y:door[1]-Math.sin(angle)*2};
 };
 export const neighborhoodShops=[
@@ -50,7 +52,11 @@ export const neighborhoodShops=[
     door:[auchanFront.x,auchanFront.y,auchanFront.angle],x:auchanFront.point(0,-2)[0],y:auchanFront.point(0,-2)[1]},
   commercialStore('action-noyon','317656069','Action · Mont Renaud',13,0,[-1798.4,1075.1],[-1847.7,1053.9],true),
   commercialStore('kiabi-noyon','317656086','Kiabi · Mont Renaud',14,0,[-1526.5,1072.1],[-1519.9,1099.3],true),
-  commercialStore('sport-noyon','2206464950','Intersport · Mont Renaud',15,3,[-1647.6,905.5],[-1611.5,907.8],true)
+  commercialStore('sport-noyon','2206464950','Intersport · Mont Renaud',15,3,[-1647.6,905.5],[-1611.5,907.8],true),
+  commercialStore('mcdonalds','317656046','McDonald’s · Mont Renaud',29,1,[-1405.3,1128.8],[-1420.5,1139.9],true),
+  commercialStore('buffalo-grill','317656114','Buffalo Grill · Mont Renaud',30,0,[-1467.8,1153.7],[-1486,1145.8],false),
+  commercialStore('bricomarche','317656105','Bricomarché · Mont Renaud',28,1,[-1493.1,907.7],[-1556.3,902.6],false,.23),
+  commercialStore('bureau-vallee','317656007','Bureau Vallée · Mont Renaud',25,3,[-1576.8,1236.7],[-1563.1,1242.5],true)
 ];
 const satelliteFronts=[
   ['317656105',{style:28,edge:1}],

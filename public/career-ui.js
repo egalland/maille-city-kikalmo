@@ -6,6 +6,7 @@ import {outfitShop} from './outfit-shop.js';
 import {placeSymbols,setCareerGoal} from './career-navigation.js';
 import {atShopCounter,retailGoods,foodRecovery} from './enfer-retail.js';
 import {dealership} from './vehicle-dealership.js';
+import {atTuningSite,tunable,tuningCatalog,tuningSites} from './vehicle-tuning.js';
 import {atDriveBay,marketDrive} from './mont-renaud.js';
 const money=n=>Number(n).toLocaleString('fr-FR')+' ₣';
 const until=(timestamp,now)=>Math.max(0,Math.ceil((timestamp-now)/1000));
@@ -30,7 +31,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
   badge.onclick=open;
   let state=null,pending=false,lastRead=-Infinity,lastIssue='',manual=null,lastPanelKey='',panelBody=null,staged=null;
   let nextAction=null,transferAmount=25,incident=null,incidentReadDue=0;
-  net.onEvent?.(e=>{if(e.type==='districtUpdate')incidentReadDue=0;});
+  net.onEvent?.(e=>{if(e.type==='districtUpdate'||e.type==='cash')incidentReadDue=0;});
   function eventObjective(){
     if(state?.mission||manual&&manual!=='district-event')return null;
     const pos=game.getPosition();
@@ -54,7 +55,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     if(state?.mission){notify('Termine ou quitte le contrat en cours pour changer de destination.');return;}
     manual=id;close();update();
   }
-  async function send(which,{contract:job,amount,dye,slot,task,operation,product,model,delivery}={}){
+  async function send(which,{contract:job,amount,dye,slot,task,operation,product,model,delivery,drop,upgrade}={}){
     if(pending||net.status!=='online'){if(which!=='state')notify('La connexion au monde est nécessaire.');return;}
     const before=state;
     pending=true;lastRead=Date.now();
@@ -64,7 +65,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),8000);
     try{
       const response=await fetch('/api/world/career',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',
-        body:JSON.stringify({map:'enfer',id,token,profile,action:which,revision:before?.revision,contract:job,amount,dye,slot,task,operation,product,model,delivery,wear:game.getArmorWear?.()}),signal:abort.signal});
+        body:JSON.stringify({map:'enfer',id,token,profile,action:which,revision:before?.revision,contract:job,amount,dye,slot,task,operation,product,model,delivery,drop,upgrade,wear:game.getArmorWear?.()}),signal:abort.signal});
       const data=await response.json();
       if(data.incident){
         const incoming=data.incident,newDraw=incident?.slot!==incoming.slot;
@@ -95,6 +96,8 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       if(which==='buyArmor')notify('Protection équipée.');
       if(which==='buyDye'||which==='equipDye')notify('Tenue mise à jour.');
       if(which==='buyProduct')notify(retailGoods.get(product).name+' ajouté au sac · −'+money(retailGoods.get(product).price));
+      if(which==='startHeist'){close();game.raiseStoreAlarm?.();notify('Alarme déclenchée · Reste près de la caisse jusqu’au retrait.');}
+      if(which==='finishHeist'||which==='collectCash')notify('Argent ramassé · +'+money(state.cash-before.cash));
       if(which==='orderDrive'){if(!state.mission)manual=marketDrive;close();notify('Commande payée · Suis le panneau Auchan Drive.');}
       if(which==='collectDrive'){if(manual?.id===marketDrive.id)manual=null;notify('Courses chargées dans le coffre · Disponibles dans ton sac.');}
       if(which==='eatProduct'&&data.food){game.eatShopFood?.(data.food);notify(retailGoods.get(product).name+' consommé.');}
@@ -105,6 +108,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       if(which==='deposit'||which==='withdraw')notify('Virement effectué · '+money(amount));
       if(which==='repair')notify('Véhicule réparé au garage.');
       if(which==='buyVehicleLicense')notify('Licence achetée · '+dealership.get(model).name);
+      if(which==='installTuning')notify(tuningCatalog.get(upgrade).name+' installé');
       if(which==='deliverVehicle'&&data.vehicle){
         if(!state.mission)manual={...data.vehicle,name:dealership.get(model).name};
         close();notify(data.notice||'Véhicule livré à proximité.');
@@ -128,6 +132,8 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     game.setDistrictIncident?.(incident?.ends>now?incident:null);
     if(manual==='district-event'&&incident?.ends<=now)manual=null;
     game.setLostWool?.(state&&ev.phase==='find'?ev.point:null);
+    const drops=(state?.cashDrops||[]).filter(drop=>drop.expires>now);
+    game.setCashDrops?.(drops.map(drop=>({...drop,cash:true})));
     if(manual==='wool'&&!eventGoal)manual=null;
     setCareerGoal(point);
     const name=state?money(state.cash):'— ₣';
@@ -140,7 +146,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     }
     nextAction=null;
     const vendor=counter(pos,life);
-    const service=['market','garage','police'].includes(place?.id);
+    const service=['market','garage','police'].includes(place?.id),atelier=atTuningSite(pos);
     overlay.hidden=!(point||service);
     if(point||service){
       const target=point||place,dist=reach(pos,target),at=dist<=careerRadius;
@@ -182,6 +188,13 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
         pin.setAttribute('aria-label',target.name);
       }
     }else pin.hidden=true;
+    const cashDrop=!life.inVehicle&&!life.passenger&&life.lifeState!=='down'&&!pos.airborne&&!pos.swimming&&
+      drops.filter(drop=>reach(pos,drop)<2.65).sort((a,b)=>reach(pos,a)-reach(pos,b))[0];
+    if(cashDrop&&!vendor){
+      overlay.hidden=false;pin.hidden=true;instruction.textContent='Liasse · '+money(cashDrop.amount);
+      detail.textContent='Approche-toi pour ramasser';action.hidden=false;action.disabled=pending;
+      action.textContent='Ramasser (G)';nextAction=()=>send('collectCash',{drop:cashDrop.id});
+    }
     if(vendor){
       overlay.hidden=false;pin.hidden=true;
       instruction.textContent=vendor.name;
@@ -189,7 +202,13 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       detail.textContent=closed?'Caisse fermée':vendor.clerk+' · À la caisse';
       action.hidden=closed;action.disabled=closed||pending;
       action.textContent='Voir les articles (G)';
-      nextAction=closed?null:()=>{staged='retail';open();};
+      const heist=state?.heist;
+      if(vendor.id==='bobines'&&!closed&&heist?.deadline>now){
+        instruction.textContent='Braquage · Samantha';
+        detail.textContent=heist.ready>now?'Caisse en cours · '+clock(until(heist.ready,now)):'Retire la caisse avant de partir';
+        action.textContent='Prendre la caisse (G)';action.disabled=pending||heist.ready>now;
+        nextAction=heist.ready<=now?()=>send('finishHeist'):null;
+      }else nextAction=closed?null:()=>{staged='retail';open();};
     }
     const order=state?.driveOrder;
     const bay=life.inVehicle&&!life.passenger&&!life.inAircraft&&!life.train&&atDriveBay({...pos,speed:life.speed/3.6});
@@ -202,6 +221,14 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       action.textContent=(order?'Retirer les courses':'Commander')+' (G)';
       nextAction=order?()=>send('collectDrive'):()=>{staged='drive';open();};
     }
+    if(atelier&&!vendor&&!s&&!localEvent&&!eventGoal&&!bay&&!cashDrop&&life.lifeState!=='down'&&
+      (life.inVehicle||atelier!==careerPlaces.garage)){
+      overlay.hidden=false;pin.hidden=true;instruction.textContent=atelier.name;
+      detail.textContent=life.inVehicle?'Arrête ton véhicule pour le personnaliser':'Véhicules à vendre et atelier';
+      action.hidden=false;action.disabled=pending||!!life.passenger||life.inVehicle&&life.speed>3;
+      action.textContent=(life.inVehicle?'Tuning':'Véhicules')+' (G)';
+      nextAction=()=>{staged=life.inVehicle?'tuning':'dealership';open();};
+    }
     if(panelBody?.isConnected)renderPanel(panelBody);
     if(!document.hidden&&net.status==='online'&&!pending){
       const interval=game.getArmorWear?.()?900:(!state||state.mission&&(until(state.mission.deadline,now)===0||life.lifeState==='down'))?4000:30000;
@@ -210,12 +237,12 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
   }
   function renderPanel(body){
     panelBody=body;
-    const pos=game.getPosition(),here=reach(pos,careerPlaces.garage)<=careerRadius,car=getState();
+    const pos=game.getPosition(),here=reach(pos,careerPlaces.garage)<=careerRadius,car=getState(),atelier=atTuningSite(pos);
     const inBank=['garage','market','police'].includes(nearby()?.id);
     const market=nearby()?.id==='market';
     const vendor=counter(pos,car);
     const driveWait=state?.driveOrder?until(state.driveOrder.readyAt,net.serverTime()):null;
-    const key=JSON.stringify([incident,incident?.ends>net.serverTime(),wool().phase,wool().slot,market,inBank,car.armor,state?.leaders,state?.revision,state?.cash,state?.mission,nowOnline(),here,car.inVehicle,car.vehicleHealth,pending,lastIssue,staged,vendor?.id,vendor&&game.vendorAvailable?.(vendor.id),car.health>=100,car.lifeState==='down',staged==='drive'?driveWait:null]);
+    const key=JSON.stringify([incident,incident?.ends>net.serverTime(),wool().phase,wool().slot,market,inBank,car.armor,state?.leaders,state?.revision,state?.cash,state?.mission,nowOnline(),here,car.inVehicle,car.vehicleHealth,pending,lastIssue,staged,vendor?.id,vendor&&game.vendorAvailable?.(vendor.id),car.health>=100,car.lifeState==='down',staged==='drive'?driveWait:null,atelier?.id,car.activeCar,car.speed>3,state?.heist?.deadline>net.serverTime()]);
     if(key===lastPanelKey&&body.childNodes.length)return;
     lastPanelKey=key;
     body.dataset.transferFocus=document.activeElement?.id==='career-amount'?'1':'0';
@@ -225,7 +252,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     if(state)summary.append(make('small','',state.reputation+' de réputation'));
     const tabs=make('div','career-tabs');
     tabs.setAttribute('role','group');tabs.setAttribute('aria-label','Rubrique');
-    for(const [id,title] of [[null,'Contrats'],['garage','Atelier'],['dealership','Concession'],['bank','Banque'],['shop','Boutique'],['bag','Sac'],['drive','Auchan Drive'],...(vendor||staged==='retail'?[['retail','Caisse']]:[])]){
+    for(const [id,title] of [[null,'Contrats'],['garage','Atelier'],['dealership','Véhicules'],['tuning','Tuning'],['bank','Banque'],['shop','Boutique'],['bag','Sac'],['drive','Auchan Drive'],...(vendor||staged==='retail'?[['retail','Caisse']]:[])]){
       const tab=control(title,()=>{staged=id;renderPanel(body);},'career-tab');
       tab.setAttribute('aria-pressed',String(staged===id));tabs.append(tab);
     }
@@ -383,9 +410,9 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     }
     function dealershipPage(){
       const page=make('section','career-garage');
-      page.append(make('h3','','Concession des Deux Bornes'),make('p','',
-        'Achète une licence à la concession. Une fois acquise, appelle le véhicule depuis ce menu et récupère-le près de toi.'));
-      if(!here){
+      page.append(make('h3','','Boutique de véhicules'),make('p','',
+        'Achète un véhicule aux Deux Bornes ou à Mont Renaud. Tu peux ensuite le faire livrer près de toi depuis ce menu.'));
+      if(!atelier){
         const route=control('Guider vers la concession',()=>guide('garage'));route.disabled=!!job;page.append(route);
       }
       for(const model of dealership.values()){
@@ -396,10 +423,27 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
           if(!delivery){notify('Approche-toi d’un espace dégagé pour la livraison.');return;}
           return send('deliverVehicle',{model:model.id,delivery});
         };
-        const button=control(owned?'Faire livrer':'Licence · '+money(model.price),summon);
-        button.disabled=!state||pending||!nowOnline()||car.inVehicle||car.lifeState==='down'||!owned&&(!here||state.cash<model.price);
+        const button=control(owned?'Faire livrer':'Acheter · '+money(model.price),summon);
+        button.disabled=!state||pending||!nowOnline()||car.inVehicle||car.lifeState==='down'||!owned&&(!atelier||state.cash<model.price);
         button.setAttribute('aria-label',(owned?'Faire livrer ':'Acheter la licence de ')+model.name);
         row.append(make('span','',model.name),button);page.append(row);
+      }
+      return page;
+    }
+    function tuningPage(){
+      const page=make('section','career-garage'),active=car.activeCar;
+      page.append(make('h3','','Tuning'),make('p','',
+        'Arrête un véhicule acheté devant un atelier. Maintiens J en accélérant pour utiliser la nitro installée.'));
+      if(!atelier)for(const site of tuningSites){
+        const route=control(site.name,()=>guide(site));route.disabled=!!job;page.append(route);
+      }
+      for(const part of tuningCatalog.values()){
+        const ready=!!(active?.tune&part.bit),row=make('div','career-dye');
+        const buy=control(ready?'Installé':'Installer · '+money(part.price),()=>send('installTuning',{upgrade:part.id}));
+        buy.disabled=ready||!atelier||!active||!tunable(active.type)||!state||pending||!nowOnline()||
+          state.cash<part.price||car.speed>3||car.lifeState==='down';
+        buy.setAttribute('aria-label',(ready?'Installé · ':'Installer ')+part.name);
+        row.append(make('span','',part.name),buy);page.append(row);
       }
       return page;
     }
@@ -408,6 +452,10 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       if(!vendor){page.append(make('p','','Entre dans un magasin et approche-toi de la caisse.'));return page;}
       if(game.vendorAvailable?.(vendor.id)===false){page.append(make('p','','La caisse est fermée.'));return page;}
       page.append(make('h3','',vendor.name),make('p','',vendor.clerk+' te présente les articles du magasin.'));
+      if(vendor.id==='bobines'){
+        const heist=control('Braquer la caisse',()=>send('startHeist'));
+        heist.disabled=!state||pending||state.heist?.deadline>net.serverTime();page.append(heist);
+      }
       for(const [id,name,price] of vendor.goods){
         const row=make('div','career-dye'),recovery=foodRecovery[id],count=state?.goods?.[id]||0;
         const button=control('Acheter · '+money(price),()=>send('buyProduct',{product:id}));
@@ -455,7 +503,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       return page;
     }
     const footer=make('p','career-message',lastIssue||(!nowOnline()?'Le registre s’ouvre à la reconnexion.':''));
-    footer.setAttribute('role','status');body.replaceChildren(summary,tabs,({bank:bankPage,garage:garagePage,dealership:dealershipPage,shop:shopPage,retail:retailPage,bag:bagPage,drive:drivePage}[staged]||jobsPage)(),footer);
+    footer.setAttribute('role','status');body.replaceChildren(summary,tabs,({bank:bankPage,garage:garagePage,dealership:dealershipPage,tuning:tuningPage,shop:shopPage,retail:retailPage,bag:bagPage,drive:drivePage}[staged]||jobsPage)(),footer);
     if(staged==='bank'&&document.activeElement===document.body&&body.dataset.transferFocus==='1'){body.querySelector('#career-amount')?.focus({preventScroll:true});}
     if(manual&&!job)body.append(control('Arrêter le guidage',()=>{manual=null;lastPanelKey='';update();}));
     if(focused)Array.from(body.querySelectorAll('button,summary')).find(el=>el.textContent===focused)?.focus({preventScroll:true});

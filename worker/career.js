@@ -8,9 +8,11 @@ import {isAircraft} from '../public/airfield.js';
 import {isVehicleType,vehicleSpec,isTrain} from '../public/vehicle-types.js';
 import {dealership,deliveryRange} from '../public/vehicle-dealership.js';
 import {atDriveBay,driveOrderWait} from '../public/mont-renaud.js';
+import {cashTables} from './cash.js';
+import {atTuningSite,tunable,tuningCatalog} from '../public/vehicle-tuning.js';
 
 export const careerSchema=[
-  woolSchema,...districtEventsSchema,
+  woolSchema,...districtEventsSchema,...cashTables,
   `CREATE TABLE IF NOT EXISTS mc_careers (
     profile TEXT PRIMARY KEY, revision INTEGER NOT NULL DEFAULT 0, cash INTEGER NOT NULL DEFAULT 45,
     reputation INTEGER NOT NULL DEFAULT 0, completed INTEGER NOT NULL DEFAULT 0,
@@ -24,6 +26,8 @@ export const careerSchema=[
   `CREATE TABLE IF NOT EXISTS mc_drive_orders(profile TEXT PRIMARY KEY,product TEXT NOT NULL,ready INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS mc_vehicle_licenses(profile TEXT NOT NULL,model TEXT NOT NULL,car TEXT NOT NULL,
     last_call INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(profile,model))`,
+  `CREATE TABLE IF NOT EXISTS mc_vehicle_tuning(profile TEXT NOT NULL,model TEXT NOT NULL,parts INTEGER NOT NULL,
+    PRIMARY KEY(profile,model))`,
   'CREATE INDEX IF NOT EXISTS mc_ranked_laps ON mc_laps(public,alias) WHERE public IS NOT NULL',
   `CREATE TABLE IF NOT EXISTS mc_career_sessions (
     room TEXT NOT NULL, id TEXT NOT NULL, profile TEXT NOT NULL, PRIMARY KEY(room,id))`,
@@ -35,7 +39,13 @@ const profileId=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9
 const maxPoseAge=25000;
 const readCareer=`SELECT c.*,w.slot AS woolSlot,w.picked AS woolPicked,w.paid AS woolPaid,e.bank,e.licensed,e.revenue,l.best,l.public,o.armor,o.layer,o.wearer,o.dyes,o.dye,b.goods,
     (SELECT json_group_array(model) FROM mc_vehicle_licenses WHERE profile=c.profile) AS vehicleLicenses,
+    (SELECT json_group_object(car,parts) FROM (SELECT v.car,t.parts FROM mc_vehicle_tuning t
+      JOIN mc_vehicle_licenses v ON v.profile=t.profile AND v.model=t.model WHERE t.profile=c.profile
+      UNION ALL SELECT c.car,t.parts FROM mc_vehicle_tuning t WHERE t.profile=c.profile AND t.model='garage' AND c.car IS NOT NULL)) AS tuning,
     (SELECT json_object('product',product,'readyAt',ready) FROM mc_drive_orders WHERE profile=c.profile) AS driveOrder,
+    (SELECT json_object('ready',ready,'deadline',deadline) FROM mc_store_heists WHERE room='enfer:public' AND profile=c.profile) AS heist,
+    (SELECT json_group_array(json_object('id',id,'x',x,'y',y,'amount',amount,'expires',expires)) FROM
+      (SELECT * FROM mc_cash_drops WHERE room='enfer:public' AND claimed IS NULL ORDER BY expires DESC LIMIT 96)) AS cashDrops,
     (SELECT json_group_array(json_object('name',alias,'ms',public)) FROM
       (SELECT alias,public FROM mc_laps WHERE public IS NOT NULL ORDER BY public,alias,profile LIMIT 5)) AS leaders
     FROM mc_careers c JOIN mc_enterprises e ON c.profile=e.profile
@@ -45,7 +55,7 @@ const readCareer=`SELECT c.*,w.slot AS woolSlot,w.picked AS woolPicked,w.paid AS
 const parse=data=>data?JSON.parse(data):null;
 function publicState(row,rider){
   const mission=parse(row.mission);
-  return {version:3,parkingOwner:row.profile,goods:parse(row.goods)||{},driveOrder:parse(row.driveOrder),vehicleLicenses:parse(row.vehicleLicenses)||[],wool:woolProgress(row),armor:row.armor||0,armorId:row.layer,wearable:row.wearer===rider,dyes:parse(row.dyes)||[],dye:row.dye,bestLapMs:row.best,publicLapMs:row.public,leaders:parse(row.leaders)||[],bank:row.bank,licensed:!!row.licensed,revenue:row.revenue,revision:row.revision,cash:row.cash,completed:row.completed,reputation:row.reputation,owned:!!row.car,
+  return {version:3,parkingOwner:row.profile,goods:parse(row.goods)||{},driveOrder:parse(row.driveOrder),heist:parse(row.heist),cashDrops:parse(row.cashDrops)||[],vehicleLicenses:parse(row.vehicleLicenses)||[],tuning:parse(row.tuning)||{},wool:woolProgress(row),armor:row.armor||0,armorId:row.layer,wearable:row.wearer===rider,dyes:parse(row.dyes)||[],dye:row.dye,bestLapMs:row.best,publicLapMs:row.public,leaders:parse(row.leaders)||[],bank:row.bank,licensed:!!row.licensed,revenue:row.revenue,revision:row.revision,cash:row.cash,completed:row.completed,reputation:row.reputation,owned:!!row.car,
     mission:mission?{contract:mission.contract,stage:mission.stage,car:mission.car||null,started:mission.started,deadline:mission.deadline}:null};
 }
 async function hashProfile(profile){
@@ -53,7 +63,8 @@ async function hashProfile(profile){
   return Array.from(bytes,v=>v.toString(16).padStart(2,'0')).join('');
 }
 const near=(actor,place)=>(actor.lift||0)<1.5&&Math.hypot(actor.x-place.x,actor.y-place.y)<=careerRadius;
-const allowed=new Set(['incident','woolPick','woolReturn','state','start','cancel','advance','repair','buy','collect','license','collectRent','deposit','withdraw','publishLap','hideLap','buyArmor','buyDye','equipDye','buyProduct','eatProduct','buyVehicleLicense','deliverVehicle','orderDrive','collectDrive']);
+const allowed=new Set(['incident','woolPick','woolReturn','state','start','cancel','advance','repair','buy','collect','license','collectRent','deposit','withdraw','publishLap','hideLap','buyArmor','buyDye','equipDye','buyProduct','eatProduct','buyVehicleLicense','deliverVehicle','orderDrive','collectDrive','startHeist','finishHeist','collectCash']);
+allowed.add('installTuning');
 export async function runCareer(db,b,room,now){
   if(room!=='enfer:public'||!profileId.test(b.profile)||!allowed.has(b.action))
     return {ok:false,error:'Demande de carrière invalide.'};
@@ -134,13 +145,29 @@ export async function runCareer(db,b,room,now){
       cash+=outcome.reward;
       effects.push(q(`UPDATE mc_lost_wool SET paid=1 WHERE profile=? AND slot=? AND ${hasMutation}`,profile,b.slot,profile,marker));
     }
+  }else if(b.action==='installTuning'){
+    const part=tuningCatalog.get(b.upgrade),active=actor.vehicle;
+    if(down||!part||!active||!tunable(active.type)||!atTuningSite(actor)||actor.lift>.3||
+      Math.abs(actor.speed||active.speed||0)>.85)return fail('Arrête une voiture compatible dans un atelier.');
+    const own=active.id===row.car?{model:'garage'}:await q(
+      'SELECT model FROM mc_vehicle_licenses WHERE profile=? AND car=?',profile,active.id).first();
+    if(!own)return fail('Seul ton véhicule peut être personnalisé.');
+    const existing=await q('SELECT parts FROM mc_vehicle_tuning WHERE profile=? AND model=?',profile,own.model).first();
+    if((existing?.parts||0)&part.bit)return fail('Cette pièce est déjà installée.');
+    if(cash<part.price)return fail('Solde insuffisant.');
+    guard+=` AND EXISTS (SELECT 1 FROM mc_members WHERE room=? AND id=? AND state=?)
+      AND EXISTS (SELECT 1 FROM mc_items WHERE room=? AND kind='vehicle' AND item=? AND owner=?)`;
+    guardArgs.push(room,b.id,member.state,room,active.id,b.id);
+    cash-=part.price;
+    effects.push(q(`INSERT INTO mc_vehicle_tuning(profile,model,parts) SELECT ?,?,? WHERE ${hasMutation}
+      ON CONFLICT(profile,model) DO UPDATE SET parts=parts|excluded.parts`,profile,own.model,part.bit,profile,marker));
   }else if(b.action==='buyVehicleLicense'||b.action==='deliverVehicle'){
     const model=dealership.get(b.model);
     if(!model)return fail('Véhicule inconnu.');
     if(actor.vehicle||actor.railRider||actor.lift>.65||actor.motion==='swim')return fail('La livraison et les achats se font à pied.');
     const license=await q("SELECT car,last_call FROM mc_vehicle_licenses WHERE profile=? AND model=?",profile,model.id).first();
     if(b.action==='buyVehicleLicense'){
-      if(!near(actor,careerPlaces.garage))return fail('Rejoins la concession au Garage des Deux Bornes.');
+      if(!atTuningSite(actor))return fail('Rejoins une boutique de véhicules.');
       if(license)return fail('Tu possèdes déjà cette licence.');
       if(cash<model.price)return fail('Solde insuffisant pour cette licence.');
       cash-=model.price;
@@ -173,7 +200,8 @@ export async function runCareer(db,b,room,now){
       }
       effects.push(q(`UPDATE mc_vehicle_licenses SET car=?,last_call=? WHERE profile=? AND model=? AND ${hasMutation}`,
         id,now,profile,model.id,profile,marker));
-      vehicle={id,type:model.id,x:pose.x,y:pose.y,angle:pose.angle,color:model.color,occupied:false,owner:'',speed:0,moving:false,expiresAt:now+abandonedFor};
+      const tuning=await q('SELECT parts FROM mc_vehicle_tuning WHERE profile=? AND model=?',profile,model.id).first();
+      vehicle={id,type:model.id,x:pose.x,y:pose.y,angle:pose.angle,color:model.color,tune:tuning?.parts||0,occupied:false,owner:'',speed:0,moving:false,expiresAt:now+abandonedFor};
       worldEvent('vehicle',vehicle);
     }
   }else if(b.action==='orderDrive'||b.action==='collectDrive'){
@@ -197,6 +225,37 @@ export async function runCareer(db,b,room,now){
         ON CONFLICT(profile) DO UPDATE SET goods=excluded.goods`,profile,JSON.stringify(bag),profile,marker));
       effects.push(q(`DELETE FROM mc_drive_orders WHERE profile=? AND ${hasMutation}`,profile,profile,marker));
     }
+  }else if(b.action==='startHeist'||b.action==='finishHeist'){
+    if(down||atShopCounter(actor)?.id!=='bobines')return fail('Rejoins la caisse de Samantha à pied.');
+    const clerk=await q("SELECT data FROM mc_items WHERE room=? AND kind='npc' AND item=?",room,retailClerkId('bobines',now)).first();
+    if(parse(clerk?.data)?.health===0)return fail('La caisse est fermée pour le moment.');
+    if(b.action==='startHeist'){
+      guard+=` AND NOT EXISTS (SELECT 1 FROM mc_store_heists WHERE room=? AND cooldown>?)
+        AND EXISTS (SELECT 1 FROM mc_members WHERE room=? AND id=? AND state=?)`;
+      guardArgs.push(room,now,room,b.id,member.state);
+      effects.push(q(`INSERT INTO mc_store_heists(room,profile,rider,ready,deadline,cooldown)
+        SELECT ?,?,?,?,?,? WHERE ${hasMutation} ON CONFLICT(room) DO UPDATE SET profile=excluded.profile,
+        rider=excluded.rider,ready=excluded.ready,deadline=excluded.deadline,cooldown=excluded.cooldown`,
+      room,profile,b.id,now+6500,now+20000,now+180000,profile,marker));
+    }else{
+      guard+=` AND EXISTS (SELECT 1 FROM mc_store_heists WHERE room=? AND profile=? AND rider=? AND ready<=? AND deadline>=?)
+        AND EXISTS (SELECT 1 FROM mc_members WHERE room=? AND id=? AND state=?)`;
+      guardArgs.push(room,profile,b.id,now,now,room,b.id,member.state);
+      cash+=145;
+      effects.push(q(`UPDATE mc_store_heists SET deadline=0 WHERE room=? AND ${hasMutation}`,room,profile,marker));
+    }
+  }else if(b.action==='collectCash'){
+    if(down||actor.vehicle||actor.railRider||actor.motion==='swim'||actor.lift>.4||typeof b.drop!=='string')
+      return fail('Ramasse la liasse à pied.');
+    const drop=await q('SELECT x,y,amount FROM mc_cash_drops WHERE room=? AND id=? AND claimed IS NULL AND expires>?',room,b.drop,now).first();
+    if(!drop||Math.hypot(actor.x-drop.x,actor.y-drop.y)>2.9)return fail('La liasse est trop loin ou a déjà été ramassée.');
+    guard+=` AND EXISTS (SELECT 1 FROM mc_cash_drops WHERE room=? AND id=? AND claimed IS NULL AND expires>?)
+      AND EXISTS (SELECT 1 FROM mc_members WHERE room=? AND id=? AND state=?)`;
+    guardArgs.push(room,b.drop,now,room,b.id,member.state);
+    cash+=drop.amount;
+    effects.push(q(`UPDATE mc_cash_drops SET claimed=? WHERE room=? AND id=? AND ${hasMutation}`,profile,room,b.drop,profile,marker),
+      q(`INSERT OR IGNORE INTO mc_events(room,player,op,name,type,data,at)
+        SELECT ?,?,?,?,'cash','{}',? WHERE ${hasMutation}`,room,b.id,'cash:'+marker,member.name,now,profile,marker));
   }else if(b.action==='buyProduct'||b.action==='eatProduct'){
     const product=retailGoods.get(b.product),bag=parse(row.goods)||{};
     if(!product)return fail('Article inconnu.');
@@ -339,7 +398,8 @@ export async function runCareer(db,b,room,now){
           if(replacementAt(wear))car='garage-'+crypto.randomUUID();
         }
       }
-      vehicle={id:car,type:careerGarage.type,x:garage.x+6*Math.cos(garage.angle),y:garage.y+6*Math.sin(garage.angle),
+      const tuning=await q("SELECT parts FROM mc_vehicle_tuning WHERE profile=? AND model='garage'",profile).first();
+      vehicle={id:car,type:careerGarage.type,tune:tuning?.parts||0,x:garage.x+6*Math.cos(garage.angle),y:garage.y+6*Math.sin(garage.angle),
         angle:garage.angle,color:'#61a59b',occupied:false,owner:'',speed:0,moving:false,expiresAt:now+abandonedFor};
       worldEvent('vehicle',vehicle);
     }

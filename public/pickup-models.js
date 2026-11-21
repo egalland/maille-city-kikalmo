@@ -11,6 +11,7 @@ export function createPickupDisplay(scene){
   const rim=new T.MeshLambertMaterial({color:'#aa9674'});
   const ammoBox=new T.BoxGeometry(.5,.24,.30);
   const ammoMaterial=new T.MeshLambertMaterial({color:'#6c8172'});
+  const cashMaterial=new T.MeshLambertMaterial({color:'#93b477'});
   function palette(kind){
     if(styles.has(kind))return styles.get(kind);
     const texture=new T.CanvasTexture(pickupPatch(kind));
@@ -22,8 +23,9 @@ export function createPickupDisplay(scene){
   function create(kind){
     const materials=palette(kind),group=new T.Group();
     group.add(mesh(base,plinth,.075),mesh(trim,rim,.135));
-    const model=kind==='ammo'?mesh(ammoBox,ammoMaterial,0):firearmModel(kind).clone(true);
-    model.scale.setScalar(1.65);group.add(model);
+    const model=kind==='cash'||kind==='ammo'?mesh(ammoBox,kind==='cash'?cashMaterial:ammoMaterial,0):firearmModel(kind).clone(true);
+    if(kind==='cash')model.scale.y=.45;
+    model.scale.multiplyScalar(1.65);group.add(model);
     const sprite=new T.Sprite(materials.artwork);sprite.scale.set(pickupMarkerWidth,pickupMarkerWidth*.8,1);group.add(sprite);
     group.name='Équipement · '+kind;scene.add(group);
     return {kind,group,sprite,model};
@@ -31,7 +33,7 @@ export function createPickupDisplay(scene){
   function update(list,player,t){
     for(const item of instances.values())item.keep=false;
     for(const p of list||[]){
-      const kind=p.ammoOnly?'ammo':p.weapon;
+      const kind=p.cash?'cash':p.ammoOnly?'ammo':p.weapon;
       if(!pickupStyle(kind)||!Number.isFinite(p.x+p.y))continue;
       if((p.x-player.x)**2+(p.y-player.y)**2>pickupRange**2)continue;
       let item=instances.get(p.id);
@@ -48,6 +50,6 @@ export function createPickupDisplay(scene){
   return {update,dispose(){
     for(const item of instances.values())item.group.removeFromParent();
     for(const mats of styles.values()){mats.artwork.map.dispose();for(const m of Object.values(mats))m.dispose();}
-    base.dispose();trim.dispose();plinth.dispose();rim.dispose();ammoBox.dispose();ammoMaterial.dispose();instances.clear();styles.clear();
+    base.dispose();trim.dispose();plinth.dispose();rim.dispose();ammoBox.dispose();ammoMaterial.dispose();cashMaterial.dispose();instances.clear();styles.clear();
   }};
 }

@@ -79,8 +79,8 @@ function setTouchAim(enabled) {
 const controlsAreTouch=()=>matchMedia('(pointer:coarse),(max-width:670px)').matches;
 renderIcons();
 const traversal=installTraversalControl($('#jump'),$('#traversalShortcut'),pressed=>game.action('jump',pressed));
-const driving=installDriveControls($('#driveControls'),(steering,throttle,vertical,handbrake)=>{
-  game?.setDrive(steering,throttle);game?.setFlightVertical(vertical);game?.setHandbrake(handbrake);
+const driving=installDriveControls($('#driveControls'),(steering,throttle,vertical,handbrake,nitro)=>{
+  game?.setDrive(steering,throttle);game?.setFlightVertical(vertical);game?.setHandbrake(handbrake);game?.setNitro(nitro);
 });
 function showFlightControls(active){
   $('#scene').toggleAttribute('data-piloting',active);
@@ -244,7 +244,9 @@ function onState(next){
   driveHint.textContent=state.train?(atPlatform?state.railStation+' · E pour descendre':state.railDestination+' · '+state.railDistance+' m'):
     'E · Se garer et sortir';
   const condition=$('#chassisStatus'),integrity=Math.round(state.vehicleHealth??100);
-  condition.textContent=state.train?(state.passenger?'Voyage en train':'↑ Traction · ↓ Frein · R Inverser'):integrity===0?'En panne':'Carrosserie · '+integrity+' %';
+  $('#driveNitro').hidden=state.nitro==null;
+  condition.textContent=state.train?(state.passenger?'Voyage en train':'↑ Traction · ↓ Frein · R Inverser'):integrity===0?'En panne':
+    'Carrosserie · '+integrity+' %'+(state.nitro==null?'':' · Nitro '+state.nitro+' % · J');
   const wear=chassisStage(integrity);
   condition.dataset.damaged=wear>=2?'severe':wear===1?'worn':'';
   const ride=$('#ride');

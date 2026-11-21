@@ -5,7 +5,7 @@ import {Vector3,TorusGeometry} from './three.js';
 import {saddles,gripOnFork,riderIdentity} from './saddle-rider.js';
 import {puppetAppearance} from './puppet-dyes.js';
 import {fleetFabric} from './vehicle-fabric.js';
-import {wheelPart} from './vehicle-damage.js';
+import {chassisHealth,partMask,wheelPart} from './vehicle-damage.js';
 import {townFleetPaint,createTownCarRecipe} from './town-fleet.js';
 import {sportingPaint,createSportingCarRecipe} from './sporting-cars.js';
 import {vehicleSpec} from './vehicle-types.js';
@@ -271,6 +271,15 @@ export function createStreetVehicle(THREE,art,type,color,seed=0){
     const {steering,roll,pitch,bob,phase}=motion;
     suspension.position.y=bob;
     suspension.rotation.set(roll,0,pitch);
+    const wear=1-chassisHealth(e.chassisHp)/100,parts=e.parts||0;
+    const front=parts&partMask.frontPanel?wear:0,rear=parts&partMask.rearPanel?wear:0;
+    const left=parts&partMask.leftPanel?wear:0,right=parts&partMask.rightPanel?wear:0;
+    const fit=(node)=>{
+      node.scale.set(1-(front+rear)*.065,1-wear*(e.wrecked?.28:.047),1-(left+right)*.045);
+      node.position.x=(rear-front)*vehicleSpec(type).halfLength*.067;
+      node.position.z=(left-right)*vehicleSpec(type).halfWidth*.06;
+    };
+    fit(body);
     const far=!!model.distant&&e.signalDetail===false;
     if(trim){
       if(far&&!distant){
@@ -278,7 +287,7 @@ export function createStreetVehicle(THREE,art,type,color,seed=0){
         distantGlazing=distant.children.find(mesh=>mesh.material?.transparent);
       }
       for(const m of trim)m.visible=!far;
-      if(distant)distant.visible=far;
+      if(distant){distant.visible=far;fit(distant);}
       if(distantGlazing)distantGlazing.visible=!(e.parts&1);
     }
     if(glazing)glazing.visible=!far&&!(e.parts&1);

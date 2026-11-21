@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {pavementRuns} from '../public/curb-clearance.js';
 import {bridgeGround,selectBridgeDecks} from '../public/enfer-bridges.js';
 import {stepVehicleBody} from '../public/vehicle-motion.js';
+import {terrainBarrier} from '../public/terrain-motion.js';
 import {blastDamage,burnProgress,chassisHealthAt,nextChassis} from '../public/vehicle-damage.js';
 import {wreckExpired} from '../public/vehicle-lifecycle.js';
 
@@ -43,6 +44,17 @@ test('speed over a rising crest gives suspension lift, gravity and a landing',()
   const jump=run(23);assert.ok(jump.peak>.45&&jump.impact>3,JSON.stringify(jump));
 });
 
+test('cliffs block uphill travel and a vehicle falls from the downhill edge',()=>{
+  const ground=x=>x<0?0:3;
+  const traction={grade:.56,step:.27,reach:.92};
+  assert.equal(terrainBarrier(-.5,0,.2,0,ground,traction)?.touched.id,'steep-ground');
+  assert.equal(terrainBarrier(.1,0,-.2,0,ground,traction),null);
+  assert.equal(terrainBarrier(0,0,.2,0,x=>x*.28,traction),null);
+  const initial=stepVehicleBody(null,{x:.1,y:0,angle:Math.PI,speed:6,halfLength:2.15,dt:1/60},ground);
+  const fallen=stepVehicleBody(initial,{x:-.1,y:0,angle:Math.PI,speed:6,halfLength:2.15,dt:1/60},ground);
+  assert.ok(fallen.lift>2.8&&fallen.lift<3);
+  assert.ok(fallen.vy<0);
+});
 test('engine fire reduces integrity before an explosion and the wreck expires later',()=>{
   const start=3000,fire=nextChassis(null,{id:'car',part:'engine'},86,start);
   assert.equal(fire.hp,14);assert.equal(chassisHealthAt(fire,start),14);

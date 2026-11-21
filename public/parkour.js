@@ -1,5 +1,6 @@
 import {contactAt,moveBody,supportAt,surfaceTop,vaultableProp,swimmingSurface} from './paris-world.js';
 import {PLAYER_RADIUS} from './crowd-motion.js';
+import {terrainBarrier} from './terrain-motion.js';
 
 const cap=(v,a,b)=>Math.max(a,Math.min(b,v));
 const smooth=t=>{t=cap(t,0,1);return t*t*(3-2*t);};
@@ -132,7 +133,14 @@ export function createParkour(p,ground,gradient,{onImpact=()=>{}}={}){
     const k=1-Math.exp(-response*dt);
     speedX+=(dx*magnitude*maxSpeed-speedX)*k;speedY+=(dy*magnitude*maxSpeed-speedY)*k;
     if(Math.hypot(speedX,speedY)<.035){speedX=0;speedY=0;}
-    const result=moveBody(p.x,p.y,speedX*dt,speedY*dt,{...geometry,footZ:p.lift,footWorldZ:swimming?water-.62:p.lift>.01?oldZ:null});
+    const steep=Math.hypot(slope.x,slope.y);
+    if(!swimming&&!airborne&&p.lift<.04&&steep>1.04){
+      const slip=Math.min(5,(steep-.85)*3.6)*Math.min(1,dt*8);
+      speedX-=slope.x/steep*slip;speedY-=slope.y/steep*slip;
+    }
+    const terrainHit=!swimming&&terrainBarrier(p.x,p.y,speedX*dt,speedY*dt,ground,
+      {grade:.84,step:.32,lift:Math.max(0,p.lift+vertical*dt),reach:airborne?.16:.57});
+    const result=terrainHit||moveBody(p.x,p.y,speedX*dt,speedY*dt,{...geometry,footZ:p.lift,footWorldZ:swimming?water-.62:p.lift>.01?oldZ:null});
     if(result.hit){
       const inward=speedX*result.normalX+speedY*result.normalY;
       if(inward<0){speedX-=inward*result.normalX;speedY-=inward*result.normalY;}

@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {tuningCatalog,tuningSites} from '../public/vehicle-tuning.js';
 import assert from 'node:assert/strict';
 import {localDatabase} from '../scripts/local-db.mjs';
 import {handleApi} from '../worker/game-api.js';
@@ -71,6 +72,62 @@ test('a vehicle license is bought once at the garage and supports free nearby de
   assert.ok(rejoined.world.vehicles[second.vehicle.id]);assert.equal(rejoined.world.vehicles[first.vehicle.id],undefined);
 });
 
+test('the Mont Renaud garage installs a part once and keeps it on the next delivery',async t=>{
+  const {DB,active,who,pose,post,drive,tick}=await harness(t);
+  const model='compact',price=dealership.get(model).price,part=tuningCatalog.get('engine');
+  const initial=(await active(who,'state')).state;
+  const site=tuningSites[1],onFoot=drive(site,{vehicle:null});
+  await DB.prepare('UPDATE mc_careers SET cash=? WHERE profile=?').bind(price+part.price+120,initial.parkingOwner).run();
+  await pose(site,{vehicle:null});
+  const command=(action,revision,extra)=>post('career',who,{action,revision,...extra});
+  const bought=await command('buyVehicleLicense',initial.revision,{model});
+  assert.ok(bought.ok,bought.error);
+  const delivery={x:site.x+6,y:site.y,angle:0};
+  const first=await command('deliverVehicle',bought.state.revision,{model,delivery});
+  assert.ok(first.ok,first.error);
+  const car=first.vehicle,driver=drive(delivery,{vehicle:car});
+  assert.equal((await command('installTuning',first.state.revision,{upgrade:part.id})).ok,false);
+  const joined=await post('sync',who,{state:driver,events:[{type:'vehicle',op:'board-tuning',data:{...car,occupied:true}}]});
+  assert.ok(joined.events?.some(e=>e.type==="vehicle"&&e.data.id===car.id),JSON.stringify(joined));
+  const install=()=>command('installTuning',first.state.revision,{upgrade:part.id});
+  const applied=(await Promise.all([install(),install()])).filter(r=>r.ok);
+  assert.equal(applied.length,1);
+  assert.equal(applied[0].state.cash,120);
+  await post('sync',who,{state:onFoot,events:[{type:'vehicle',op:'exit-tuning',data:{...car,occupied:false}}]});
+  tick(26_000);
+  await post('join',who,{state:onFoot});
+  const next=await command('deliverVehicle',applied[0].state.revision,{model,delivery});
+  assert.ok(next.ok,next.error);
+  assert.equal(next.vehicle.tune,part.bit);
+});
+
+test('a defeated player drops part of their wallet and the cash can be collected once',async t=>{
+  const {DB,active,who,b,post,drive,tick}=await harness(t);
+  const spot=careerPlaces.market;
+  await active(who,'state');await active(b,'state');
+  await post('sync',who,{state:drive(spot,{vehicle:null})});
+  tick(150);
+  const hit=await post('sync',who,{events:[{op:'test-cash-hit',type:'hit',data:{target:b.id,damage:35,cause:'weapon'}}]});
+  assert.ok(hit.events.some(e=>e.type==='hit'&&e.data.target===b.id),JSON.stringify(hit.events));
+  tick(150);
+  await post('sync',b,{state:drive(spot,{vehicle:null,health:0})});
+  const victim=(await active(b,'state')).state;
+  assert.equal(victim.cash,36);
+  const collector=(await active(who,'state')).state;
+  const [drop]=collector.cashDrops;
+  assert.equal(drop.amount,9);
+  const collect=()=>post('career',who,{action:'collectCash',revision:collector.revision,drop:drop.id});
+  const [result,...extra]=(await Promise.all([collect(),collect()])).filter(r=>r.ok);
+  assert.equal(extra.length,0);
+  assert.equal(result.state.cash,54);
+  assert.equal(result.state.cashDrops.length,0);
+  const npcTime=Date.now();
+  await DB.prepare("INSERT INTO mc_events(room,player,op,name,type,data,at) VALUES('enfer:public',?,'test-cash-npc','Test','npc',?,?)")
+    .bind(who.id,JSON.stringify({id:'civilian',type:'walker',healthAt:npcTime,dead:true,damage:30,x:spot.x,y:spot.y}),npcTime).run();
+  const npc=(await active(who,'state')).state.cashDrops[0];
+  assert.ok(npc.id.startsWith('npc:civilian:'));
+  assert.ok(npc.amount>=7&&npc.amount<=17);
+});
 test('retail checks the correct counter, debits once and retains purchases across reconnects',async t=>{
   const {active,who,pose,post,drive,actor}=await harness(t);
   const grocery=retailStores.find(s=>s.id==='bobines'),position={x:grocery.buyerX,y:grocery.buyerY};

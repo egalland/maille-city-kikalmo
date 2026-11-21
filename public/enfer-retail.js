@@ -7,14 +7,18 @@ const catalogs={
     goods:[['girofle','Brin de giroflée',5],['bouquet','Bouquet des Glycines',12],['plante','Plante en pot',16]]},
   'pages-cousues':{door:[57,-115.4,.7520771675],clerk:'Émile',coat:'#84739f',
     goods:[['carnet','Carnet cousu',6],['roman','Roman de quartier',10],['atlas','Atlas des Vieilles Mailles',16]]},
-  bobines:{clerk:'Sam',coat:'#a4494f',large:true,
+  bobines:{clerk:'Samantha',coat:'#a4494f',large:true,
     goods:[['pommes','Filet de pommes',5],['jus','Jus de poire',4],['provisions','Panier de provisions',14],['chocolat','Tablette de chocolat',6]]},
   'action-noyon':{clerk:'Lou',coat:'#436d9d',
     goods:[['peinture','Coffret de peinture',8],['bougie','Bougie parfumée',6],['boite','Boîte de rangement',10]]},
   'kiabi-noyon':{clerk:'Camille',coat:'#637fa5',
     goods:[['echarpe','Écharpe rayée',9],['bonnet','Bonnet côtelé',8],['sweat','Sweat à capuche',15]]},
   'sport-noyon':{clerk:'Alex',coat:'#426186',
-    goods:[['gourde','Gourde de randonnée',9],['ballon','Ballon cousu',10],['sac-sport','Sac de sport',15]]}
+    goods:[['gourde','Gourde de randonnée',9],['ballon','Ballon cousu',10],['sac-sport','Sac de sport',15]]},
+  mcdonalds:{clerk:'Noa',coat:'#365846',goods:[['burger','Burger',9],['frites','Frites',4],['menu-burger','Menu burger',15]]},
+  'buffalo-grill':{clerk:'Lina',coat:'#984b3f',goods:[['grillade','Assiette grillée',16],['dessert-grill','Dessert',7]]},
+  bricomarche:{clerk:'Léo',coat:'#92543e',goods:[['outils','Boîte à outils',24],['gants','Gants de jardin',7]]},
+  'bureau-vallee':{clerk:'Jules',coat:'#52776c',goods:[['bloc','Bloc de papier',5],['trousse','Trousse',9]]}
 };
 
 export const shopHeadroom=2.75;
@@ -40,7 +44,8 @@ export const retailStores=neighborhoodShops.map(shop=>{
 });
 export const storeByBuilding=new Map(retailStores.map(store=>[store.building,store]));
 export const retailGoods=new Map(retailStores.flatMap(store=>store.goods.map(([id,name,price])=>[id,{id,name,price,store:store.id}])));
-export const foodRecovery={baguette:10,brioche:15,tarte:21,pommes:10,jus:8,provisions:30,chocolat:12};
+export const foodRecovery={baguette:10,brioche:15,tarte:21,pommes:10,jus:8,provisions:30,chocolat:12,
+  burger:18,frites:8,'menu-burger':28,grillade:30,'dessert-grill':13};
 export const retailClerks=retailStores.map(store=>({
   store:store.id,type:'walker',name:store.clerk,x:store.clerkX,y:store.clerkY,
   angle:store.angle+Math.PI,color:store.coat,move:false,moving:false,speed:0,braced:true

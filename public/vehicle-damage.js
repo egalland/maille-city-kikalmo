@@ -20,7 +20,7 @@ export function chassisDamage(type,{cause,speed,weapon,part,swingKind}){
   if(cause==='melee')return swingKind==='kick'?2:1;
   if(cause==='weapon'){
     if(!Object.hasOwn(weaponCatalog,weapon)||weapon==='fist')return 0;
-    const factor=part==='engine'?.50:part==='glass'?.09:partMask[part]>1?.10:.31;
+    const factor=part==='engine'?.50:part==='glass'?.09:(partMask[part]&30)?.10:.31;
     return Math.max(1,Math.round(weaponCatalog[weapon].damage*factor*vulnerability));
   }
   if(cause!=='crash'||!Number.isFinite(speed))return 0;
@@ -34,7 +34,13 @@ export function chassisDamage(type,{cause,speed,weapon,part,swingKind}){
   return Math.min(76,Math.max(1,Math.round((.12*closing+.037*closing**2)*vulnerability)));
 }
 
-export const partMask={body:0,engine:0,glass:1,frontLeft:2,frontRight:4,rearLeft:8,rearRight:16};
+export const partMask={body:0,engine:0,glass:1,frontLeft:2,frontRight:4,rearLeft:8,rearRight:16,
+  frontPanel:32,rearPanel:64,leftPanel:128,rightPanel:256};
+export function impactPanel(vehicle,dx,dy){
+  const spec=vehicleSpec(vehicle.type),c=Math.cos(vehicle.angle||0),s=Math.sin(vehicle.angle||0);
+  const length=(dx*c+dy*s)/spec.halfLength,side=(dy*c-dx*s)/spec.halfWidth;
+  return Math.abs(length)>Math.abs(side)?length>0?'frontPanel':'rearPanel':side>0?'rightPanel':'leftPanel';
+}
 export const vehicleBurnDelay=12_000;
 export const blastRadius=8.5;
 export function blastDamage(distance,max=52){

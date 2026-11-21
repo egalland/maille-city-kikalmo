@@ -556,6 +556,7 @@ function closestRoad(x,y,range,predicate){
 }
 export function streetAt(x,y){
   const seg=closestRoad(x,y,29,s=>!!s.name&&s.kind!=='motorway');
+  if(!seg&&isEnfer&&Math.hypot(x-auchanFront.x,y-auchanFront.y)<16)return 'Parvis d’Auchan';
   if(!seg)return '';
   if(isEnfer)return enferStreet(seg.road);
   return seg.road.name===seg.road.name.toUpperCase()
@@ -607,6 +608,10 @@ export const coreDestinations=(isEnfer?enferStops:historicStops).map(stop=>{
 if(isEnfer)for(const station of railStations)coreDestinations.push({
   id:station.id,key:station.id,label:station.name,x:station.x,y:station.y,angle:station.angle-station.side*Math.PI/2,rail:true
 });
+if(isEnfer){
+  const [x,y]=auchanFront.point(0,-8);
+  coreDestinations.push({id:'mont-renaud',key:'mont-renaud',label:'Mont Renaud · Auchan',x,y,angle:auchanFront.angle,noParking:true});
+}
 function genuineSectorStop(){
   const x=clamp(Number.isFinite(sector.x)?sector.x:midX,landBounds.minX+3,landBounds.maxX-3);
   const y=clamp(Number.isFinite(sector.y)?sector.y:midY,landBounds.minY+3,landBounds.maxY-3);
@@ -949,7 +954,7 @@ function parkedVehicleAtStop(stop,i){
   }
   return null;
 }
-export const parkedCars=destinations.map(parkedVehicleAtStop).filter(Boolean);
+export const parkedCars=destinations.filter(stop=>!stop.noParking).map(parkedVehicleAtStop).filter(Boolean);
 if(isEnfer)for(const [id,x,y,angle,type,color,bay] of streetParking)
   parkedCars.push({id,x,y,angle,type,color,bay,kind:'car',parked:true,moving:false,speed:0});
 if(isEnfer)for(const lot of parkingLots){

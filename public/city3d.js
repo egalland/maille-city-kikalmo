@@ -453,7 +453,7 @@ function addHeritageBuilding(batch,site,building,detail,skyline){
 }
 function retailInterior(b,poly,store){
   const drape=b.drape;
-  b.drape=true;b.flat('pave',poly,.065,store.large?'#bdb8a5':'#b58d75',2.4);b.drape=drape;
+  b.drape=!store.large;b.flat('pave',poly,.065,store.large?'#bdb8a5':'#b58d75',2.4);b.drape=drape;
   for(const [i,j,k] of triIndex(poly)){
     b.tri('felt',...[i,j,k].map(n=>[poly[n][0],store.headroom,poly[n][1]]),'#e5d3ae');
   }
@@ -1241,7 +1241,8 @@ export function createCity3D(scene,{software=false}={}){
     const geo=index.groups.get(target.key)||{buildings:[],segments:[]};
     const b=new Batch();
     const [ix,iz]=target.key.split(',').map(Number);
-    groundTile(b,ix*chunkSize,iz*chunkSize,target.detail?16:target.skyline?4:8,lakes,parks,isEnfer&&geo.buildings.length<15);
+    const shopGround=isEnfer&&Math.abs((ix+.5)*chunkSize-auchanFront.x)<130&&Math.abs((iz+.5)*chunkSize-auchanFront.y)<130;
+    groundTile(b,ix*chunkSize,iz*chunkSize,shopGround&&!target.skyline?48:target.detail?16:target.skyline?4:8,lakes,parks,isEnfer&&geo.buildings.length<15);
     for(const building of geo.buildings)addBuilding(b,building,target.detail,target.skyline,target.heritageDetail);
     for(const seg of geo.segments){
       b.road=seg;

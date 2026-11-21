@@ -1,6 +1,7 @@
 import {createDiagnosticsToggle} from './diagnostics.js';
 import {cameraSettingsControls} from './camera-options.js';
 import {socialMarkers} from './partners.js';
+import {tuningSites} from './vehicle-tuning.js';
 import {addSocialControls} from './social-controls.js';
 import {readRadio,storeRadio} from './car-radio.js';
 import {airfields} from './airfield.js';
@@ -429,7 +430,7 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
         const stop=coreDestinations.find(d=>'car-'+d.key===car.id);
         return {...car,id:'parking/'+car.id,name:vehicleSpec(car.type).label+' · '+(stop?.label||streetAt(car.x,car.y))};
       });
-      const venues=[...Object.values(careerPlaces),...airfields,...marketServices,...parkingLots,...neighborhoodShops,...railStations,...parking,...heritageWaypoints];
+      const venues=[...Object.values(careerPlaces),...airfields,...marketServices,...tuningSites.slice(1),...parkingLots,...neighborhoodShops,...railStations,...parking,...heritageWaypoints];
       const lots=node('optgroup','');lots.label='Stationnements habituels';
       const shops=node('optgroup','');shops.label='Commerces';
       const montRenaud=node('optgroup','');montRenaud.label='Zone commerciale du Mont Renaud';

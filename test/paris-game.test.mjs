@@ -89,7 +89,10 @@ test('Chase-camera controls, car possession, shared effects and travel share the
     assert.deepEqual(visiblePeers.map(e=>e.id),['nearby-fox']);
     eventCallback({type:'npc',player:'nearby-fox',data:{id:'unit-police-nearby-fox',kind:'police',...here,started:epoch-13000,level:1}});
     step();
-    const officer=viewState.entities.find(e=>e.id.startsWith('u-police-nearbyfox-')&&e.id.endsWith('-foot'));
+    const officerAtScene=()=>viewState.entities.find(e=>e.id.startsWith('u-police-nearbyfox-')&&e.id.endsWith('-foot')&&Math.hypot(e.x-otherSpot.x,e.y-otherSpot.y)<4);
+    assert.equal(officerAtScene(),undefined,'the officer does not materialize next to the suspect');
+    for(let i=0;i<1800&&!officerAtScene();i++)step();
+    const officer=officerAtScene();
     assert(officer);
     const clearance=Math.hypot(officer.x-otherSpot.x,officer.y-otherSpot.y);
     assert.ok(clearance>=.75&&clearance<4,'the officer reaches the remote suspect while leaving both bodies clear');
@@ -439,7 +442,7 @@ test('Multiple services arriving at one Paris incident keep separate bodies arou
     h.receive({type:'npc',player:'neighbour',data:{id:`unit-${role}-${h.net.id}`,kind:role,x:origin.x,y:origin.y,started:h.epoch-12000,level:1}});
   }
   let nearestPlayer=Infinity,nearestUnit=Infinity,atScene=0,closeByAtRest=0;
-  for(let frame=0;frame<240;frame++){
+  for(let frame=0;frame<1800&&atScene<4;frame++){
     h.step();
     const units=h.scene.entities.filter(a=>a.id.endsWith('-foot')&&roles.includes(a.type));
     for(const [i,unit] of units.entries()){

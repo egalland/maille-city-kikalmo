@@ -22,6 +22,7 @@ export const wantedRules = Object.freeze({
   destroy: rule('Objet détruit', 4),
   stealVehicle: rule('Vol d’un véhicule en circulation', 24),
   stealService: rule('Vol d’un véhicule de service', 38),
+  robbery: rule('Braquage signalé', 110),
   hitCivilian: rule('Passant ou secouriste touché', 8),
   hitPlayer: rule('Autre joueur touché', 10),
   hitOfficer: rule('Agent touché', 15),

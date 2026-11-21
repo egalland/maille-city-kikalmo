@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {auchanFront,auchanMain,auchanParts} from '../public/auchan-layout.js';
 import {auchanModel} from '../public/auchan-model.js';
-import {storeByBuilding,atShopCounter} from '../public/enfer-retail.js';
+import {retailStores,storeByBuilding,atShopCounter} from '../public/enfer-retail.js';
 
 test('the Auchan wings share the same datum while the terrain rises behind them',async t=>{
   globalThis.location=new URL('https://maille.test/');
@@ -17,11 +17,14 @@ test('the Auchan wings share the same datum while the terrain rises behind them'
   assert.equal(wings.length,auchanParts.size);
   const floor=main.baseElevation;
   assert.ok(wings.every(w=>w.baseElevation===floor));
-  const rear=terrainHeight(...auchanFront.point(8,84));
+  const rear=terrainHeight(...auchanFront.point(8,96));
   assert.ok(rear-floor>5);
   assert.ok(floor+main.h-rear<3);
 
   const shop=storeByBuilding.get(auchanMain);
+  assert.equal(shop.clerk,'Samantha');
+  for(const distance of [4,18,33,42,56,72])
+    assert.equal(terrainHeight(...auchanFront.point(8,distance)),floor);
   const faces=auchanModel(main,shop,baseTerrainHeight,true);
   assert.ok(faces.some(f=>f.mat==='auchanLetters'&&Math.min(...f.p.map(p=>p[1]))>main.h));
   assert.ok(faces.some(f=>f.mat==='auchanBrick'));
@@ -33,4 +36,10 @@ test('the Auchan wings share the same datum while the terrain rises behind them'
   assert.ok(Math.abs(terrainHeight(...auchanFront.point(0,-3.32))-floor)<.04);
   assert.ok(contactAt(...auchanFront.point(2.8,-3.32),body)?.id.startsWith('auchan-porche'));
   assert.ok(storeByBuilding.get('2206464950')?.id==='sport-noyon');
+  for(const id of ['mcdonalds','buffalo-grill','bricomarche','bureau-vallee']){
+    const shop=retailStores.find(s=>s.id===id);
+    const [x,y]=shop.point(0,-2.5);
+    const walk=moveBody(x,y,shop.buyerX-x,shop.buyerY-y,body);
+    assert.ok(Math.hypot(walk.x-shop.buyerX,walk.y-shop.buyerY)<.06,id);
+  }
 });

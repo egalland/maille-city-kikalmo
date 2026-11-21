@@ -53,7 +53,8 @@ test('the bundled Noyonnais map opens on usable streets and includes water, terr
   assert.ok(coreDestinations.filter(p=>!p.rail).every(p=>!/Noyon|Pontoise|Couarcy/i.test(p.label)));
   const stations=coreDestinations.filter(p=>p.rail);
   assert.deepEqual(stations.map(p=>p.label),['Halte des Aulnes','Gare des Filatures','Gare des Verrières','Gare des Prés']);
-  assert.equal(coreDestinations.length,15);
+  assert.equal(coreDestinations.length,16);
+  assert.ok(coreDestinations.some(stop=>stop.key==='mont-renaud'));
   for(const point of coreDestinations){
     assert.equal(blocked(point.x,point.y,.65),false,point.label);
     if(!point.rail)assert.ok(streetAt(point.x,point.y));
@@ -66,7 +67,7 @@ test('the bundled Noyonnais map opens on usable streets and includes water, terr
   const {planDistantDispatch,stepDispatch}=await import('../public/dispatch-roads.js');
   const gap=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
   const clear=(pos,spec)=>!contactAt(pos.x,pos.y,{angle:pos.angle,halfLength:spec.halfLength+.16,halfWidth:spec.halfWidth+.12});
-  for(const scene of [SPAWN,pontoise]){
+  for(const scene of [SPAWN,pontoise,{x:-1670,y:1074,label:"Auchan"}]){
     const plan=planDistantDispatch(scene,'police',nearbyDrivableStreets(scene.x,scene.y,260),clear,p=>!blocked(p.x,p.y,.55));
     assert.ok(plan,scene.label);
     const state={plan};

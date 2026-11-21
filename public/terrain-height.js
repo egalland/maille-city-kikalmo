@@ -3,11 +3,12 @@ import {bridgeGround,bridgeDeckHeight,roadGround} from './enfer-bridges.js';
 import {riverbanks} from './riverbanks.js';
 import {grid,waterLevels} from './paris-heights.js';
 import {auchanFront,auchanGrade} from './auchan-layout.js';
+import {containsPoint} from './collision-ring.js';
 
 const bytes=Uint8Array.from(atob(grid.data),char=>char.charCodeAt(0));
 const data=new DataView(bytes.buffer);
 const packaged={...grid,values:Float32Array.from({length:bytes.length/2},(_,i)=>data.getInt16(i*2,true)/10)};
-let surface=packaged,buildingBases=new WeakMap(),shoreGround=null,auchanFloor=null;
+let surface=packaged,buildingBases=new WeakMap(),shoreGround=null,auchanFloor=null,auchanFootprint=null;
 const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
 const cubic=(a,b,c,d,t)=>b+.5*t*(c-a+t*(2*a-5*b+4*c-d+t*(3*(b-c)+d-a)));
 
@@ -22,10 +23,26 @@ function surveyHeight(x,y){
 const rawGround=(x,y)=>shoreGround?shoreGround(x,y):surveyHeight(x,y);
 export function baseTerrainHeight(x,y){
   const raw=rawGround(x,y);
-  return auchanFloor===null?raw:auchanGrade(x,y,raw,auchanFloor);
+  if(auchanFloor===null)return raw;
+  const apron=auchanGrade(x,y,raw,auchanFloor);
+  const f=auchanFootprint;
+  if(!f||x<f.minX||x>f.maxX||y<f.minY||y>f.maxY)return apron;
+  if(containsPoint(x,y,f.poly))return auchanFloor;
+  // Keep the exterior hill and bury the rear wall, with a narrow transition
+  // outside the footprint so the terrain mesh cannot cross the shop floor.
+  let distance=5;
+  for(let i=0;i<f.poly.length;i++){
+    const [ax,ay]=f.poly[i],[bx,by]=f.poly[(i+1)%f.poly.length],dx=bx-ax,dy=by-ay;
+    const t=clamp(((x-ax)*dx+(y-ay)*dy)/(dx*dx+dy*dy||1),0,1);
+    distance=Math.min(distance,Math.hypot(x-ax-t*dx,y-ay-t*dy));
+  }
+  const weight=clamp((distance-1.2)/3.8,0,1);
+  return auchanFloor+(apron-auchanFloor)*weight*weight*(3-2*weight);
 }
-export function selectAuchanGrade(){
+export function selectAuchanGrade(poly){
   auchanFloor=rawGround(auchanFront.x,auchanFront.y);
+  auchanFootprint=poly?{poly,minX:Math.min(...poly.map(p=>p[0]))-5,maxX:Math.max(...poly.map(p=>p[0]))+5,
+    minY:Math.min(...poly.map(p=>p[1]))-5,maxY:Math.max(...poly.map(p=>p[1]))+5}:null;
   return auchanFloor;
 }
 export function selectRiverbanks(waters){shoreGround=waters?.length?riverbanks(waters,surveyHeight,waterLevel).ground:null;}
@@ -45,7 +62,7 @@ export function buildingGround(poly){
   const base=baseTerrainHeight(x/n,y/n);buildingBases.set(poly,base);return base;
 }
 export function selectSectorTerrain(field){
-  buildingBases=new WeakMap();shoreGround=null;auchanFloor=null;
+  buildingBases=new WeakMap();shoreGround=null;auchanFloor=null;auchanFootprint=null;
   if(field&&field.values?.length===field.cols*field.rows)surface=field;
   else surface=packaged;
 }

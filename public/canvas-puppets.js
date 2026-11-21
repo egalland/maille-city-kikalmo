@@ -1,7 +1,7 @@
 import {isAircraft} from './airfield.js';
 import {drawCanvasAircraft} from './aircraft-canvas.js';
 import {drawCabinDriver} from './cabin-art.js';
-import {chassisStage,wheelPart} from './vehicle-damage.js';
+import {chassisStage,partMask,wheelPart} from './vehicle-damage.js';
 import {yarnPalette,paintKnit} from './wool-art.js';
 import {puppetAppearance} from './puppet-dyes.js';
 import {motionSeed,posedLimb,sampleLocomotion} from './locomotion-pose.js';
@@ -378,14 +378,26 @@ export function drawCanvasCar(c,o,x,groundY,height,time=0,viewAngle=0){
   if(isAircraft(o?.type))return drawCanvasAircraft(c,o,x,groundY,height,time,viewAngle);
   drawCarBody(c,o,x,groundY,height,time,viewAngle);
   const stage=chassisStage(o?.chassisHp);
-  if(!stage||height<8)return;
+  if(height<8)return;
   const spec=vehicleSpec(o.type),scale=height/spec.height,side=Math.sign(Math.cos(viewAngle))||1;
   const nose=Math.sin(viewAngle)*-.53*spec.halfLength*scale;
   c.save();c.translate(x,groundY);c.lineCap='round';
+  if(!o.wrecked&&o.tune&48){
+    c.fillStyle='#39434a';
+    const span=scale*(spec.halfWidth*Math.abs(Math.cos(viewAngle))+.26);
+    if(o.tune&16){
+      c.fillRect(-nose-span*.8,-height*.72,span*1.6,height*.045);
+      for(const offset of [-.5,.5])c.fillRect(-nose+span*offset,-height*.68,height*.042,height*.15);
+    }
+    if(o.tune&32)c.fillRect(nose-span*.75,-height*.18,span*1.5,height*.067);
+  }
+  if(!stage){c.restore();return;}
+  const parts=o.parts||0;
+  const wearAt=parts&partMask.frontPanel?nose:parts&partMask.rearPanel?-nose:0;
   for(let i=0;i<stage+1;i++){
     const dx=side*(.14+i*.095)*height;
     const y=-(.43-i*.045)*height;
-    stitch(c,[[nose+dx,y],[nose+dx+height*.065,y-height*.05]],Math.max(1,height*.017),'#4e3944');
+    stitch(c,[[wearAt+dx,y],[wearAt+dx+height*.065,y-height*.05]],Math.max(1,height*.017),'#4e3944');
   }
   if(stage>=2)for(let i=0;i<(stage===3?4:2);i++){
     const age=(time*.94+i/(stage===3?4:2))%1;

@@ -25,8 +25,8 @@ test('a pilot holds altitude, yaw and forward thrust independently and releases 
   const touch=(name,type,pointerId)=>buttons[name].dispatchEvent(Object.assign(new Event(type,{cancelable:true}),{button:0,pointerId}));
   controls.setActive(true);
   touch('ascend','pointerdown',1);touch('left','pointerdown',2);touch('throttle','pointerdown',3);
-  assert.deepEqual(inputs.at(-1),[-1,1,1,false]);
+  assert.deepEqual(inputs.at(-1),[-1,1,1,false,false]);
   touch('ascend','pointercancel',1);touch('descend','pointerdown',4);
-  assert.deepEqual(inputs.at(-1),[-1,1,-1,false]);
-  controls.setActive(false);assert.deepEqual(inputs.at(-1),[0,0,0,false]);
+  assert.deepEqual(inputs.at(-1),[-1,1,-1,false,false]);
+  controls.setActive(false);assert.deepEqual(inputs.at(-1),[0,0,0,false,false]);
 });

@@ -13,7 +13,7 @@ import {weaponCatalog} from './weapon-catalog.js';
 import * as THREE from './three.js';
 import { createStreetVehicle, isStreetVehicle } from './street-vehicles.js';
 import { vehicleSpec } from './vehicle-types.js';
-import {chassisStage,chassisHealth,wheelPart} from './vehicle-damage.js';
+import {chassisStage,chassisHealth,partMask,wheelPart} from './vehicle-damage.js';
 import {bodyFabric as carPaint,serviceFabric as fleetPaint,fleetFabric as carYarn} from './vehicle-fabric.js';
 import { createRagdollRig } from './ragdoll-render.js';
 
@@ -1274,6 +1274,7 @@ export function createCar(type='car',color,seed=0){
   }
   const body=createCarBody(type,color,seed),spec=vehicleSpec(type?.type??type);
   let wear=null,door=null,wreck=null,hiddenIntact=null;
+  let spoilers=null,splitter=null;
   const intact=[...body.group.children],seated=[{},{},{}];
   let signals=null,signalSpeed=null,brakeFlash=0;
   function updateWreck(damaged){
@@ -1350,17 +1351,37 @@ export function createCar(type='car',color,seed=0){
   function update(pose={},dt=.016,time=0){
     updateSignals(pose,dt);
 
-    body.update(pose,dt,time);updateCabin(pose);updateDoor(pose.doorOpen);updateWreck(pose.wrecked);
+    body.update(pose,dt,time);updateCabin(pose);updateDoor(pose.doorOpen);
+    const replaceWreck=pose.wrecked&&(!isStreetVehicle(kind)||spec.openSeat);
+    updateWreck(replaceWreck);
+    if(pose.tune&16&&!spoilers){
+      spoilers=new THREE.Group();spoilers.name='Aileron arrière';
+      const x=-spec.halfLength*.77,w=spec.halfWidth,h=spec.height;
+      for(const s of [-1,1])addPart(spoilers,geo.box,x,h*.63,s*w*.48,.085,h*.22,.07,'#4b5153');
+      addPart(spoilers,geo.box,x,h*.75,0,.29,.065,w*1.62,'#454f56',0,0,-.07);
+      body.group.add(spoilers);
+    }
+    if(pose.tune&32&&!splitter){
+      splitter=new THREE.Group();splitter.name='Lame avant';
+      addPart(splitter,geo.box,spec.halfLength*.92,spec.height*.15,0,.27,.075,spec.halfWidth*1.92,'#3e474d');
+      body.group.add(splitter);
+    }
+    if(spoilers)spoilers.visible=!!(pose.tune&16)&&!pose.wrecked;
+    if(splitter)splitter.visible=!!(pose.tune&32)&&!pose.wrecked;
     const stage=chassisStage(pose.chassisHp);
     if(!stage){if(wear)wear.group.visible=false;return;}
     if(!wear){
       const group=new THREE.Group(),marks=[],puffs=[],flames=[],fibers=[];
       for(let i=0;i<12;i++){
         const patch=new THREE.Mesh(geo.box,frayedChassis);
-        const width=spec.halfWidth*(i%2===0?1:-1);
-        const along=[.64,-.54,.16,-.32,.47,-.70][i>>1];
-        patch.position.set(spec.halfLength*along,spec.height*(.34+.045*(i%3)),width*.99);
-        patch.rotation.z=(i%3-1)*.32;
+        const zone=Math.floor(i/3),cross=(i%3-1)*.31,side=zone===0||zone===3?1:-1;
+        if(zone<2){
+          patch.position.set(side*spec.halfLength*.99,spec.height*(.25+(i%3)*.045),spec.halfWidth*cross);
+          patch.rotation.y=Math.PI/2;
+        }else{
+          patch.position.set(spec.halfLength*cross,spec.height*(.35+(i%3)*.065),side*spec.halfWidth*.95);
+          patch.rotation.z=(i%3-1)*.19;
+        }
         patch.scale.set(spec.halfLength*.20,.041,.027);group.add(patch);marks.push(patch);
       }
       for(let i=0;i<4;i++){const puff=new THREE.Mesh(geo.littleBall,cottonSmoke);group.add(puff);puffs.push(puff);}
@@ -1374,8 +1395,10 @@ export function createCar(type='car',color,seed=0){
     wear.marks.forEach((patch,i)=>{
       const char=pose.burnProgress||0;
       const loss=1-chassisHealth(pose.chassisHp)/100;
-      patch.visible=!pose.wrecked&&i<2*Math.ceil(loss*6);
-      patch.scale.x=spec.halfLength*(.12+.20*loss);
+      const mask=partMask[['frontPanel','rearPanel','leftPanel','rightPanel'][Math.floor(i/3)]];
+      const localized=pose.parts&480;
+      patch.visible=!replaceWreck&&(localized?!!(localized&mask)&&(i%3)<Math.ceil(loss*3):i<Math.ceil(loss*6));
+      patch.scale.x=(i<6?spec.halfWidth:spec.halfLength)*(.12+.20*loss);
       patch.scale.y=.028+.055*loss+.095*char;
       patch.scale.z=.034+.042*loss;
     });

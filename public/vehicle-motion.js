@@ -14,6 +14,11 @@ export function stepVehicleBody(previous,{x,y,angle,speed,halfLength,dt},ground)
   }
   const ramp=previous.slope*speed,release=(previous.slope-slope)*speed;
   const launch=Math.min(6.8,ramp),rise=(floor-previous.height)/dt;
+  if(previous.height-floor>.21&&rise<Math.min(-2,previous.slope*speed-1.8)){
+    const vy=Math.max(-4,Math.min(1.8,previous.slope*speed))-15.4*dt;
+    const height=Math.max(floor,previous.height+vy*dt);
+    if(height>floor)return {height,lift:height-floor,vy,pitch:previous.pitch,slope,landed:0};
+  }
   if(Math.abs(speed)>10&&launch>1.22&&release>.27&&launch>rise+.6){
     const vy=launch,height=Math.max(floor,previous.height)+vy*dt;
     return {height,lift:height-floor,vy,pitch:previous.pitch,slope,landed:0};

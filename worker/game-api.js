@@ -24,6 +24,8 @@ import {noPartnerHit,partnerSchema,runPartners} from './partners.js';
 import {careerSchema,runCareer} from './career.js';
 import {prepareFire,readFireSession,rememberFirePose,recordFire} from './fire-netcode.js';
 import {npcMaxHealth} from '../public/vitality.js';
+import {cashTriggers} from './cash.js';
+import {tunable,tuningBits} from '../public/vehicle-tuning.js';
 
 // The Worker owns these tables. They are initialized once per D1 binding and isolate.
 const schemaReady = new WeakMap();
@@ -74,6 +76,7 @@ const SCHEMA = [
     BEGIN UPDATE mc_members SET state=json_set(state,'$.vehicle',null,'$.speed',0,'$.lift',0,'$.moving',json('false'))
       WHERE room=NEW.room AND id=NEW.id; END`),
   ...armorySchema,
+  ...cashTriggers,
   ...reportSchema,
   ...seatSchema
 ];
@@ -191,6 +194,7 @@ function playerState(raw,now,room,previous) {
     if(isAircraft(result.vehicle.type))Object.assign(result.vehicle,{lift:result.lift||0,
       bank:num(s.vehicle.bank,0,-.68,.68),carPitch:num(s.vehicle.carPitch,0,-.42,.42)});
     for(const k of ['brake','headlamps','fare'])if(typeof s.vehicle[k]==='boolean')result.vehicle[k]=s.vehicle[k];
+    if(tunable(result.vehicle.type)&&tuningBits(s.vehicle.tune))result.vehicle.tune=tuningBits(s.vehicle.tune);
   }
   else result.vehicle=null;
   return result;
@@ -235,6 +239,7 @@ function eventData(type,raw,now) {
       if(!key(d.id))return null;
       const occupied=!!d.occupied;
       const out={...result,id:d.id,occupied,...(!occupied&&d.shifted?{shifted:true}:{}),...(!occupied?{expiresAt:now+abandonedFor}:{})};
+      if(tunable(out.type)&&tuningBits(d.tune))out.tune=tuningBits(d.tune);
       if(isTrain(out.type)||railTrain(out.id)){
         const track=isTrain(out.type)&&validatedRailPose(out.id,out);
         if(!track||d.eject||d.shifted||d.roadCoast||occupied&&!atRailStation(track.d))return null;
@@ -366,7 +371,8 @@ async function sweepVehicles(db,room,now,joining){
       (SELECT item FROM mc_items WHERE room=? AND kind='vehicleDamage' AND ${end} BETWEEN 1 AND ?)`).bind(room,room,now-wreckFor),
     db.prepare(`UPDATE mc_items SET kind='vehicleRetired',at=${end}+?,data='{}',owner=''
       WHERE room=? AND kind='vehicleDamage' AND ${end} BETWEEN 1 AND ?`).bind(wreckFor+replacementDelay,room,now-wreckFor),
-    db.prepare("DELETE FROM mc_items WHERE room=? AND kind='vehicleRetired' AND at<=?").bind(room,now)
+    db.prepare("DELETE FROM mc_items WHERE room=? AND kind='vehicleRetired' AND at<=?").bind(room,now),
+    db.prepare('DELETE FROM mc_cash_drops WHERE room=? AND expires<?').bind(room,now)
   ]);
   sweep[room]=now;sweptVehicles.set(db,sweep);
 }
@@ -488,7 +494,8 @@ function npcHitStatement(q,{room,id,op,name,data,now},guard) {
 const swingOp=started=>'swing-'+started.toString(36);
 function vehicleImpact(raw,actor,previous){
   const {id,type,cause,weapon,speed,x,y,angle,part:impactPart,blast,range,swingAt,swingKind}=dict(raw);
-  const part=cause==='weapon'&&typeof impactPart==='string'&&Object.hasOwn(partMask,impactPart)?impactPart:'body';
+  const validPart=typeof impactPart==='string'&&Object.hasOwn(partMask,impactPart);
+  const part=validPart&&(cause==='weapon'||cause==='crash'&&(partMask[impactPart]&480))?impactPart:'body';
   if(!key(id)||!isVehicleType(type)||![x,y,actor.x,actor.y].every(Number.isFinite))return null;
   const distance=Math.hypot(x-actor.x,y-actor.y);
   if(cause==='blast'){
