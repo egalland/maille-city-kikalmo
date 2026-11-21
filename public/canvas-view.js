@@ -24,6 +24,7 @@ import {baseTerrainHeight,terrainHeight,terrainGradient,roadHeight,buildingGroun
 import {terracePanels} from './street-terraces.js';
 import {propDebris,propWearProfile,propWearStage,trackPropWear} from './prop-wear.js';
 import {buildShotEffect,effectDuration,muzzleFlash,rocketFlightTime} from './weapon-effects.js';
+import {emergencyColors,emergencyFlash} from './emergency-signals.js';
 import {isAircraft} from './airfield.js';
 import { vehicleSpec } from './vehicle-types.js';
 // Perspective software renderer for browsers without a WebGL 2 context.
@@ -1263,6 +1264,16 @@ export function createCanvasView(canvas,spawn,onNotice){
         if(e.isCar){
           const slope=terrainGradient(e.x,e.y,e.angle);
           g.save();g.translate(base.x,base.y);g.rotate(-Math.atan(-fy*slope.x+fx*slope.y));drawCanvasCar(g,e,0,0,ph,time,theta);g.restore();
+          if(e.siren)for(const [side,color] of emergencyColors.entries()){
+            const flash=emergencyFlash(time,side);
+            if(!flash)continue;
+            const z=side?.49:-.49,angle=e.angle||0;
+            const lens=at(e.x-Math.sin(angle)*z,e.y+Math.cos(angle)*z,lift+high+.03);
+            if(!lens)continue;
+            const r=Math.max(4,.99*f/lens.d),glow=g.createRadialGradient(lens.x,lens.y,0,lens.x,lens.y,r);
+            glow.addColorStop(0,'#effaff');glow.addColorStop(.22,color);glow.addColorStop(1,color+'00');
+            g.save();g.globalAlpha=flash;g.fillStyle=glow;g.fillRect(lens.x-r,lens.y-r,r*2,r*2);g.restore();
+          }
         }
         else{
           const pose=walkingPose(e);

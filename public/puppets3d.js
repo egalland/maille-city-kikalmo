@@ -984,7 +984,7 @@ function carServiceDetails(g,type,isVan){
   beacon.position.set(x,y+.119,0);
   for(const s of [-1,1]){
     const tint=type==='firetruck' && s<0?'#f9a372':'#68d4fa';
-    carBall(beacon,0,0,s*.280,.116,.105,.144,tint,'glow');
+    carBall(beacon,0,0,s*.280,.116,.105,.144,tint);
   }
   batchGroup(beacon);
   g.add(beacon);return beacon;
@@ -1072,7 +1072,7 @@ function createCarBody(type='car',color,seed=0){
     }
     if(beacon){
       // The little purls of the beacon breathe without changing anyone else's shared material.
-      const flash=pose.siren===false?.18:(Math.sin(t*11.5+variant)>0?1:.45);
+      const flash=pose.siren?(Math.sin(t*11.5+variant)>0?1:.45):0;
       beacon.scale.set(1,.74+.33*flash,1);
     }
   }

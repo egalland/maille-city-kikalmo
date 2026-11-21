@@ -53,7 +53,9 @@ test('the bundled Noyonnais map opens on usable streets and includes water, terr
   assert.ok(coreDestinations.filter(p=>!p.rail).every(p=>!/Noyon|Pontoise|Couarcy/i.test(p.label)));
   const stations=coreDestinations.filter(p=>p.rail);
   assert.deepEqual(stations.map(p=>p.label),['Halte des Aulnes','Gare des Filatures','Gare des Verrières','Gare des Prés']);
-  assert.equal(coreDestinations.length,16);
+  assert.equal(coreDestinations.filter(p=>!p.service&&p.key!=='garage-moulin').length,16);
+  assert.ok(coreDestinations.filter(p=>p.service).length>=9);
+  assert.ok(coreDestinations.some(p=>p.key==='garage-moulin'));
   assert.ok(coreDestinations.some(stop=>stop.key==='mont-renaud'));
   for(const point of coreDestinations){
     assert.equal(blocked(point.x,point.y,.65),false,point.label);
@@ -77,6 +79,26 @@ test('the bundled Noyonnais map opens on usable streets and includes water, terr
     for(let i=1;i<2000&&state.arrived==null;i++)last=stepDispatch(state,i/60,1/60,clear);
     assert.ok(last&&gap(last,scene)<gap(first,scene)-8,scene.label);
   }
+  await t.test('services keep moving outside the rendered world and drive from their assignment position',async()=>{
+    const {servicePatrols,patrolHome}=await import('../public/paris-world.js');
+    const {dispatchRoadPose}=await import('../public/dispatch-roads.js');
+    const {moulinFleet}=await import('../public/moulin-garage.js');
+    const {vehicleSpec}=await import('../public/vehicle-types.js');
+    const when=1_782_250_000_000,first=servicePatrols(when),later=servicePatrols(when+12_000);
+    assert.ok(first.length>=30&&first.every(unit=>!unit.siren));
+    for(const role of ['police','firefighter','medic']){
+      assert.ok(first.some((unit,i)=>unit.driverRole===role&&gap(unit,later[i])>15),role);
+    }
+    for(const v of moulinFleet)assert.ok(clear(v,vehicleSpec(v.type)),v.id);
+    const stop=coreDestinations.find(p=>p.id==='mont-renaud');
+    const origin=first.find(u=>u.unit==='poste-galerie-0');
+    assert.ok(origin&&gap(origin,patrolHome(origin.unit).home)<.1);
+    const roads=nearbyDrivableStreets((stop.x+origin.x)/2,(stop.y+origin.y)/2,190);
+    const plan=planDistantDispatch(stop,origin.type,roads,clear,q=>!blocked(q.x,q.y,.48),origin);
+    assert.ok(plan,'patrol near the gallery can drive to the Auchan call');
+    assert.ok(gap(dispatchRoadPose(plan,0),origin)<1);
+    assert.ok(gap(plan.park,stop)<gap(origin,stop));
+  });
   const require=createRequire(import.meta.url);
   const {createCanvas,Path2D}=require(require.resolve('@napi-rs/canvas',{paths:[process.cwd(),process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES].filter(Boolean)}));
   const priorDocument=globalThis.document,priorPath=globalThis.Path2D;

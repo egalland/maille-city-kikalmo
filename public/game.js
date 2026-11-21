@@ -29,8 +29,9 @@ import {createTrafficHorns} from './traffic-horns.js';
 import {reactionTo,reactionGoal} from './pedestrian-reaction.js';
 import {chassisDamage,chassisHealth,chassisHealthAt,burnProgress,blastRadius,blastDamage,vehicleBurnDelay,enginePower,chassisGrip,damagedTires,vehiclePart,impactPanel,nextChassis} from './vehicle-damage.js';
 import { SPAWN, destinations, districtAt, streetAt, nearbyProps, blocked, swimmingSurface, contactAt, moveBody, vehicleTurn, vehicleContactNormal, supportAt, cameraDistance, routeAgents, sampleTrafficRoute, trafficVehicleAt, trafficAlternatives, getTravelPoint, paintMap } from './paris-world.js';
-import { nearbyDrivableStreets,railCrossings,clearsTrafficAtRest } from './paris-world.js';
+import { nearbyDrivableStreets,railCrossings,clearsTrafficAtRest,servicePatrols,patrolHome } from './paris-world.js';
 import {isEnfer} from './paris-data.js';
+import {serviceModels as services} from './service-depots.js';
 import { planDispatch, planDistantDispatch, stepDispatch, dispatchDoor, footApproach, dispatchWorkSpot, stepDispatchFoot } from './dispatch-roads.js';
 import { createDetourPlanner } from './traffic-detour.js';
 import { createTrafficFlow } from './traffic-flow.js';
@@ -70,8 +71,6 @@ const weaponLabels=Object.fromEntries(weaponList.map(w=>[w.id,w.name]));
 const maxShotRange=Math.max(...weaponList.map(w=>w.range));
 const pickupRadius=2.6;
 const PEER_RANGE=212;
-const services={police:'police',firefighter:'firetruck',medic:'ambulance',swat:'swat',
-  military:'armored',tankunit:'tank',airunit:'helicopter'};
 const dimensions=e=>{const {halfLength,halfWidth}=vehicleSpec(e.type);return {halfLength,halfWidth};};
 const softProp=o=>!!propMaxHealth(o?.type);
 function collisionBody(e){
@@ -139,7 +138,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   const pursuit=createWanted(initialPursuit),pickupWait=new Map(),pendingPickup=new Set();
   p.wanted=pursuit.state().level;
   let wantedEvent=null,actionNumber=0,nearPickup=null,pickups=[],pickupArea=[],pickupCenter=null,noticePickup=null,trackedDrop=null;
-  let cashDrops=[],ownedTuning={},nitro=1;
+  let cashDrops=[],ownedTuning={},nitro=1,moulinAccess=false;
   const ammo=Object.fromEntries(Object.entries(weapons).map(([k,v])=>[k,v.mag]));
   const reserve=Object.fromEntries(weaponList.map(w=>[w.id,Number.isFinite(w.mag)?ammoCapacity(w.id)-w.mag:0]));
   let authoritativeAmmo=null,emptyNoticeAt=-Infinity;
@@ -318,7 +317,19 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     return {type:nearest.type,speed:nearest.speed,volume:.49*(1-distance/29)**1.35,
       pan:soundPan(nearest,distance),doppler:clamp(1+closing/175,.86,1.14)};
   }
+  function nearestEmergency(){
+    let nearest=null,distance=175;
+    for(const unit of cars){
+      if(!unit.siren)continue;
+      const gap=dist(unit,p);
+      if(gap<distance){nearest=unit;distance=gap;}
+    }
+    if(!nearest)return null;
+    const angle=Math.atan2(p.y-nearest.y,p.x-nearest.x),closing=(nearest.speed||0)*Math.cos(angle-nearest.angle);
+    return {role:nearest.driverRole,distance,pan:soundPan(nearest,distance),doppler:clamp(1+closing/155,.86,1.15)};
+  }
   function responderId(d,part){
+    if(d.unit)return 'patrol-'+d.unit+(part==='car'?'':'-'+part);
     if(!isLawOfficer(d.kind))return d.id+'-'+part;
     const [source,slot]=d.id.slice(('unit-'+d.kind+'-').length).split(':');
     return 'u-'+d.kind+'-'+source.replaceAll('-','')+'-'+Math.round(d.started).toString(36)+'-'+(slot||0)+'-'+part;
@@ -333,18 +344,55 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     const snapshot=pursuit.snapshot(time),area=pursuitArea();
     return area?{...snapshot,report:{x:area.x,y:area.y,enfer:isEnfer}}:snapshot;
   }
+  const resumedPatrols=new Map(),serviceAssignments=new WeakMap(),serviceRetry=new Map(),pendingCare=new Map();
+  let serviceMap=[];
+  const serviceDelay=1100;
+  const onDuty=unit=>[...incidents.values()].some(event=>event.unit===unit&&epoch-event.started>=serviceDelay);
+  const freeServicePose=(pose,spec)=>!contactAt(pose.x,pose.y,{angle:pose.angle,halfLength:spec.halfLength+.12,halfWidth:spec.halfWidth+.08,destroyed});
+  const serviceWalkable=pose=>!contactAt(pose.x,pose.y,{radius:WALKER_RADIUS,destroyed});
+  function serviceRoads(from,to,padding=145){
+    return nearbyDrivableStreets((from.x+to.x)/2,(from.y+to.y)/2,dist(from,to)/2+padding);
+  }
+  function findService(kind,scene,started){
+    const available=servicePatrols(started+serviceDelay,resumedPatrols).filter(unit=>unit.driverRole===kind&&
+      ![...incidents.values()].some(event=>event.unit===unit.unit)&&!retired(unit.id)&&
+      vehicleHealth(unit)>0&&!npcIsDead(npcShared.get(unit.driverId)));
+    available.sort((a,b)=>dist(a,scene)-dist(b,scene)||a.id.localeCompare(b.id));
+    for(const unit of available){
+      if(kind==='airunit')return {unit,plan:null};
+      if(dist(unit,scene)>1500)continue;
+      const plan=planDistantDispatch(scene,unit.type,serviceRoads(unit,scene),freeServicePose,serviceWalkable,unit);
+      if(plan)return {unit,plan};
+    }
+    return null;
+  }
   function policeMap(){
-    return {search:pursuitArea(),police:p.wanted?[...actors.filter(o=>isLawOfficer(o.type)&&!o.down),
-      ...cars.filter(v=>isLawOfficer(v.driverRole)&&v.occupied)]:[]};
+    return {search:pursuitArea(),depots:isEnfer?destinations.filter(d=>d.service):[],police:isEnfer?serviceMap:
+      p.wanted?[...actors.filter(o=>isLawOfficer(o.type)&&!o.down),...cars.filter(v=>isLawOfficer(v.driverRole)&&v.occupied)]:[]};
   }
   function dispatch(kind,scene=p,slot=0){
     const id='unit-'+kind+'-'+(net?.id||'self')+(slot?':'+slot:''),old=incidents.get(id);
+    if(old?.unit)return;
     if(old){
       const officer=isLawOfficer(kind)&&npcShared.get(responderId(old,'foot'));
       const replaceAt=npcIsDead(officer)?officer.healthAt+(p.wanted>=3?30000:42000):old.started+(isEnfer?76000:42500);
       if(epoch<replaceAt)return;
     }
-    const d={id,kind,x:scene.x,y:scene.y,angle:scene.angle||0,started:Math.round(epoch),level:p.wanted};
+    const started=Math.round(epoch);
+    if(isEnfer&&started<(serviceRetry.get(id)||0))return;
+    const selection=isEnfer?findService(kind,scene,started):null;
+    if(isEnfer&&!selection){
+      serviceRetry.set(id,started+2400);
+      if(!isLawOfficer(kind))pendingCare.set(id,{kind,scene:{x:scene.x,y:scene.y,angle:scene.angle},slot,until:started+32_000});
+      return;
+    }
+    serviceRetry.delete(id);pendingCare.delete(id);
+    const d={id,kind,x:scene.x,y:scene.y,angle:scene.angle||0,started,level:p.wanted};
+    if(selection){
+      const {unit,plan}=selection;
+      d.unit=unit.unit;d.origin={x:unit.x,y:unit.y,angle:unit.angle,lift:unit.lift||0};
+      serviceAssignments.set(d,plan);
+    }
     incidents.set(id,d);emit('npc',d);
   }
   function dispatchPursuit(){
@@ -1014,7 +1062,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         carsShared.set(id,merged);
       }
     }
-    for(const [id,d] of Object.entries(world.npcs||{})){if(d.kind){if(d.started>epoch-(isEnfer?77000:34000)&&(!incidents.has(id)||incidents.get(id).started<d.started))incidents.set(id,d);}
+    for(const [id,d] of Object.entries(world.npcs||{})){if(d.kind){if(d.started>Math.max(completedServices.get(id)||0,epoch-(d.unit?244_000:isEnfer?77000:34000))&&(!incidents.has(id)||incidents.get(id).started<d.started))incidents.set(id,d);}
       else rememberNpc(d);}
   }
   function updateRemote(dt){
@@ -1073,15 +1121,74 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         lift:e.lift,supportHeight,stride:e.stride,speed:d.vehicle?(moving?d.speed:0):e.gaitSpeed,motionPhase:e.phase,moving,move:moving,fire:firePose,walk:e.walk,bubble:bubbles.get(d.id)?.symbol});
     }
   }
-  const dispatchStates=new WeakMap();
+  const dispatchStates=new WeakMap(),completedServices=new Map();
+  function finishService(d){
+    if(d.unit)completedServices.set(d.id,d.started);
+    incidents.delete(d.id);
+  }
+  function returnService(d,state,age,t,dt,type,role,walkable,bodies){
+    const home=patrolHome(d.unit)?.home,vehicle=state.vehicle||d.origin;
+    if(!home||!vehicle)return true;
+    if(state.walker&&dist(state.walker,vehicle)>2.85){
+      const person=state.walker,aim=Math.atan2(vehicle.y-person.y,vehicle.x-person.x);
+      const next=moveBody(person.x,person.y,Math.cos(aim)*3*dt,Math.sin(aim)*3*dt,{radius:WALKER_RADIUS,destroyed});
+      Object.assign(person,{x:next.x,y:next.y,angle:aim,moving:!next.hit});
+      if(dist(person,p)<155)actors.push({...person,id:responderId(d,'foot'),type:role,moving:!next.hit,walk:t*8});
+      state.retreatAt??=age;
+      if(age-state.retreatAt<14){
+        cars.push({...vehicle,id:responderId(d,'car'),isCar:true,type,driverRole:role,siren:false,moving:false,speed:0});
+        return false;
+      }
+    }
+    state.walker=null;
+    const gap=dist(vehicle,home),air=type==='helicopter';
+    if(gap<1.65&&(!air||(vehicle.lift||0)<.5)){
+      resumedPatrols.set(d.unit,epoch-14_000);return true;
+    }
+    let pose=vehicle;
+    if(air){
+      const direction=Math.atan2(home.y-vehicle.y,home.x-vehicle.x);
+      const k=Math.min(1,23*dt/Math.max(.1,gap));
+      pose={...vehicle,x:vehicle.x+(home.x-vehicle.x)*k,y:vehicle.y+(home.y-vehicle.y)*k,
+        angle:turnTo(vehicle.angle,direction,2,dt),lift:(vehicle.lift||0)+(Math.min(17,gap*.20)-(vehicle.lift||0))*blend(.9,dt),moving:true,speed:23};
+    }else{
+      const ret=state.returnTrip??={plan:null,next:0};
+      if((!ret.plan||ret.arrived!=null)&&age>=ret.next){
+        ret.next=age+4;
+        ret.plan=planDistantDispatch(home,type,serviceRoads(vehicle,home),freeServicePose,walkable,vehicle,null,0,{finishAt:home,maxTravel:1650});
+        ret.distance=null;ret.arrived=null;
+      }
+      if(ret.plan){
+        const clear=(q,spec)=>freeServicePose(q,spec)&&!contactAt(q.x,q.y,{angle:q.angle,...dimensions({type}),destroyed,
+          colliders:dist(q,p)<160?[...bodies,...crossingBlocks]:[]});
+        pose=stepDispatch(ret,age,dt,clear)||vehicle;
+      }
+    }
+    state.vehicle=pose;
+    cars.push({...pose,id:responderId(d,'car'),isCar:true,type,driverRole:role,driverId:responderId(d,'foot'),
+      occupied:true,moving:!!pose.moving,siren:false});
+    return false;
+  }
   function serviceResponse(d,t,dt=1/60,trafficBlockers=[]){
     const age=(epoch-d.started)/1000;
     const role=d.kind,type=services[role];
-    if(age<0||age>(isEnfer?76:42.5)||!type||dist(d,p)>350)return;
+    if(age<0||!type||(!d.unit&&(age>(isEnfer?76:42.5)||dist(d,p)>350)))return;
+    if(d.unit&&epoch-d.started<serviceDelay)return;
+    if(d.unit&&[...incidents.values()].some(other=>other!==d&&other.unit===d.unit&&
+      (other.started<d.started||other.started===d.started&&other.id<d.id))){
+      finishService(d);
+      if(d.id==='unit-'+role+'-'+(net?.id||'self')&&!isLawOfficer(role))
+        pendingCare.set(d.id,{kind:role,scene:d,slot:0,until:epoch+32_000});
+      return;
+    }
     const vehicleId=responderId(d,'car'),footId=responderId(d,'foot');
     const injury=npcShared.get(footId);
-    if(retired(vehicleId)||vehicleWear.get(vehicleId)?.fireAt||vehicleWear.get(vehicleId)?.hp===0)return;
+    if(retired(vehicleId)||vehicleWear.get(vehicleId)?.fireAt||vehicleWear.get(vehicleId)?.hp===0){
+      if(d.unit&&age>8)finishService(d);
+      return;
+    }
     if(npcIsDead(injury)){
+      if(d.unit&&epoch-injury.healthAt>=10500)finishService(d);
       const vehicle=dispatchStates.get(d)?.vehicle;
       if(vehicle&&epoch-injury.healthAt<10500&&car?.id!==vehicleId&&!carsShared.has(vehicleId)&&!remotes.some(e=>e.vehicle?.id===vehicleId))
         cars.push({...vehicle,id:vehicleId,type,isCar:true,driverRole:role,moving:false,move:false,speed:0});
@@ -1101,8 +1208,19 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     const police=isLawOfficer(role),targetDown=local?life.down:!suspect||suspect.down||suspect.health===0;
     const stars=suspect?.wanted||0,chasing=police&&!targetDown&&responseUnits(stars).some(([kind,index])=>kind===role&&index===(Number(slot)||0));
     let state=dispatchStates.get(d);
-    if(!state){state={plan:null,arrived:null,foot:null,nextPlan:0,roadGoal:null};dispatchStates.set(d,state);}
-    if(police&&!chasing){
+    if(!state){
+      const plan=serviceAssignments.get(d)||null;
+      state={plan,arrived:null,foot:null,nextPlan:0,roadGoal:plan?{x:d.x,y:d.y}:null,
+        vehicle:d.origin?{...d.origin,speed:0,moving:false}:null};
+      dispatchStates.set(d,state);
+    }
+    // A distant player outside the rendered roster does not cancel the response.
+    const activeCall=d.unit&&(local?chasing:!suspect?d.level>0&&age<80:chasing);
+    if(d.unit&&((police&&!activeCall)||age>110||(!police&&state.arrived!=null&&age-state.arrived>17))){
+      if(returnService(d,state,age,t,dt,type,role,freeFoot,bodies))finishService(d);
+      return;
+    }
+    if(police&&!chasing&&!activeCall){
       if(!state.vehicle&&!state.walker)return;
       state.retreatAt??=age;
       if(age-state.retreatAt>13)return;
@@ -1123,19 +1241,20 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       return;
     }
     state.retreatAt=null;
+    state.returnTrip=null;
     const report=policeReports.get(sourceId)||{...d,at:d.started};
     const vision=state.perception||(state.perception={});
-    if(police&&!state.vehicle&&!state.foot&&age<2.4)return;
+    if(!d.unit&&police&&!state.vehicle&&!state.foot&&age<2.4)return;
     if(role==='airunit'){
       const angle=age*.26,centre=observePursuit(vision,{now:time,observer:state.vehicle,suspect,report,clear:clearSight,walkable});
       const destination={x:centre.x+Math.cos(angle)*29,y:centre.y+Math.sin(angle)*29};
-      const entry=offset(suspect,((d.angle||0)+1.3),155);
+      const entry=d.origin||offset(suspect||report,((d.angle||0)+1.3),155);
       const vehicle=state.vehicle||{...entry,angle:Math.atan2(destination.y-entry.y,destination.x-entry.x)};
       const gap=dist(vehicle,destination),step=Math.min(1,27*dt/Math.max(.1,gap));
       vehicle.angle=turnTo(vehicle.angle,Math.atan2(destination.y-vehicle.y,destination.x-vehicle.x),1.8,dt);
       vehicle.x+=(destination.x-vehicle.x)*step;vehicle.y+=(destination.y-vehicle.y)*step;
-      vehicle.lift=16+Math.sin(age*.4)*2;state.vehicle=vehicle;
-      cars.push({...vehicle,id:vehicleId,type,isCar:true,color:'#67755d',speed:8,occupied:true,moving:true,driverRole:role,headlamps:true});
+      vehicle.lift+=(16+Math.sin(age*.4)*2-(vehicle.lift||0))*blend(.8,dt);state.vehicle=vehicle;
+      cars.push({...vehicle,id:vehicleId,type,isCar:true,color:'#67755d',speed:8,occupied:true,moving:true,driverRole:role,headlamps:true,siren:true});
       if(vision.visible){
         if(local)knownByPolice=true;
         if(epoch-report.at>550)policeReports.set(sourceId,{...vision.lastKnown,angle:suspect.angle||0,at:epoch});
@@ -1200,8 +1319,9 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       const origin=state.vehicle||null;
       const available=(q,spec,parking)=>((!chasing||origin||parking)||dist(q,suspect)>=61)&&
         carClear(q,spec,parking||origin?reserved:bodies);
-      const roads=nearbyDrivableStreets(destination.x,destination.y,isEnfer?260:chasing?180:62);
-      const plan=isEnfer||chasing?planDistantDispatch(destination,type,roads,available,walkable,origin,chasing?state.block:null,
+      const roads=d.unit&&origin?serviceRoads(origin,destination):nearbyDrivableStreets(destination.x,destination.y,isEnfer?260:chasing?180:62);
+      const clear=d.unit?(q,spec,parking)=>freeServicePose(q,spec)&&(!parking||carClear(q,spec,reserved)):available;
+      const plan=isEnfer||chasing?planDistantDispatch(destination,type,roads,clear,walkable,origin,chasing?state.block:null,
         chasing&&role==='police'?73:122):planDispatch(destination,type,roads,available,walkable);
       if(plan)Object.assign(state,{plan,distance:null,arrived:null,wait:0,roadGoal:{x:destination.x,y:destination.y},followUntil:null});
       else if(state.block){state.blockAttempts=(state.blockAttempts||0)+1;if(state.blockAttempts>=2)state.block=null;}
@@ -1210,11 +1330,12 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     if(state.plan&&!state.foot){
       const claimed=car?.id===vehicleId||carsShared.has(vehicleId)||remotes.some(e=>e.vehicle?.id===vehicleId);
       if(!claimed){
-        const vehicle=vehicleHealth({id:vehicleId})>0?stepDispatch(state,age,dt,(q,spec)=>carClear(q,spec,bodies)):null;
+        const vehicle=vehicleHealth({id:vehicleId})>0?stepDispatch(state,age,dt,(q,spec)=>carClear(q,spec,d.unit&&dist(q,p)>170?[]:[...bodies,...crossingBlocks])):null;
         if(vehicle){
           state.vehicle=vehicle;
           cars.push({...vehicle,id:vehicleId,type,isCar:true,driverId:footId,driverRole:role,occupied:!state.foot,siren:true,move:vehicle.moving});
           if(state.arrived!=null){
+            if(d.unit&&dist(vehicle,destination)>48&&state.distance<state.plan.length-.15){state.plan=null;state.arrived=null;return;}
             if(isEnfer&&followingCar&&!state.block&&stars>=2){
               state.followUntil??=age+3;
               if(age<state.followUntil)state.roadGoal=null;
@@ -1241,7 +1362,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     if(!isEnfer&&!police&&!state.plan&&!state.foot&&age>=(state.nextEntry||0)){
       state.foot=footApproach(d,freeFoot,role);state.nextEntry=age+.5;
     }
-    if(!state.foot||age<(state.arrived??age)+.3)return;
+    if(!state.foot||age<(state.arrived??age)+.3||d.unit&&dist(d,p)>200)return;
     const level=clamp(d.level||0,0,5);
     const target=chasing?(isEnfer?(vision.visible?observedTarget:destination):suspect):role==='medic'&&suspect?suspect:d;
     const moving=target===suspect&&Math.hypot(velocity?.vx||0,velocity?.vy||0)>.8;
@@ -1407,6 +1528,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       }
     }
     for(const raw of routeCars){
+      if(raw.moulinStock&&!moulinAccess)continue;
       if(vehicleHealth(raw)===0)continue;
       if(excluded.has(raw.id))continue;
       if(raw.routeId){
@@ -1432,7 +1554,23 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       const pose=d.flightPath?sampleAutorotation(d,epoch):d.roadCoast?sampleRoadCoast(d,epoch):{moving:false,speed:0};
       if(dist(d.flightPath||d.roadCoast?pose:d,p)<135)cars.push({...d,angle:d.angle||0,isCar:true,...pose});
     }
-    for(const [id,d] of incidents){if(epoch-d.started>(isEnfer?77000:43500))incidents.delete(id);else serviceResponse(d,time,dt,previousBodies);}
+    if(isEnfer){
+      for(const unit of servicePatrols(epoch,resumedPatrols)){
+        if(onDuty(unit.unit)||retired(unit.id)||vehicleHealth(unit)<=0||npcIsDead(npcShared.get(unit.driverId)))continue;
+        if(dist(unit,p)<158&&!carsShared.has(unit.id)&&!occupied.has(unit.id))cars.push(unit);
+      }
+    }
+    const firstService=cars.length;
+    for(const [id,d] of incidents){
+      if(!d.unit&&epoch-d.started>(isEnfer?77000:43500)||epoch-d.started>244_000)finishService(d);
+      else serviceResponse(d,time,dt,previousBodies);
+    }
+    if(isEnfer){
+      for(const [id,finished] of completedServices)if(epoch-finished>245_000)completedServices.delete(id);
+      const responding=cars.slice(firstService).filter(v=>v.driverRole);
+      serviceMap=[...servicePatrols(epoch,resumedPatrols).filter(v=>!onDuty(v.unit)&&!retired(v.id)&&vehicleHealth(v)>0&&!npcIsDead(npcShared.get(v.driverId))),...responding];
+      for(let i=cars.length-1;i>=firstService;i--)if(cars[i].driverRole&&dist(cars[i],p)>175)cars.splice(i,1);
+    }
     for(const [id,reaction] of reactions){
       const live=lastWalkers.get(id)||actors.find(e=>e.id===id);
       if(!live||live.down||dist(live,p)>125)continue;
@@ -1566,7 +1704,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     const at={x,y},entities=new Map();
     const add=e=>{if(dist(e,at)<62)entities.set(e.id,e);};
     nearby.actors.forEach(add);
-    for(const v of nearby.cars)if(!occupied.has(v.id)&&!retired(v.id)&&!(world.retiredVehicles?.[v.id]>epoch))add({...v,isCar:true});
+    for(const v of nearby.cars)if((moulinAccess||!v.moulinStock)&&!occupied.has(v.id)&&!retired(v.id)&&!(world.retiredVehicles?.[v.id]>epoch))add({...v,isCar:true});
     // Prefer the simulated or replicated pose when the nominal clock has run ahead of a queue.
     for(const v of [...cars,...Object.values(world.vehicles||{}),...carsShared.values()]){
       if(retired(v.id)||world.retiredVehicles?.[v.id]>epoch||parkingExpired(v,epoch)||wreckExpired(vehicleWear.get(v.id),epoch))continue;
@@ -2249,7 +2387,12 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       if(rocketImpacts[i].due<=time)rocketImpacts.splice(i,1)[0].run();
     }
     receivePeerSnapshots();
-    popTick-=dt;if(popTick<=0){syncPeers();if(p.wanted)dispatchPursuit();popTick=.24;}
+    popTick-=dt;if(popTick<=0){syncPeers();if(p.wanted)dispatchPursuit();
+      for(const [id,call] of pendingCare){
+        if(call.until<=epoch)pendingCare.delete(id);
+        else if(epoch>=(serviceRetry.get(id)||0))dispatch(call.kind,call.scene,call.slot);
+      }
+      popTick=.24;}
     knownByPolice=false;
     const populationStart=measure?performance.now():0;
     population(dt);
@@ -2359,7 +2502,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
         }
       }
     }
-    audio.update({weather:isEnfer?cityClimate(epoch):null,epoch,vehicleType:car?.type||passengerSeat?.type,speed:car?speed:passengerSeat?.speed??Math.hypot(vx,vy),nearby:nearbyMotor(),driving:!!(car||passengerSeat),walking:!car&&!passengerSeat&&p.moving&&traversal.grounded,city:actors.length>5,sirenDistance:Math.min(145,...cars.filter(e=>e.siren).map(e=>dist(e,p))),time});
+    audio.update({weather:isEnfer?cityClimate(epoch):null,epoch,vehicleType:car?.type||passengerSeat?.type,speed:car?speed:passengerSeat?.speed??Math.hypot(vx,vy),nearby:nearbyMotor(),driving:!!(car||passengerSeat),walking:!car&&!passengerSeat&&p.moving&&traversal.grounded,city:actors.length>5,emergency:nearestEmergency(),time});
     const self={...p,...(car||{}),headlamps:!!car&&lightsOn(),fare:!!car&&fareCar===car.id,melee:swing?{kind:swing.kind,phase:clamp((time-swing.begin)/meleeMoves[swing.kind].duration,0,1)}:null,
       recoil:recoilPhase(selfRecoil,epoch),id:'self',self:true,appearance,bleeding:life.bleeding,stunned:incapacitated(),down:life.down,ragdoll:ragdollPose(life.ragdoll,p.angle,epoch),moving:p.moving,move:p.moving,sprinting:p.sprinting,walk:p.walk,turn,impact,fire:shootPose,steer,
       weapon,aimElevation:time<shotFacingUntil?aimElevation:0,aiming:!paused&&!reloading&&(fireHeld||touchFireHeld||keys.has('f')),reload:reloading?1-reloading/weapons[weapon].reload:undefined,
@@ -2495,24 +2638,26 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
   window.addEventListener('keydown',down);window.addEventListener('keyup',up);window.addEventListener('blur',resetInputs);document.addEventListener('visibilitychange',visibility);
   canvas.addEventListener('pointerdown',pointerDown);canvas.addEventListener('pointerup',pointerUp);canvas.addEventListener('pointercancel',pointerUp);
   canvas.addEventListener('pointermove',pointerMove);canvas.addEventListener('pointerleave',pointerLeave);canvas.addEventListener('contextmenu',menu);canvas.addEventListener('wheel',cycleWeapon,{passive:false});
+  function applyArmory(rounds){
+    if(!rounds)return;
+    authoritativeAmmo=rounds;
+    let unlocked=false;
+    for(const w of weaponList){
+      if(!Number.isFinite(w.mag))continue;
+      const total=Number.isSafeInteger(rounds[w.id])?Math.min(ammoCapacity(w.id),Math.max(0,rounds[w.id])):0;
+      if(Object.hasOwn(rounds,w.id)&&!owned.has(w.id)){
+        // A local claim will equip its item when the matching receipt resolves.
+        const claiming=pickups.some(drop=>drop.weapon===w.id&&pendingPickup.has(drop.id));
+        if(!claiming){owned.add(w.id);unlocked=true;}
+        ammo[w.id]=Math.min(w.mag,total);
+      }else ammo[w.id]=Math.min(total,ammo[w.id]);
+      reserve[w.id]=total-ammo[w.id];
+    }
+    if(unlocked)onLoadoutChange(ownedWeapons());sendHud(true);
+  }
   const detachEvent=net?.onEvent?.(e=>{
     const d=e.data||{};
-    if(e.type==='armory'){
-      authoritativeAmmo=d.rounds;
-      let unlocked=false;
-      for(const w of weaponList){
-        if(!Number.isFinite(w.mag))continue;
-        const total=Number.isSafeInteger(d.rounds[w.id])?Math.min(ammoCapacity(w.id),Math.max(0,d.rounds[w.id])):0;
-        if(Object.hasOwn(d.rounds,w.id)&&!owned.has(w.id)){
-          // A local claim will equip its item when the matching receipt resolves.
-          const claiming=pickups.some(drop=>drop.weapon===w.id&&pendingPickup.has(drop.id));
-          if(!claiming){owned.add(w.id);unlocked=true;}
-          ammo[w.id]=Math.min(w.mag,total);
-        }else ammo[w.id]=Math.min(total,ammo[w.id]);
-        reserve[w.id]=total-ammo[w.id];
-      }
-      if(unlocked)onLoadoutChange(ownedWeapons());sendHud(true);return;
-    }
+    if(e.type==='armory'){applyArmory(d.rounds);return;}
     if(e.type==='seatResult'){
       if(seatPending?.leave&&!d.seat&&passengerSeat)releasePassenger();
       if(seatPending&&!seatPending.leave&&!d.seat)onNotice('La place est occupée ou le véhicule a démarré.');
@@ -2609,7 +2754,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
       else{dropCar(true);onNotice('Un autre joueur a pris le volant.');}
     }
     if(e.type==='npc'){if(d.kind){
-      if((incidents.get(d.id)?.started??0)<d.started)incidents.set(d.id,d);
+      if(Math.max(incidents.get(d.id)?.started||0,completedServices.get(d.id)||0)<d.started)incidents.set(d.id,d);
     }else{
       if(e.player!==net?.id&&d.recoil&&meleeMoves[d.swingKind]&&d.damage>0&&Math.abs(epoch-e.at)<1100&&dist(d,p)<75){
         view.effect('meleeImpact',d.recoil.fromX,d.recoil.fromY,d.recoil.angle,d.recoil.force,[],meleeMoves[d.swingKind].height);
@@ -2630,13 +2775,14 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     setSkin(value){baseSkin=foxSkin(value).id;p.color=withJacket(baseSkin,jacketDye);publish();},
     setCareerOutfit(state){
       parkingOwner=state.parkingOwner||null;jacketDye=state.dye||null;p.color=withJacket(baseSkin,jacketDye);
-      ownedTuning=state.tuning||{};
+      ownedTuning=state.tuning||{};moulinAccess=!!state.moulinClaimed;
       if(car&&ownedTuning[car.id]){car.tune=ownedTuning[car.id];publish();}
       armorLayer.apply(state);sendHud(true);
     },
     eatShopFood(amount){if(life.eat(amount,epoch)){p.health=life.health;sendHud(true);publish();}},
     getArmorWear:()=>armorLayer.wear(),
     vendorAvailable(id){return !npcIsDead(npcShared.get(retailClerkId(id,epoch)));},
+    applyArmory,
     setCashDrops(drops){cashDrops=drops;},
     raiseStoreAlarm(){recordAction('robbery');alertCrowd(p,25,true);},
     setHandbrake(value){mobileHandbrake=!!value&&!paused;},

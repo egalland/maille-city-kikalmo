@@ -8,6 +8,7 @@ import {atShopCounter,retailGoods,foodRecovery} from './enfer-retail.js';
 import {dealership} from './vehicle-dealership.js';
 import {atTuningSite,tunable,tuningCatalog,tuningSites} from './vehicle-tuning.js';
 import {atDriveBay,marketDrive} from './mont-renaud.js';
+import {moulinGarage,moulinRadius} from './moulin-garage.js';
 const money=n=>Number(n).toLocaleString('fr-FR')+' ₣';
 const until=(timestamp,now)=>Math.max(0,Math.ceil((timestamp-now)/1000));
 const clock=seconds=>Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');
@@ -60,7 +61,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     if(state?.mission){notify('Termine ou quitte le contrat en cours pour changer de destination.');return;}
     manual=id;close();update();
   }
-  async function send(which,{contract:job,amount,dye,slot,task,operation,product,model,delivery,drop,upgrade}={}){
+  async function send(which,{contract:job,amount,dye,slot,task,operation,product,model,delivery,drop,upgrade,garageKey}={}){
     if(pending||net.status!=='online'){if(which!=='state')notify('La connexion au monde est nécessaire.');return;}
     const before=state;
     pending=true;lastRead=Date.now();
@@ -70,7 +71,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),8000);
     try{
       const response=await fetch('/api/world/career',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',
-        body:JSON.stringify({map:'enfer',id,token,profile,action:which,revision:before?.revision,contract:job,amount,dye,slot,task,operation,product,model,delivery,drop,upgrade,wear:game.getArmorWear?.()}),signal:abort.signal});
+        body:JSON.stringify({map:'enfer',id,token,profile,action:which,revision:before?.revision,contract:job,amount,dye,slot,task,operation,product,model,delivery,drop,upgrade,garageKey,wear:game.getArmorWear?.()}),signal:abort.signal});
       const data=await response.json();
       if(data.incident){
         const incoming=data.incident,newDraw=incident?.slot!==incoming.slot;
@@ -89,6 +90,11 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       }
       if(!response.ok||!data.ok)throw Error(data.error||'Le registre est momentanément indisponible.');
       lastIssue='';
+      if(which==='claimMoulin'){
+        game.applyArmory?.(data.rounds);
+        staged='dealership';
+        notify('Arsenal et véhicules du Moulin ajoutés à ton profil.');
+      }
       if(data.notice&&!data.vehicle){notify(data.notice);return;}
       if(which==='woolPick'){manual='wool';notify('Pelote ramassée · Rapporte-la à la mercerie.');}
       if(which==='woolReturn'){manual=null;notify('Pelote rendue · +'+money(woolReward));}
@@ -233,6 +239,13 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       action.hidden=false;action.disabled=pending||!!life.passenger||life.inVehicle&&life.speed>3;
       action.textContent=(life.inVehicle?'Tuning':'Véhicules')+' (G)';
       nextAction=()=>{staged=life.inVehicle?'tuning':'dealership';open();};
+    }
+    if(!life.inVehicle&&!life.passenger&&life.lifeState!=='down'&&!pos.airborne&&reach(pos,moulinGarage)<=moulinRadius){
+      overlay.hidden=false;pin.hidden=true;instruction.textContent=moulinGarage.name;
+      detail.textContent=state?.moulinClaimed?'Véhicules enregistrés dans Mon garage':'Arsenal complet et véhicules du jardin';
+      action.hidden=false;action.disabled=pending||!state;
+      action.textContent=(state?.moulinClaimed?'Mon garage':'Ouvrir le garage')+' (G)';
+      nextAction=()=>{staged=state?.moulinClaimed?'dealership':'moulin';open();};
     }
     if(panelBody?.isConnected)renderPanel(panelBody);
     if(!document.hidden&&net.status==='online'&&!pending){
@@ -413,6 +426,19 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       }
       shop.append(dyes);return shop;
     }
+    function moulinPage(){
+      const page=make('section','career-garage');
+      page.append(make('h3','',moulinGarage.name),make('p','','Ta clé ajoute l’arsenal et les véhicules du jardin à ton profil.'));
+      const field=make('input','mc-input');
+      field.type='password';field.autocomplete='off';field.maxLength=100;
+      const label=make('label','career-transfer-label','Clé du garage');
+      label.append(field);
+      const submit=control('Ouvrir le garage',()=>send('claimMoulin',{garageKey:field.value}));
+      submit.disabled=!state||pending||!nowOnline()||reach(game.getPosition(),moulinGarage)>moulinRadius;
+      field.addEventListener('keydown',event=>{if(event.key==='Enter'&&!submit.disabled){event.preventDefault();submit.click();}});
+      page.append(label,submit);
+      return page;
+    }
     function dealershipPage(){
       const page=make('div','career-jobs');
       const models=[...dealership.values()],ownedModels=models.filter(model=>state?.vehicleLicenses?.includes(model.id));
@@ -513,7 +539,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       return page;
     }
     const footer=make('p','career-message',lastIssue||(!nowOnline()?'Le registre s’ouvre à la reconnexion.':''));
-    footer.setAttribute('role','status');body.replaceChildren(summary,tabs,({bank:bankPage,garage:garagePage,dealership:dealershipPage,tuning:tuningPage,shop:shopPage,retail:retailPage,bag:bagPage,drive:drivePage}[staged]||jobsPage)(),footer);
+    footer.setAttribute('role','status');body.replaceChildren(summary,tabs,({bank:bankPage,garage:garagePage,dealership:dealershipPage,tuning:tuningPage,moulin:moulinPage,shop:shopPage,retail:retailPage,bag:bagPage,drive:drivePage}[staged]||jobsPage)(),footer);
     if(staged==='bank'&&document.activeElement===document.body&&body.dataset.transferFocus==='1'){body.querySelector('#career-amount')?.focus({preventScroll:true});}
     if(manual&&!job)body.append(control('Arrêter le guidage',()=>{manual=null;lastPanelKey='';update();}));
     if(focused)Array.from(body.querySelectorAll('button,summary')).find(el=>el.textContent===focused)?.focus({preventScroll:true});

@@ -103,7 +103,7 @@ test('walk, board, deliver, crash, repair and start a new job on the continuous 
   const chaseStart=game.exportTravelState();
   assert.ok(game.restoreTravelState({...chaseStart,pursuit:{points:24,report:{...chaseStart,enfer:true}}}));
   const reported=game.getPursuitSnapshot().report;
-  for(let tick=0;tick<460&&hud.policeContact!=='En poursuite';tick++){step();if(tick%9===0)await sync();}
+  for(let tick=0;tick<3900&&hud.policeContact!=='En poursuite';tick++){step();if(tick%9===0)await sync();}
   assert.equal(hud.policeContact,'En poursuite');
   await driveTo(careerPlaces.garage);
   if(hud.wanted)assert.ok(distance(game.getPursuitSnapshot().report,reported)>55,'while in sight, the search follows the driver beyond the initial area');

@@ -254,7 +254,7 @@ export function stepDispatchFoot(state,goal,age,stride,walkable,face=goal){
 
 // Find a connected approach from beyond the immediate block. Edge directions
 // are reversed for the search so the resulting path can be driven forwards.
-export function planDistantDispatch(scene,type,roads,clear,walkable,from=null,block=null,spawnDistance=122){
+export function planDistantDispatch(scene,type,roads,clear,walkable,from=null,block=null,spawnDistance=122,{finishAt=null,maxTravel=from?1500:430}={}){
   const spec=vehicleSpec(type),nodes=new Map();
   function node(point){
     const [x,y]=point,key=Math.round(x*2)+','+Math.round(y*2);
@@ -277,7 +277,7 @@ export function planDistantDispatch(scene,type,roads,clear,walkable,from=null,bl
       }
     }
   }
-  const goals=[...nodes.values()].filter(n=>distance(n,scene)<(block?10:46)&&n.back.length);
+  const goals=[...nodes.values()].filter(n=>distance(n,scene)<(finishAt?16:block?10:46)&&n.back.length);
   goals.sort((a,b)=>distance(a,scene)-distance(b,scene));
   for(const goal of goals.slice(0,12)){
     const frontier=[goal],dist=new Map([[goal,0]]),next=new Map(),closed=new Set();
@@ -287,7 +287,7 @@ export function planDistantDispatch(scene,type,roads,clear,walkable,from=null,bl
       if(closed.has(n))continue;
       closed.add(n);
       const spawn=from?distance(n,from)<13:distance(n,scene)>=spawnDistance;
-      if(spawn&&travel>=10){
+      if(spawn&&(travel>=10||finishAt&&distance(from,finishAt)>3)){
         const points=from?[[from.x,from.y]]:[];
         for(let p=n;p;p=next.get(p))points.push([p.x,p.y]);
         if(block){
@@ -298,14 +298,20 @@ export function planDistantDispatch(scene,type,roads,clear,walkable,from=null,bl
             if(Math.hypot(q.x-last[0],q.y-last[1])>.1)points.push([q.x,q.y]);
           }
         }
+        if(finishAt)points.push([finishAt.x,finishAt.y]);
+        if(points.length<2)continue;
         const line=streetGeometry({path:points,w:spec.halfWidth*2+.35},scene);
         const plan={type,spec,line,sign:1,length:line.length,from:0,distant:true};
         plan.park=dispatchRoadPose(plan,plan.length);
         const entry=dispatchRoadPose(plan,0);
+        const link=from?distance(n,from):0;
+        const exit=finishAt?distance(goal,finishAt):0;
         if(clear(entry,spec,false)&&clear(plan.park,spec,true)&&
-            (!from||distance(entry,from)<.7)&&dispatchDoor(plan.park,type,scene,walkable))return plan;
+            (!link||[.5,.99].every(t=>clear(dispatchRoadPose(plan,link*t),spec,false)))&&
+            (!exit||clear(dispatchRoadPose(plan,plan.length-exit*.5),spec,false))&&
+            (!from||distance(entry,from)<.7)&&(finishAt||dispatchDoor(plan.park,type,scene,walkable)))return plan;
       }
-      if(travel>430)continue;
+      if(travel>maxTravel)continue;
       for(const {at,d} of n.back){
         if(closed.has(at)||travel+d>=(dist.get(at)??Infinity))continue;
         next.set(at,n);dist.set(at,travel+d);frontier.push(at);

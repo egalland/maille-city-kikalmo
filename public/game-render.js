@@ -17,6 +17,7 @@ import {fiberLifetime,impactFibers} from './puppet-combat.js';
 import {baseTerrainHeight,terrainHeight,terrainGradient,walkingPose} from './terrain-height.js';
 import {buildShotEffect,effectDuration,muzzleFlash,rocketFlightTime} from './weapon-effects.js';
 import {propDebris} from './prop-wear.js';
+import {emergencyColors,emergencyFlash} from './emergency-signals.js';
 import { vehicleSpec } from './vehicle-types.js';
 import * as THREE from './three.js';
 import { createCity3D } from './city3d.js';
@@ -124,6 +125,29 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   let width=0,height=0, camX=spawn.x,camY=spawn.y, lastPropTick=-100,props=[],inFrame=0,slowCount=0,scale=touch?.94:1, active=true;
   const followCamera=createWorldCamera(spawn);
   const models=new Map(), names=new Map(), effects=[];
+  const glowSize=32,glowData=new Uint8Array(glowSize*glowSize*4);
+  for(let j=0;j<glowSize;j++)for(let i=0;i<glowSize;i++){
+    const k=(j*glowSize+i)*4,u=(i+.5)/glowSize*2-1,v=(j+.5)/glowSize*2-1;
+    glowData[k]=glowData[k+1]=glowData[k+2]=255;
+    glowData[k+3]=Math.round(255*Math.max(0,1-Math.hypot(u,v))**2);
+  }
+  const emergencyGlow=new THREE.DataTexture(glowData,glowSize,glowSize);
+  emergencyGlow.magFilter=THREE.LinearFilter;emergencyGlow.needsUpdate=true;
+  const emergencyFloor=new THREE.PlaneGeometry(1,1),sirenLens=new THREE.IcosahedronGeometry(.12,1);
+  function createBeacons(group){
+    return emergencyColors.map(color=>{
+      const material={map:emergencyGlow,color,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending};
+      const flare=renderer.software?new THREE.Mesh(sirenLens,new THREE.MeshBasicMaterial({color,transparent:true,depthWrite:false})):
+        new THREE.Sprite(new THREE.SpriteMaterial(material));
+      const pool=new THREE.Mesh(emergencyFloor,new THREE.MeshBasicMaterial({...material,polygonOffset:true,polygonOffsetFactor:-2}));
+      pool.rotation.x=-Math.PI/2;pool.scale.set(10,8,1);
+      group.add(flare,pool);return {flare,pool};
+    });
+  }
+  function releaseModel(item){
+    for(const {flare,pool} of item.beacons||[]){flare.removeFromParent();pool.removeFromParent();flare.material.dispose();pool.material.dispose();}
+    item.object.dispose?.();
+  }
   const blood=createBleedFibers(),bloodMesh=createBleedMesh(scene);
   const labels=document.createElement('div');
   labels.style.cssText='position:absolute;inset:0;overflow:hidden;pointer-events:none;';
@@ -141,7 +165,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     const vehicle=!!e.isCar,key=e.renderId||e.id;
     const id=vehicle?'car/'+e.type:'puppet/'+e.type+'/'+(e.color||'');
     let item=models.get(key);
-    if(item && item.kind!==id){scene.remove(item.object.group);item.object.dispose?.();models.delete(key);item=null;}
+    if(item && item.kind!==id){scene.remove(item.object.group);releaseModel(item);models.delete(key);item=null;}
     if(!item){const seed=hash(String(e.id))%65535;const object=(vehicle?createCar:createPuppet)(e.type,e.color,seed);item={kind:id,object};models.set(key,item);scene.add(object.group);}
     item.used=inFrame;const g=item.object.group;
     g.userData.followedByCamera=!!e.self;
@@ -165,6 +189,15 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
         item.casts=casts;
         g.traverse(node=>{if(node.isMesh&&node.material&&!node.material.transparent){node.castShadow=casts;node.receiveShadow=true;}});
       }
+    }
+    if(vehicle&&e.siren&&!item.beacons)item.beacons=createBeacons(g);
+    for(const [side,{flare,pool}] of (item.beacons||[]).entries()){
+      const flash=e.siren?emergencyFlash(t,side):0,z=side?.48:-.48;
+      const spec=vehicleSpec(e.type);
+      flare.visible=flash>0;pool.visible=flash>0&&(e.lift||0)<1;
+      flare.position.set(-.18,spec.height+.05,z);flare.scale.setScalar(renderer.software?.57+flash*.62:1.15+flash*.86);
+      flare.material.opacity=flash*.96;
+      pool.position.set(-.22,.062,z*2);pool.material.opacity=flash*.48;
     }
     item.object.update(vehicle?{...e,cabinDistance:distance,appearance:undefined}:walkingPose(e),dt,t);
     return item;
@@ -291,7 +324,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     shadows.count=index;shadows.instanceMatrix.needsUpdate=true;
     for(const [key,v] of models)if(v.used!==inFrame){
       v.object.group.visible=false;
-      if(inFrame-v.used>160 || models.size>60){scene.remove(v.object.group);v.object.dispose?.();models.delete(key);}
+      if(inFrame-v.used>160 || models.size>60){scene.remove(v.object.group);releaseModel(v);models.delete(key);}
     }
     for(const [key,el] of names)if(el._used!==inFrame){el.remove();names.delete(key);}
     for(let i=effects.length-1;i>=0;i--){
@@ -341,7 +374,8 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   canvas.addEventListener('webglcontextlost',contextLost);
   return {available:true,get drawCalls(){return renderer.info?.render?.calls;},mode:renderer.software?'mesh':'webgl',render,aim,aimRay,projectTarget,effect,dispose(){
     active=false;canvas.removeEventListener('webglcontextlost',contextLost);labels.remove();
-    for(const item of models.values())item.object.dispose?.();
+    for(const item of models.values())releaseModel(item);
+    emergencyGlow.dispose();emergencyFloor.dispose();sirenLens.dispose();
     incidents.dispose();wool.dispose();driverView.dispose();bloodMesh.dispose();pickupDisplay.dispose();crossingDisplay.dispose();city.dispose?.();
     landingMarks?.dispose();
     atmosphere?.dispose();lighting?.dispose();shadows.geometry.dispose();shadows.material.map.dispose();shadows.material.dispose();

@@ -298,10 +298,10 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
     });
     const dropsLegend=node('span','mc-map-legend');
     dropsLegend.append(node('i','mc-drop'),node('span','','Arme à trouver'));legends.append(dropsLegend);
-    const pursuitLegends=['Zone de recherche','Patrouille'].map((label,i)=>{
+    const pursuitLegends=['Zone de recherche','Services en circulation'].map((label,i)=>{
       const line=node('span','mc-map-legend');
       line.append(node('i',i?'mc-police-marker':'mc-police-area'),node('span','',label));legends.append(line);
-      line.hidden=!state().wanted;return line;
+      line.hidden=!i&&!state().wanted;return line;
     });
     const trackedLegends=[['mc-partner-dot','Groupe'],['mc-friend-dot','Amis'],['mc-train-dot','Trains']].map(([style,text])=>{
       const line=node('span','mc-map-legend');line.append(node('i',style),node('span','',text));legends.append(line);return line;
@@ -386,15 +386,15 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
     const label=fieldLabel(isEnfer?'Destinations de Maille City · voyage rapide':'Voyage rapide sur l’axe historique','mc-travel-target');
     const row=node('form','mc-travel-row');
     const target=node('select','mc-input');target.id='mc-travel-target';
-    const places=node('optgroup',''),railStops=node('optgroup','');
-    places.label='Quartiers et lieux';railStops.label='Gares ferroviaires';
+    const places=node('optgroup',''),railStops=node('optgroup',''),serviceStops=node('optgroup','');
+    places.label='Quartiers et lieux';railStops.label='Gares ferroviaires';serviceStops.label='Commissariats et secours';
     for(const destination of coreDestinations){
       const option=node('option','',destination.label);
       option.value=destination.key;
-      const group=destination.rail?railStops:places;
+      const group=destination.rail?railStops:destination.service?serviceStops:places;
       (isEnfer?group:target).append(option);
     }
-    if(isEnfer)target.append(places,railStops);
+    if(isEnfer)target.append(places,serviceStops,railStops);
     const go=node('button','mc-primary','S’y rendre');go.type='submit';
     row.addEventListener('submit',e=>{
       e.preventDefault();
@@ -463,7 +463,7 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
       renderCurrent();
     }
     renderCurrent=()=>{
-      for(const legend of pursuitLegends)legend.hidden=!state().wanted;
+      pursuitLegends[0].hidden=!state().wanted;
       if(!region){
         const trains=game.mapTrains?.()||[],target=syncTracking(socialMarkers(),trains);
         dropsLegend.hidden=isEnfer&&zoom==='city'&&!target;

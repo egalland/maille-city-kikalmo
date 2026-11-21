@@ -294,6 +294,27 @@ export function indexTrafficDetours(routes){
   }
   return {alternatives,canReach};
 }
+// A two-way village street can host a patrol even when no through-traffic loop is seeded.
+export function roadPatrolLoop(road){
+  if(road.oneway||road.path.length<2)return null;
+  const inset=Math.min(2.1,road.w*.27);
+  const lanes=[road.path,road.path.slice().reverse()].map(path=>path.map(([x,y],i)=>{
+    const a=path[Math.max(0,i-1)],b=path[Math.min(i+1,path.length-1)],angle=heading(a,b);
+    return [x-Math.sin(angle)*inset,y+Math.cos(angle)*inset];
+  }));
+  const one=lanes[0],two=lanes[1];
+  function turn(point,angle){
+    return [1,2,3].map(i=>{
+      const a=angle+i*Math.PI/4;
+      return [point[0]+Math.cos(a)*inset,point[1]+Math.sin(a)*inset];
+    });
+  }
+  const last=road.path.length-1;
+  const points=[...one,...turn(road.path[last],heading(one[last],two[0])+Math.PI),...two,
+    ...turn(road.path[0],heading(two[last],one[0])+Math.PI),one[0]];
+  const route=measure(points);
+  return route.length>=95?{...route,id:'village-'+road.id,closed:true,junctions:[]}:null;
+}
 export function sampleRoadRoute(route,distance){
   if(!route||!Number.isFinite(distance)||(!route.closed&&(distance<0||distance>route.length)))return null;
   const {length,closed,junctions}=route,d=closed?wrap(distance,length):distance;

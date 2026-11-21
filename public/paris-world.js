@@ -16,6 +16,8 @@ import {pedestrianStreetOffset} from './street-scale.js';
 import { buildings, streets, water, green, metadata, enclosureRows } from './paris-data.js';
 
 import {enferStops,enferDistrict,enferStreet} from './enfer-places.js';
+import {serviceDepots,serviceUnits} from './service-depots.js';
+import {moulinGarage,moulinFleet} from './moulin-garage.js';
 import { baseTerrainHeight, terrainHeight, buildingGround, waterLevel, roadHeight, aircraftDeck } from './terrain-height.js';
 import {workshopId,workshopColliders} from './workshop.js';
 import {storeByBuilding,shopColliders} from './enfer-retail.js';
@@ -27,7 +29,7 @@ import {airfields} from './airfield.js';
 import { terraceProfiles } from './street-terraces.js';
 import { authoredWeaponDrops } from './drop-id.js';
 import { vehicleSpec, vehicleDoorways } from './vehicle-types.js';
-import { buildTrafficRoutes, indexTrafficDetours, sampleRoadRoute, regionalRoutes } from './traffic-roads.js';
+import { buildTrafficRoutes, indexTrafficDetours, sampleRoadRoute, regionalRoutes, roadPatrolLoop } from './traffic-roads.js';
 
 const EMPTY = new Set();
 const TAU = Math.PI * 2;
@@ -611,6 +613,8 @@ if(isEnfer)for(const station of railStations)coreDestinations.push({
 if(isEnfer){
   const [x,y]=auchanFront.point(0,-8);
   coreDestinations.push({id:'mont-renaud',key:'mont-renaud',label:'Mont Renaud · Auchan',x,y,angle:auchanFront.angle,noParking:true});
+  for(const base of serviceDepots)coreDestinations.push({...practicalPoint(base.id,base.label,base.x,base.y,null,[base.x,base.y]),noParking:true,service:true});
+  coreDestinations.push({...moulinGarage,key:moulinGarage.id,noParking:true});
 }
 function genuineSectorStop(){
   const x=clamp(Number.isFinite(sector.x)?sector.x:midX,landBounds.minX+3,landBounds.maxX-3);
@@ -955,6 +959,7 @@ function parkedVehicleAtStop(stop,i){
   return null;
 }
 export const parkedCars=destinations.filter(stop=>!stop.noParking).map(parkedVehicleAtStop).filter(Boolean);
+if(isEnfer)parkedCars.push(...moulinFleet);
 if(isEnfer)for(const [id,x,y,angle,type,color,bay] of streetParking)
   parkedCars.push({id,x,y,angle,type,color,bay,kind:'car',parked:true,moving:false,speed:0});
 if(isEnfer)for(const lot of parkingLots){
@@ -1049,18 +1054,89 @@ const detours=indexTrafficDetours(trafficRoutes);
 export const trafficAlternatives=detours.alternatives;
 const flocks=['pedestrian','pedestrian','pedestrian','pedestrian','police','pedestrian','pedestrian','firefighter','pedestrian','medic','pedestrian','swat','pedestrian','pedestrian'];
 const fleet=['compact','sedan','taxi','police','van','scooter','sport','ambulance','cargo','bus','firetruck','pickup','taxi','swat','compact','sedan','car','bus'];
+const serviceTraffic=new Set(['police','ambulance','firetruck','swat']);
+const civilianFleet=isEnfer?fleet.map(type=>serviceTraffic.has(type)?'sedan':type):fleet;
 const countryCars=['compact','sedan','estate','pickup','van','camper','car','motorbike','sport','flatbed','taxi','compact','sedan','estate'];
 const freightCars=['boxtruck','tipper','boxtruck','flatbed','van'];
 const regionalFleet=['motorbike','estate','camper','flatbed'];
 const replaceableFleet=new Set(['car','compact','sedan','van','pickup','scooter']);
 // Stable global identities let a delayed car keep the same wardrobe and footprint on every client.
+let patrolRoutes;
+function selectPatrolRoutes(){
+  const used=new Set(),parked=[];
+  return serviceUnits.map(unit=>{
+    const {depot,type,id,index}=unit,spec=vehicleSpec(type),nearUnit=depot.standby||type==='helicopter'||type==='tank'||type==='armored';
+    const candidates=[];
+    const clear=pose=>!testPose(pose.x,pose.y,{angle:pose.angle,halfWidth:spec.halfWidth,halfLength:spec.halfLength},false);
+    const free=pose=>clear(pose)&&!parked.some(p=>Math.hypot(p.x-pose.x,p.y-pose.y)<5.3);
+    const addRoute=(route,extra=0)=>{
+      let best=null;
+      for(let d=0;d<route.length;d+=5){
+        const pose=sampleRoadRoute(route,d),gap=Math.hypot(pose.x-depot.x,pose.y-depot.y);
+        if(gap<(best?.gap??226)&&free(pose))best={d,pose,gap};
+      }
+      if(best)candidates.push({route,...best,score:best.gap+extra+(used.has(route.id)?82:0)});
+    };
+    if(!nearUnit){
+      for(const route of circulation.area(depot.x,depot.y,225)){
+        if(route.closed&&route.length>=120&&route.clearance.halfWidth+.05>=spec.halfWidth)addRoute(route);
+      }
+      if(!candidates.length){
+        for(const road of nearbyDrivableStreets(depot.x,depot.y,140).slice(0,18)){
+          const route=road.w>=spec.halfWidth*3.8&&roadPatrolLoop(road);
+          if(!route||route.length>1700)continue;
+          let blocked=0;
+          for(let d=0;d<route.length;d+=7)if(!clear(sampleRoadRoute(route,d)))blocked++;
+          if(blocked<=3)addRoute(route,blocked*25);
+        }
+      }
+    }
+    candidates.sort((a,b)=>a.score-b.score||a.route.id.localeCompare(b.route.id));
+    const selected=candidates[0];
+    if(selected){
+      parked.push(selected.pose);used.add(selected.route.id);
+      return {...unit,route:selected.route,home:selected.pose,start:selected.d,phase:(hash(id)%9821)/17,pace:6.8+(index%3)*.85};
+    }
+    const road=closestRoad(depot.x,depot.y,150,s=>s.kind!=='path'&&s.w>=spec.halfWidth*2+.3);
+    let home=null;
+    if(road){
+      for(const distance of [0,7,-7,14,-14,21,-21,29,-29]){
+        for(const side of [0,2.1,-2.1]){
+          const c=Math.cos(road.angle),s=Math.sin(road.angle),pose={x:road.x+c*distance-s*side,y:road.y+s*distance+c*side,angle:road.angle};
+          if(!home&&free(pose))home=pose;
+        }
+      }
+    }
+    home??=coreDestinations.find(s=>s.id===depot.id);
+    parked.push(home);
+    return {...unit,home};
+  });
+}
+export function patrolHome(id){
+  if(!isEnfer)return null;
+  patrolRoutes??=selectPatrolRoutes();
+  return patrolRoutes.find(u=>u.id===id)||null;
+}
+export function servicePatrols(epoch,resumed=new Map()){
+  if(!isEnfer)return [];
+  patrolRoutes??=selectPatrolRoutes();
+  return patrolRoutes.map(unit=>{
+    const {route,role,type,home,id,start,phase,pace}=unit;
+    const interval=route?route.length/pace+16:0,elapsed=wrap(resumed.has(id)?(epoch-resumed.get(id))/1000:epoch/1000+phase,interval||1);
+    const moving=!!route&&elapsed>=16;
+    const pose=moving?sampleRoadRoute(route,wrap(start+(elapsed-16)*pace,route.length)):home;
+    return {...pose,id:'patrol-'+id,unit:id,driverId:'patrol-'+id+'-foot',type,driverRole:role,occupied:true,
+      isCar:true,moving,speed:moving?pace:0,siren:false,atDepot:!moving,...(type==='helicopter'?{lift:0}:{})};
+  });
+}
+
 export function trafficVehicleAt(originRouteId,index,routeId=originRouteId){
   const route=trafficRoutes.get(originRouteId);
   if(!route||!Number.isSafeInteger(index)||index<0||(route.closed&&index>=route.count))return null;
   const slot=index%route.count,seed=route.key+slot*5;
   // Large vehicles get a scheduled slot on routes wide enough for their envelope.
   const canBus=route.availableWidth>=6&&route.clearance.halfLength>=vehicleSpec('bus').halfLength;
-  let type=slot===0&&canBus?'bus':fleet[seed%fleet.length];
+  let type=slot===0&&canBus?'bus':civilianFleet[seed%civilianFleet.length];
   // Expand ordinary civilian slots without rescheduling the emergency fleet.
   if(replaceableFleet.has(type)){
     const draw=hash(originRouteId+'/'+slot);
@@ -1251,7 +1327,7 @@ function drawLocalMap(context,canvas,view,w,h,dpr){
   context.drawImage(tile.source,left,top,tile.source.width/(dpr*scale),tile.source.height/(dpr*scale));
 }
 export function paintMap(canvas,player,{full=false,zoom='city',focus=null,trains=[],peers=[],vehicles=[],parked=[],pickups=[],tracked=null,
-  search=null,police=[],dpr=Math.min(2,globalThis.devicePixelRatio||1)}={}){
+  search=null,police=[],depots=[],dpr=Math.min(2,globalThis.devicePixelRatio||1)}={}){
   if(!canvas||!player)return;
   const rect=canvas.getBoundingClientRect?.(),w=Math.round(rect?.width||canvas.width),h=Math.round(rect?.height||canvas.height);
   if(!w||!h)return;
@@ -1342,12 +1418,18 @@ export function paintMap(canvas,player,{full=false,zoom='city',focus=null,trains
     c.strokeStyle='#a6ece1';c.lineWidth=1;c.strokeRect(x-6,y-6,12,12);
     c.save();c.translate(x,y);c.rotate(car.angle||0);c.fillStyle='#a6ece1';c.fillRect(-3,-1.8,6,3.6);c.restore();
   }
+  if(full)for(const depot of depots){
+    const x=px(depot.x),y=py(depot.y);
+    if(onMap(x,y,7)){circle(x,y,6,'#1e3545','#9fc6df');markText('+',x,y,'#d1e9fa');}
+  }
   for(const unit of police){
     const x=px(unit.x),y=py(unit.y);
     if(x<2||x>w-2||y<2||y>h-2)continue;
     c.save();c.translate(x,y);c.rotate(unit.angle||0);
     c.beginPath();c.moveTo(5,0);c.lineTo(-3.6,3.6);c.lineTo(-3.6,-3.6);c.closePath();
-    c.fillStyle='#a9d3ff';c.fill();c.strokeStyle='#223955';c.lineWidth=1.35;c.stroke();c.restore();
+    c.fillStyle=unit.driverRole==='firefighter'?'#ff9e86':unit.driverRole==='medic'?'#a6edd5':'#a9d3ff';
+    if(unit.siren){c.shadowBlur=7;c.shadowColor=c.fillStyle;}
+    c.fill();c.strokeStyle='#223955';c.lineWidth=1.35;c.stroke();c.restore();
   }
   for(const p of peers){
     if(relationIds.has(p.id))continue;

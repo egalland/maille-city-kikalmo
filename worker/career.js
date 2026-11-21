@@ -10,6 +10,10 @@ import {dealership,deliveryRange} from '../public/vehicle-dealership.js';
 import {atDriveBay,driveOrderWait} from '../public/mont-renaud.js';
 import {cashTables} from './cash.js';
 import {atTuningSite,tunable,tuningCatalog} from '../public/vehicle-tuning.js';
+import {moulinGarage,moulinModels,moulinRadius} from '../public/moulin-garage.js';
+import {weaponList} from '../public/weapon-catalog.js';
+import {ammoCapacity} from '../public/ammunition.js';
+import {readArmory,privateAmmo} from './armory.js';
 
 export const careerSchema=[
   woolSchema,...districtEventsSchema,...cashTables,
@@ -28,6 +32,7 @@ export const careerSchema=[
     last_call INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(profile,model))`,
   `CREATE TABLE IF NOT EXISTS mc_vehicle_tuning(profile TEXT NOT NULL,model TEXT NOT NULL,parts INTEGER NOT NULL,
     PRIMARY KEY(profile,model))`,
+  'CREATE TABLE IF NOT EXISTS mc_moulin_claims(profile TEXT PRIMARY KEY)',
   'CREATE INDEX IF NOT EXISTS mc_ranked_laps ON mc_laps(public,alias) WHERE public IS NOT NULL',
   `CREATE TABLE IF NOT EXISTS mc_career_sessions (
     room TEXT NOT NULL, id TEXT NOT NULL, profile TEXT NOT NULL, PRIMARY KEY(room,id))`,
@@ -39,6 +44,7 @@ const profileId=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9
 const maxPoseAge=25000;
 const readCareer=`SELECT c.*,w.slot AS woolSlot,w.picked AS woolPicked,w.paid AS woolPaid,e.bank,e.licensed,e.revenue,l.best,l.public,o.armor,o.layer,o.wearer,o.dyes,o.dye,b.goods,
     (SELECT json_group_array(model) FROM mc_vehicle_licenses WHERE profile=c.profile) AS vehicleLicenses,
+    EXISTS(SELECT 1 FROM mc_moulin_claims WHERE profile=c.profile) AS moulinClaimed,
     (SELECT json_group_object(car,parts) FROM (SELECT v.car,t.parts FROM mc_vehicle_tuning t
       JOIN mc_vehicle_licenses v ON v.profile=t.profile AND v.model=t.model WHERE t.profile=c.profile
       UNION ALL SELECT c.car,t.parts FROM mc_vehicle_tuning t WHERE t.profile=c.profile AND t.model='garage' AND c.car IS NOT NULL)) AS tuning,
@@ -55,7 +61,7 @@ const readCareer=`SELECT c.*,w.slot AS woolSlot,w.picked AS woolPicked,w.paid AS
 const parse=data=>data?JSON.parse(data):null;
 function publicState(row,rider){
   const mission=parse(row.mission);
-  return {version:3,parkingOwner:row.profile,goods:parse(row.goods)||{},driveOrder:parse(row.driveOrder),heist:parse(row.heist),cashDrops:parse(row.cashDrops)||[],vehicleLicenses:parse(row.vehicleLicenses)||[],tuning:parse(row.tuning)||{},wool:woolProgress(row),armor:row.armor||0,armorId:row.layer,wearable:row.wearer===rider,dyes:parse(row.dyes)||[],dye:row.dye,bestLapMs:row.best,publicLapMs:row.public,leaders:parse(row.leaders)||[],bank:row.bank,licensed:!!row.licensed,revenue:row.revenue,revision:row.revision,cash:row.cash,completed:row.completed,reputation:row.reputation,owned:!!row.car,
+  return {version:3,moulinClaimed:!!row.moulinClaimed,parkingOwner:row.profile,goods:parse(row.goods)||{},driveOrder:parse(row.driveOrder),heist:parse(row.heist),cashDrops:parse(row.cashDrops)||[],vehicleLicenses:parse(row.vehicleLicenses)||[],tuning:parse(row.tuning)||{},wool:woolProgress(row),armor:row.armor||0,armorId:row.layer,wearable:row.wearer===rider,dyes:parse(row.dyes)||[],dye:row.dye,bestLapMs:row.best,publicLapMs:row.public,leaders:parse(row.leaders)||[],bank:row.bank,licensed:!!row.licensed,revenue:row.revenue,revision:row.revision,cash:row.cash,completed:row.completed,reputation:row.reputation,owned:!!row.car,
     mission:mission?{contract:mission.contract,stage:mission.stage,car:mission.car||null,started:mission.started,deadline:mission.deadline}:null};
 }
 async function hashProfile(profile){
@@ -65,10 +71,12 @@ async function hashProfile(profile){
 const near=(actor,place)=>(actor.lift||0)<1.5&&Math.hypot(actor.x-place.x,actor.y-place.y)<=careerRadius;
 const allowed=new Set(['incident','woolPick','woolReturn','state','start','cancel','advance','repair','buy','collect','license','collectRent','deposit','withdraw','publishLap','hideLap','buyArmor','buyDye','equipDye','buyProduct','eatProduct','buyVehicleLicense','deliverVehicle','orderDrive','collectDrive','startHeist','finishHeist','collectCash']);
 allowed.add('installTuning');
-export async function runCareer(db,b,room,now){
+allowed.add('claimMoulin');
+export async function runCareer(db,b,room,now,moulinKey){
   if(room!=='enfer:public'||!profileId.test(b.profile)||!allowed.has(b.action))
     return {ok:false,error:'Demande de carrière invalide.'};
   const q=(sql,...values)=>db.prepare(sql).bind(...values);
+  const garageRounds=async()=>privateAmmo((await db.batch([readArmory(q,room,b.id)]))[0].results);
   const profile=await hashProfile(b.profile),member=await q(
     'SELECT state,name FROM mc_members WHERE room=? AND id=? AND secret=? AND seen>?',room,b.id,b.token,now-maxPoseAge).first();
   if(!member)return {ok:false,error:'Reconnecte-toi au monde pour accéder aux contrats.'};
@@ -145,6 +153,21 @@ export async function runCareer(db,b,room,now){
       cash+=outcome.reward;
       effects.push(q(`UPDATE mc_lost_wool SET paid=1 WHERE profile=? AND slot=? AND ${hasMutation}`,profile,b.slot,profile,marker));
     }
+  }else if(b.action==='claimMoulin'){
+    if(row.moulinClaimed)return {ok:true,state:publicState(row,b.id),rounds:await garageRounds()};
+    if(actor.vehicle||actor.railRider||actor.motion==='swim'||actor.lift>.4||
+       Math.hypot(actor.x-moulinGarage.x,actor.y-moulinGarage.y)>moulinRadius)return fail('Entre à pied dans la cour du Moulin.');
+    if(!moulinKey||typeof b.garageKey!=='string'||b.garageKey.trim()!==moulinKey)return fail('Clé du garage incorrecte.');
+    guard+=` AND EXISTS (SELECT 1 FROM mc_members WHERE room=? AND id=? AND state=?)
+      AND EXISTS (SELECT 1 FROM mc_armory_sessions WHERE room=? AND id=?)
+      AND NOT EXISTS (SELECT 1 FROM mc_moulin_claims WHERE profile=?)`;
+    guardArgs.push(room,b.id,member.state,room,b.id,profile);
+    effects.push(q(`INSERT INTO mc_moulin_claims(profile) SELECT ? WHERE ${hasMutation}`,profile,profile,marker));
+    for(const model of moulinModels)effects.push(q(`INSERT OR IGNORE INTO mc_vehicle_licenses(profile,model,car)
+      SELECT ?,?,? WHERE ${hasMutation}`,profile,model,'licensed-'+crypto.randomUUID(),profile,marker));
+    for(const weapon of weaponList.filter(w=>Number.isFinite(w.mag)))effects.push(q(`INSERT INTO mc_armory(profile,weapon,total)
+      SELECT profile,?,? FROM mc_armory_sessions WHERE room=? AND id=? AND ${hasMutation}
+      ON CONFLICT(profile,weapon) DO UPDATE SET total=max(total,excluded.total)`,weapon.id,ammoCapacity(weapon.id),room,b.id,profile,marker));
   }else if(b.action==='installTuning'){
     const part=tuningCatalog.get(b.upgrade),active=actor.vehicle;
     if(down||!part||!active||!tunable(active.type)||!atTuningSite(actor)||actor.lift>.3||
@@ -414,5 +437,6 @@ export async function runCareer(db,b,room,now){
   const state=publicState(updated.at(-1).results[0],b.id);
   if(!updated[0].results.length)return {ok:false,error:'La situation a changé. Réessaie.',state};
   if(notice&&b.action!=='state')return {ok:false,state,error:notice};
-  return {ok:true,state,...(vehicle?{vehicle}:{}),...(repaired?{repaired}:{}),...(notice?{notice}:{}),...(food?{food}:{})};
+  const rounds=b.action==='claimMoulin'?await garageRounds():null;
+  return {ok:true,state,...(rounds?{rounds}:{}),...(vehicle?{vehicle}:{}),...(repaired?{repaired}:{}),...(notice?{notice}:{}),...(food?{food}:{})};
 }

@@ -2,6 +2,8 @@ import {broadcastBeat,readRadio} from './car-radio.js';
 import {engineTone,vehicleSoundProfile} from './vehicle-audio-profiles.js';
 import {weaponCatalog} from './weapon-catalog.js';
 const floor=.001;
+import {sirenTone} from './emergency-signals.js';
+
 const reports={
   sidearm:[4100,310,.075,.23],revolver:[3500,240,.105,.27],compact:[5300,360,.065,.20],
   shotgun:[2500,145,.19,.31],double:[2900,166,.17,.31],rifle:[4700,212,.114,.25],
@@ -31,15 +33,19 @@ export function createStreetAudio(){
         const breeze=context.createBiquadFilter();breeze.type='lowpass';breeze.frequency.value=480;
         roll=context.createGain();roll.gain.value=.018;
         bed.connect(breeze).connect(roll).connect(master);bed.start();
-        own=motor();ambient=motor();siren=loop('sine');
+        own=motor();ambient=motor();siren=loop('triangle');
       }
       if(context.state==='suspended')void context.resume().catch(()=>{});
     }catch{}
   }
   function loop(kind){
     const oscillator=context.createOscillator(),gain=context.createGain();oscillator.type=kind;
-    gain.gain.value=floor;oscillator.connect(gain).connect(master);oscillator.start();
-    return {oscillator,gain};
+    gain.gain.value=floor;
+    const pan=context.createStereoPanner?.();
+    oscillator.connect(gain);
+    if(pan)gain.connect(pan).connect(master);else gain.connect(master);
+    oscillator.start();
+    return {oscillator,gain,pan};
   }
   function motor(){
     const core=context.createOscillator(),harmonic=context.createOscillator(),partial=context.createGain();
@@ -111,13 +117,16 @@ export function createStreetAudio(){
     }
     setTimeout(()=>{output.disconnect();direction?.disconnect();},(tail+.13)*1000);
   }
-  function update({speed,driving,vehicleType,nearby,walking,city,sirenDistance,time,epoch,weather}){
+  function update({speed,driving,vehicleType,nearby,walking,city,emergency,time,epoch,weather}){
     if(!enabled||context?.state!=='running')return;
     const t=context.currentTime;
     setMotor(own,driving?{type:vehicleType,speed}:null,t);
     setMotor(ambient,nearby,t);
-    siren.oscillator.frequency.setTargetAtTime(680+215*Math.sin(time*5.6),t,.07);
-    siren.gain.gain.setTargetAtTime(Math.max(floor,.10*(1-sirenDistance/145)),t,.11);
+    if(emergency){
+      siren.oscillator.frequency.setTargetAtTime(sirenTone(emergency.role,time)*emergency.doppler,t,.035);
+      siren.pan?.pan.setTargetAtTime(emergency.pan,t,.13);
+    }
+    siren.gain.gain.setTargetAtTime(emergency?Math.max(floor,.22*(1-emergency.distance/175)**1.55):floor,t,.17);
     roll.gain.setTargetAtTime((city?.027:.018)+(weather?.rain||0)*.044,t,.5);
     const step=Math.floor(epoch / 155);
     if(driving&&radio&&beat!==step){
