@@ -13,7 +13,8 @@ const profiles = Object.freeze({
 export const propMaxHealth = type => Object.hasOwn(profiles, type) ? profiles[type].maxHealth : 0;
 export const propMaterial = type => Object.hasOwn(profiles, type) ? profiles[type].material : null;
 const crushSpeed={bin:7,crate:5,bench:15,postbox:19};
-export function crushableProp(type,speed,damage,health){
+export function crushableProp(type,speed,damage,health,vehicleType){
+  if(vehicleType==='tank'&&speed>=1.45)return damage>=(health??propMaxHealth(type));
   return Object.hasOwn(crushSpeed,type)&&speed>=crushSpeed[type]&&damage>=(health??propMaxHealth(type));
 }
 
@@ -22,12 +23,13 @@ export function applyPropDamage(type, previousHealth, rawDamage) {
   if (!maxHealth || !Number.isFinite(rawDamage) || rawDamage <= 0) return null;
   const before = Number.isFinite(previousHealth)
     ? Math.min(maxHealth, Math.max(0, Math.round(previousHealth))) : maxHealth;
-  const damage = Math.min(before, 150, Math.round(rawDamage));
+  const damage = Math.min(before, Math.round(rawDamage));
   return { health: before - damage, maxHealth, damage };
 }
 
 // The collision normal discards speed parallel to a wall. A resting bumper cannot chip away a prop.
-export function vehiclePropDamage(normalSpeed, halfLength) {
+export function vehiclePropDamage(normalSpeed,halfLength,vehicleType,propType) {
+  if(vehicleType==='tank'&&normalSpeed>=1.45)return propMaxHealth(propType);
   if (!Number.isFinite(normalSpeed) || !Number.isFinite(halfLength) || normalSpeed < 2.5) return 0;
   const scale = Math.max(.45, Math.min(1.7, halfLength / 2.1));
   return Math.min(150, Math.round((normalSpeed - 1.5) ** 1.55 * 1.9 * scale));

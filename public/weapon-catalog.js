@@ -10,21 +10,22 @@ const arsenal={
   button:['Fusil à canon court','Cinq plombs','shotgun'],spark:['Carabine à rebonds','Jusqu’à deux ricochets','compact'],
   service:['Pistolet de service','Semi-automatique, chargeur de 15','sidearm'],
   marksman:['Fusil semi-automatique à lunette','Tir de précision coup par coup','sniper'],
-  rocket:['Lance-roquettes','Un tir, explosion à l’impact','launcher']
+  rocket:['Lance-roquettes','Un tir, explosion à l’impact','launcher'],
+  tankShell:['Canon du char','Obus explosif','cannon']
 };
 const meleePalette=Object.freeze({accent:'#f7c08d',thread:'#be856c',cloth:'#523f4c',trim:'#ffeac3'});
 const firearmPalette=Object.freeze({accent:'#a1acb3',thread:'#747f88',cloth:'#323943',trim:'#d9a88b'});
 const defineWeapon=(id,mag,interval,range,damage,reload,frequency)=>{
   const [name,hint,profile]=arsenal[id]||['Poings','Corps à corps','melee'];
   const melee=id==='fist';
-  return Object.freeze({id,name,hint,profile,mag,interval,range,damage,reload,effect:melee?'fist':id==='rocket'?'rocket':'shot',frequency,
+  return Object.freeze({id,name,hint,profile,mag,interval,range,damage,reload,effect:melee?'fist':id==='rocket'||id==='tankShell'?'rocket':id==='shotgun'?'cone':'shot',frequency,
     palette:melee?meleePalette:firearmPalette,starter:melee||id==='pistol',noise:!melee});
 };
 const entries=[
   defineWeapon('fist',Infinity,.42,2.25,12,0,146),
   defineWeapon('pistol',12,.28,62,17,1,136),
   defineWeapon('smg',28,.14,44,10,1.4,154),
-  defineWeapon('shotgun',5,.72,22,16,1.55,96),
+  defineWeapon('shotgun',5,.72,22,26,1.55,96),
   defineWeapon('yarn',6,.52,40,13,1.15,118),
   defineWeapon('ribbonbow',4,.83,78,28,1.1,112),
   defineWeapon('pompom',3,.87,32,21,1.64,83),
@@ -42,7 +43,9 @@ const entries=[
   defineWeapon('marksman',10,.49,89,27,1.58,106),
   defineWeapon('rocket',1,1.32,82,78,2.7,69)
 ];
-export const weaponCatalog=Object.freeze(Object.fromEntries(entries.map(w=>[w.id,w])));
+const cannon=defineWeapon('tankShell',Infinity,2.8,155,155,0,43);
+export const weaponCatalog=Object.freeze(Object.fromEntries([...entries,cannon].map(w=>[w.id,w])));
+export const isHeavyShot=kind=>kind==='rocket'||kind==='tankShell';
 export const weaponList=Object.freeze(entries);
 export const starterWeapons=Object.freeze(entries.filter(w=>w.starter).map(w=>w.id));
 export const findableWeaponIds=Object.freeze(entries.filter(w=>!w.starter).map(w=>w.id));

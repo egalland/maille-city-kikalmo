@@ -1,8 +1,5 @@
 import test from 'node:test';
 import {tuningCatalog,tuningSites} from '../public/vehicle-tuning.js';
-import {moulinGarage,moulinModels} from '../public/moulin-garage.js';
-import {weaponList} from '../public/weapon-catalog.js';
-import {ammoCapacity} from '../public/ammunition.js';
 import assert from 'node:assert/strict';
 import {localDatabase} from '../scripts/local-db.mjs';
 import {handleApi} from '../worker/game-api.js';
@@ -73,27 +70,6 @@ test('a vehicle license is bought once at the garage and supports free nearby de
   assert.ok(second.ok,second.error);assert.notEqual(second.vehicle.id,first.vehicle.id);
   const rejoined=await post('join',who,{state:onFoot});
   assert.ok(rejoined.world.vehicles[second.vehicle.id]);assert.equal(rejoined.world.vehicles[first.vehicle.id],undefined);
-});
-
-test('the Moulin grants its vehicles and complete armory once and retains both after reconnecting',async t=>{
-  const {active,who,pose,post,drive,actor}=await harness(t);
-  const garage=(await active(who,'state')).state;
-  const claim=(rider,revision,garageKey='fixture-moulin-key')=>post('career',rider,{action:'claimMoulin',revision,garageKey});
-  assert.equal((await claim(who,garage.revision)).ok,false);
-  await pose(moulinGarage,{vehicle:null});
-  assert.equal((await claim(who,garage.revision,'incorrect')).ok,false);
-  const claims=await Promise.all([claim(who,garage.revision),claim(who,garage.revision)]);
-  const [receipt,...duplicates]=claims.filter(result=>result.ok);
-  assert.equal(duplicates.length,0);
-  assert.ok(receipt.ok,JSON.stringify(claims));
-  assert.equal(receipt.state.cash,garage.cash);
-  assert.deepEqual(receipt.state.vehicleLicenses.slice().sort(),moulinModels.slice().sort());
-  const expected=Object.fromEntries(weaponList.filter(w=>Number.isFinite(w.mag)).map(w=>[w.id,ammoCapacity(w.id)]));
-  assert.deepEqual(receipt.rounds,expected);
-  const returning={...actor(),profile:who.profile};
-  const join=await post('join',returning,{ammoKey:who.token,state:drive(moulinGarage,{vehicle:null})});
-  assert.deepEqual(join.ammo,expected);
-  assert.equal((await active(returning,'state')).state.moulinClaimed,true);
 });
 
 test('an expired street car loses its old damage, while a parked car keeps it',async t=>{
@@ -229,7 +205,7 @@ async function harness(t){
   const actor=()=>({id:crypto.randomUUID(),token:crypto.randomUUID(),profile:crypto.randomUUID(),map:'enfer'});
   const a=actor(),b=actor(),car={id:'cab-7',type:'car'};
   const post=async(path,user,extra)=>{
-    const response=await handleApi(new Request('https://city.test/api/world/'+path,{method:'POST',body:JSON.stringify({...user,...extra})}),{DB,MAILLE_MOULIN_KEY:'fixture-moulin-key'});
+    const response=await handleApi(new Request('https://city.test/api/world/'+path,{method:'POST',body:JSON.stringify({...user,...extra})}),{DB});
     return response.json();
   };
   const drive=(p,extra={})=>({x:p.x,y:p.y,health:100,angle:0,speed:0,vehicle:car,...extra});

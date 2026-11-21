@@ -368,7 +368,12 @@ export function drawCanvasCar(c,o,x,groundY,height,time=0,viewAngle=0){
     panel(hull,o.color||(tank?'#74795a':'#677768'));
     if(tank){
       panel([[-.29,-.59],[-.22,-.91],[.15,-.94],[.24,-.70],[.16,-.57]],'#6b7256');
-      panel([[.085,-.78],[.61,-.85],[.61,-.77],[.085,-.69]],'#485445');
+      const relative=(o.turretAngle??o.angle??0)-(o.angle||0),view=viewAngle-relative;
+      const sx=-Math.sin(view)*(side>0?-1:1),reach=h*(1.11-(o.gunRecoil||0)*.17),lift=(o.gunPitch||0)*h;
+      c.beginPath();c.moveTo(-w*.095,-h*.735);c.lineTo(-w*.095+sx*reach,-h*.746-lift);
+      c.lineWidth=h*.062;c.lineCap='round';c.strokeStyle='#4d5850';c.stroke();
+      c.beginPath();c.moveTo(-w*.095+sx*reach*.93,-h*.744-lift*.93);c.lineTo(-w*.095+sx*reach,-h*.746-lift);
+      c.lineWidth=h*.093;c.strokeStyle='#2b3431';c.stroke();
     }else{
       panel([[-.37,-.60],[-.34,-.91],[.21,-.91],[.39,-.62]],'#68786e');
       panel([[-.27,-.83],[.20,-.83],[.29,-.69],[-.27,-.69]],'#344b55');
@@ -382,9 +387,10 @@ export function drawCanvasCar(c,o,x,groundY,height,time=0,viewAngle=0){
   const spec=vehicleSpec(o.type),scale=height/spec.height,side=Math.sign(Math.cos(viewAngle))||1;
   const nose=Math.sin(viewAngle)*-.53*spec.halfLength*scale;
   c.save();c.translate(x,groundY);c.lineCap='round';
-  if(!o.wrecked&&o.tune&48){
+  if(!o.wrecked&&o.tune&112){
     c.fillStyle='#39434a';
     const span=scale*(spec.halfWidth*Math.abs(Math.cos(viewAngle))+.26);
+    if(o.tune&64)c.fillRect(-span*.76,-.255*scale,span*1.48,.087*scale);
     if(o.tune&16){
       c.fillRect(-nose-span*.8,-height*.72,span*1.6,height*.045);
       for(const offset of [-.5,.5])c.fillRect(-nose+span*offset,-height*.68,height*.042,height*.15);

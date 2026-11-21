@@ -125,6 +125,26 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
   let width=0,height=0, camX=spawn.x,camY=spawn.y, lastPropTick=-100,props=[],inFrame=0,slowCount=0,scale=touch?.94:1, active=true;
   const followCamera=createWorldCamera(spawn);
   const models=new Map(), names=new Map(), effects=[];
+  const trafficGeometry=new THREE.BoxGeometry(1,1,1),trafficLimit=70,trafficTransform=new THREE.Object3D();
+  const makeDistantTraffic=material=>{
+    const mesh=new THREE.InstancedMesh(trafficGeometry,material,trafficLimit);
+    mesh.count=0;mesh.frustumCulled=false;scene.add(mesh);return mesh;
+  };
+  const trafficBody=makeDistantTraffic(new THREE.MeshLambertMaterial({color:'#65737c'}));
+  const trafficCabin=makeDistantTraffic(new THREE.MeshLambertMaterial({color:'#3f505a'}));
+  const trafficLamps=makeDistantTraffic(new THREE.MeshBasicMaterial({color:'#fff4c9'}));
+  function distantVehicle(car,index){
+    const spec=vehicleSpec(car.type),angle=car.angle||0,ground=terrainHeight(car.x,car.y,angle),c=Math.cos(angle),s=Math.sin(angle);
+    const put=(mesh,forward,height,length,tall,width)=>{
+      trafficTransform.position.set(car.x+c*forward,ground+height,car.y+s*forward);
+      trafficTransform.rotation.y=-angle;trafficTransform.scale.set(length,tall,width);
+      trafficTransform.updateMatrix();mesh.setMatrixAt(index,trafficTransform.matrix);
+    };
+    const height=spec.height;
+    put(trafficBody,0,height*.34,spec.halfLength*1.96,height*.42,spec.halfWidth*1.97);
+    put(trafficCabin,-spec.halfLength*.13,height*.68,spec.halfLength*1.09,height*.52,spec.halfWidth*1.55);
+    put(trafficLamps,spec.halfLength*.983,height*.40,.061,.097,spec.halfWidth*1.64);
+  }
   const glowSize=32,glowData=new Uint8Array(glowSize*glowSize*4);
   for(let j=0;j<glowSize;j++)for(let i=0;i<glowSize;i++){
     const k=(j*glowSize+i)*4,u=(i+.5)/glowSize*2-1,v=(j+.5)/glowSize*2-1;
@@ -239,31 +259,45 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
       return;
     }
     if(kind==='rocket'){
-      const max=rocketFlightTime(len);
+      const max=rocketFlightTime(len,colors?.barrel);
       if(age>=max)return;
       const height=terrainHeight(x,y)+lift;
       const strokes=progress=>shotStrokeMesh(buildShotEffect(kind,x,y,angle,len,progress,false,colors?.drop),height);
       const mesh=strokes(age/max);
       if(mesh){scene.add(mesh);effects.push({mesh,life:max-age,max,rocket:strokes,fresh:true});}
-      if(colors?.flash)drawShotStrokes(muzzleFlash('rocket',x,y,angle),height,.095,age);
+      if(colors?.flash)drawShotStrokes(muzzleFlash(colors.barrel,x,y,angle),height,.095,age);
       return;
     }
-    if(kind!=='burst'&&kind!=='carExplosion'){
+    const ordnance=kind==='shellExplosion'?1.7:kind==='rocketExplosion'?1.23:0;
+    if(kind!=='burst'&&kind!=='carExplosion'&&!ordnance){
       const duration=effectDuration(kind);
       const height=terrainHeight(x,y)+lift,barrel=colors?.barrel;
       drawShotStrokes(buildShotEffect(barrel||kind,x,y,angle,len,Math.max(.25,age/duration),!!barrel,colors?.drop),height,duration,age);
       if(colors?.flash)drawShotStrokes(muzzleFlash(barrel,x,y,angle),height,.095,age);
       return;
     }
-    const explosion=kind==='carExplosion';
-    const palette=explosion?['#f8bc64','#ec7546','#f2deaa','#88706e']:colors.length?colors:['#e69ea7','#ffdc9f','#8fcabf','#d6a787'];
-    for(let i=0;i<(explosion?18:7);i++){
-      const m=new THREE.Mesh(new THREE.IcosahedronGeometry((explosion?.34:.09)+Math.random()*(explosion?.28:.07)),new THREE.MeshBasicMaterial({color:palette[i%palette.length],transparent:true}));
-      m.position.set(x,terrainHeight(x,y)+lift+.3+Math.random()*.5,y);scene.add(m);
-      const a=Math.random()*Math.PI*2,v=1.3+Math.random()*(explosion?4.8:2);
-      const vx=Math.cos(a)*v,vy=2+Math.random()*2.5,vz=Math.sin(a)*v;
+    const explosion=kind==='carExplosion'||ordnance>0;
+    const palette=explosion?['#ffd687','#f58b48','#ffebbe','#4b4445']:colors.length?colors:['#e69ea7','#ffdc9f','#8fcabf','#d6a787'];
+    const ground=terrainHeight(x,y)+lift;
+    if(ordnance){
+      const flash=new THREE.Mesh(new THREE.IcosahedronGeometry(1,2),new THREE.MeshBasicMaterial({color:'#fff1bd',transparent:true,depthWrite:false}));
+      flash.position.set(x,ground+.52,y);scene.add(flash);
+      effects.push({mesh:flash,life:.25-age,max:.25,pulse:ordnance*2.3});
+      const ring=new THREE.Mesh(new THREE.RingGeometry(.89,1,56).rotateX(-Math.PI/2),
+        new THREE.MeshBasicMaterial({color:'#ffc97b',transparent:true,depthWrite:false,side:THREE.DoubleSide}));
+      ring.position.set(x,ground+.18,y);scene.add(ring);
+      effects.push({mesh:ring,life:.68-age,max:.68,pulse:ordnance*6.2,ring:true});
+    }
+    for(let i=0;i<(ordnance?34:explosion?18:7);i++){
+      const smoke=ordnance&&i%3===0,extent=ordnance||1;
+      const m=new THREE.Mesh(new THREE.IcosahedronGeometry(((explosion?.34:.09)+Math.random()*(explosion?.28:.07))*extent,1),
+        new THREE.MeshBasicMaterial({color:smoke?'#453e43':palette[i%palette.length],transparent:true,depthWrite:false}));
+      m.position.set(x,ground+.3+Math.random()*.5,y);scene.add(m);
+      const a=Math.random()*Math.PI*2,v=(1.3+Math.random()*(explosion?4.8:2))*extent*(smoke?.50:1);
+      const vx=Math.cos(a)*v,vy=(2+Math.random()*2.5)*extent,vz=Math.sin(a)*v;
       m.position.x+=vx*age;m.position.z+=vz*age;m.position.y+=vy*age-3.5*age*age;
-      effects.push({mesh:m,life:(explosion?1.3:.65)-age,max:explosion?1.3:.65,vx,vy:vy-7*age,vz});
+      const max=smoke?2.45:explosion?1.3:.65;
+      effects.push({mesh:m,life:max-age,max,vx,vy:vy-7*age,vz,smoke:!!smoke});
     }
   }
   let cpuFrame=-Infinity;
@@ -297,14 +331,18 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     pickupDisplay.update(state.pickups,p,time);wool.update(state.lostWool,p);incidents.update(state.districtIncident,p,epoch);
     const candidates=state.entities.filter(e=>Number.isFinite(e.x)&&Number.isFinite(e.y)).sort((a,b)=>distance(a,p)-distance(b,p));
     const lowPower=renderer.software||scale<.81;
-    const carLimit=lowPower?5:touch?7:10, pedestrianLimit=lowPower?8:touch?11:14;
-    let npcs=0,cars=0,index=0;
+    const carLimit=lowPower?7:touch?10:17, pedestrianLimit=lowPower?8:touch?11:14;
+    let npcs=0,cars=0,index=0,farCars=0;
     blood.begin(time,state.epoch??Date.now());bloodMesh.begin();
     for(const e of candidates) {
       if(cockpit&&e.self)continue;
       const d=distance(e,p),critical=e.self||e.peer;
-      if(!critical && (d>(e.isCar?115:86) || (e.isCar?cars>=carLimit:npcs>=pedestrianLimit)))continue;
-      if(critical && !e.self && d>210)continue;
+      if(e.isCar&&!critical&&!isAircraft(e.type)&&e.type!=='train'&&(e.farTraffic||d>138||cars>=carLimit&&!e.siren)){
+        if(d<(car?345:160)&&farCars<trafficLimit)distantVehicle(e,farCars++);
+        continue;
+      }
+      if(!critical&&(e.isCar?d>175:d>86||npcs>=pedestrianLimit))continue;
+      if(critical&&!e.self&&d>220)continue;
       if(e.isCar)cars++;else npcs++;
       entity(e,dt,time,d);
       if(d<42)bloodMesh.draw(blood.actor(e));
@@ -319,6 +357,9 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
         shadowTransform.updateMatrix();shadows.setMatrixAt(index++,shadowTransform.matrix);
       }
       if(e.bubble || (e.peer && d<48))badge(e,e.bubble||e.name,!!e.bubble);
+    }
+    for(const mesh of [trafficBody,trafficCabin,trafficLamps]){
+      mesh.count=farCars;mesh.instanceMatrix.needsUpdate=true;
     }
     blood.eachDrop((id,center,strands)=>bloodMesh.draw(strands));bloodMesh.finish();
     shadows.count=index;shadows.instanceMatrix.needsUpdate=true;
@@ -336,7 +377,14 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
         if(mesh){scene.remove(e.mesh);e.mesh.geometry.dispose();e.mesh.material.dispose();e.mesh=mesh;scene.add(mesh);}
         continue;
       }
-      if(e.vy!==undefined){e.vy-=7*dt;e.mesh.position.x+=e.vx*dt;e.mesh.position.z+=e.vz*dt;e.mesh.position.y=Math.max(terrainHeight(e.mesh.position.x,e.mesh.position.z)+.02,e.mesh.position.y+e.vy*dt);if(!e.fiber)e.mesh.rotation.z+=dt*6;}
+      if(e.pulse){
+        const phase=1-e.life/e.max;
+        e.mesh.scale.setScalar(e.pulse*(.28+phase*.92));
+        e.mesh.material.opacity=(1-phase)**2*(e.ring?.58:.92);
+        continue;
+      }
+      if(e.smoke)e.mesh.scale.setScalar(1+(e.max-e.life)*1.3);
+      if(e.vy!==undefined){e.vy-=(e.smoke?1.3:7)*dt;e.mesh.position.x+=e.vx*dt;e.mesh.position.z+=e.vz*dt;e.mesh.position.y=Math.max(terrainHeight(e.mesh.position.x,e.mesh.position.z)+.02,e.mesh.position.y+e.vy*dt);if(!e.fiber)e.mesh.rotation.z+=dt*6;}
       e.mesh.material.opacity=Math.min(1,e.shot?1.72*e.life/e.max:e.life*(e.fiber?10:5));
     }
     // The software view has already scheduled this frame before updating its scene.
@@ -376,6 +424,7 @@ function mountWebGLView(canvas,spawn,onLost,renderer) {
     active=false;canvas.removeEventListener('webglcontextlost',contextLost);labels.remove();
     for(const item of models.values())releaseModel(item);
     emergencyGlow.dispose();emergencyFloor.dispose();sirenLens.dispose();
+    trafficGeometry.dispose();for(const mesh of [trafficBody,trafficCabin,trafficLamps])mesh.material.dispose();
     incidents.dispose();wool.dispose();driverView.dispose();bloodMesh.dispose();pickupDisplay.dispose();crossingDisplay.dispose();city.dispose?.();
     landingMarks?.dispose();
     atmosphere?.dispose();lighting?.dispose();shadows.geometry.dispose();shadows.material.map.dispose();shadows.material.dispose();

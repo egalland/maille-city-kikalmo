@@ -236,11 +236,11 @@ test('a rocket travels before detonating once at the same point as its network h
   h.step(20);
   h.game.action('fire',true);h.game.action('fire',false);h.step(1);
   assert.ok(h.effects.some(e=>e[0]==='rocket'));
-  assert.ok(!h.effects.some(e=>e[0]==='carExplosion'));
+  assert.ok(!h.effects.some(e=>e[0]==='rocketExplosion'));
   assert.ok(!h.actions.some(e=>e.name==='fire'&&e.data.kind==='rocket'));
   h.step(28);
   const fire=h.actions.find(e=>e.name==='fire'&&e.data.kind==='rocket').data;
-  const blasts=h.effects.filter(e=>e[0]==='carExplosion');
+  const blasts=h.effects.filter(e=>e[0]==='rocketExplosion');
   assert.equal(blasts.length,1);
   assert.deepEqual(blasts[0].slice(1,3),[fire.impact.x,fire.impact.y]);
   assert.ok(fire.impact.radius>6);

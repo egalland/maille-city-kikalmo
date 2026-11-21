@@ -1,7 +1,7 @@
 import {canFireSql,canFireArgs} from './armory.js';
 import {vehicleMotionLimit} from '../public/vehicle-types.js';
 import {weaponCatalog,weaponDamageAt} from '../public/weapon-catalog.js';
-import {weaponShotShape} from '../public/weapon-patterns.js';
+import {weaponShotShape,coneContact,legacyShotgunSpread} from '../public/weapon-patterns.js';
 import {noPartnerHit} from './partners.js';
 
 const FIRE_AGE=2200, REWIND=450, PRESENTATION_DELAY=65;
@@ -36,6 +36,10 @@ export function prepareFire(data,now,validTarget){
   if(!data||typeof data.shotId!=='string'||!SHOT_ID.test(data.shotId)||typeof data.kind!=='string'||!Object.hasOwn(weaponCatalog,data.kind)||data.kind==='fist'||
       !Number.isSafeInteger(data.firedAt)||data.firedAt<now-FIRE_AGE||data.firedAt>now+250)return null;
   const weapon=weaponCatalog[data.kind],shape=weaponShotShape(data.kind),primary=validateRay(data,weapon.range);
+  if(shape.cone&&data.rays!==undefined){
+    if(!Array.isArray(data.rays)||data.rays.length!==legacyShotgunSpread.length)return null;
+    delete shape.cone;delete shape.limit;shape.spreads=legacyShotgunSpread;
+  }
   if(!primary)return null;
   const packetRays=data.rays===undefined?[data]:data.rays;
   const count=shape.chain?1+shape.limit:data.kind==='chime'?1:shape.spreads.length;
@@ -159,6 +163,10 @@ function eligibleContact(packet,p,muzzle,usedRays){
   const {shot,weapon,shape,rays}=packet;
   const margin=p.car?2.55:1.38;
   if(Math.abs(p.lift-shot.lift)>(p.car?3.4:2.6))return null;
+  if(shape.cone){
+    const contact=coneContact(shot,p,shape.cone,weapon.range,p.car?.95:.36);
+    return contact?{max:Math.ceil(weaponDamageAt(shot.kind,contact.distance)*contact.weight)}:null;
+  }
   if(shot.kind==='chime'){
     const ray=chimeContact(shot,p,muzzle,margin,shape,usedRays);
     return ray===null?null:{ray,max:weapon.damage};
@@ -180,7 +188,9 @@ export function recordFire(stmts,q,room,id,name,packet,tracks,actor,now){
   const fired=clamp(shot.firedAt,now-REWIND,now);
   const past=Number.isFinite(track.current.x)&&track.current.at<now?[...track.past,track.current]:track.past;
   const history={...track,past,current:spatial(actor,now)};
-  const shooter=atTime(history,fired),muzzle=shooter.car?1.8:.35;
+  const shooter=atTime(history,fired),cannon=shot.kind==='tankShell';
+  if(cannon&&(!shooter.car||actor.vehicle?.id!==shooter.car||actor.vehicle.type!=='tank'))return;
+  const muzzle=cannon?3.05:shooter.car?1.8:.35;
   if(!Number.isFinite(shooter.x+shooter.y)||distance(shot,shooter)>muzzle+(shooter.car?3.8:2)||
       Math.abs(shot.lift-shooter.lift)>2.2)return;
   // All direct rays start at the muzzle for their own bearing. Chain segments
@@ -214,7 +224,8 @@ export function recordFire(stmts,q,room,id,name,packet,tracks,actor,now){
   // The materialized gate freezes the receipt decision before inserting any row.
   // A retry with a modified list cannot append a hit; the whole trigger is atomic.
   stmts.push(q(`WITH fresh AS MATERIALIZED (
-    SELECT 1 WHERE ${canFireSql} AND NOT EXISTS (SELECT 1 FROM mc_events WHERE room=? AND player=? AND op=?)
+    SELECT 1 WHERE ${cannon?"EXISTS (SELECT 1 FROM mc_items WHERE room=? AND kind='vehicle' AND item=? AND owner=? AND json_extract(data,'$.type')='tank')":canFireSql}
+    AND NOT EXISTS (SELECT 1 FROM mc_events WHERE room=? AND player=? AND op=?)
     AND NOT EXISTS (SELECT 1 FROM mc_events WHERE room=? AND player=? AND type='shot' AND at>=?
       AND abs(json_extract(data,'$.firedAt')-?)<CASE WHEN json_extract(data,'$.kind')=? THEN ? ELSE 95 END))
     INSERT INTO mc_events (room,player,op,name,type,data,at)
@@ -222,6 +233,6 @@ export function recordFire(stmts,q,room,id,name,packet,tracks,actor,now){
     FROM fresh CROSS JOIN json_each(?)
     WHERE json_extract(value,'$.type')<>'hit' OR ${noPartnerHit("json_extract(value,'$.data.target')")}
     ORDER BY CAST(key AS INTEGER)`,
-    ...canFireArgs(room,id,weapon,shot.firedAt),room,id,shotOp,room,id,now-FIRE_AGE-1300,shot.firedAt,shot.kind,Math.floor(weapon.interval*900),
+    ...(cannon?[room,shooter.car,id]:canFireArgs(room,id,weapon,shot.firedAt)),room,id,shotOp,room,id,now-FIRE_AGE-1300,shot.firedAt,shot.kind,Math.floor(weapon.interval*900),
     room,id,name,now,JSON.stringify(rows),room,id));
 }

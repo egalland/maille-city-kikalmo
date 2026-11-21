@@ -1,5 +1,5 @@
 import {vehicleSpec} from './vehicle-types.js';
-import {weaponCatalog} from './weapon-catalog.js';
+import {isHeavyShot,weaponCatalog} from './weapon-catalog.js';
 
 export function chassisHealth(value){return Number.isFinite(value)?Math.max(0,Math.min(100,value)):100;}
 export function chassisStage(value){
@@ -14,13 +14,20 @@ export function enginePower(value){
 export function chassisGrip(value){return .76+.24*chassisHealth(value)/100;}
 export const ignitionHealth=16;
 export const meleeWearFloor=42;
-export function chassisDamage(type,{cause,speed,weapon,part,swingKind}){
+export function armoredHull(type){return type==='tank'||type==='armored';}
+export function chassisDamage(type,{cause,speed,weapon,part,swingKind,tankRam}){
+  if(cause==='weapon'&&isHeavyShot(weapon)){
+    const direct=part==='engine',tank=type==='tank',armored=type==='armored';
+    if(weapon==='tankShell')return direct?(tank?32:armored?61:180):(tank?15:armored?25:75);
+    return direct?(tank?9:armored?28:145):(tank?4:armored?12:48);
+  }
+  if(cause==='crash'&&tankRam&&speed>=1.45)return type==='tank'?8:type==='armored'?25:135;
   const mass=vehicleSpec(type).mass;
   const vulnerability=Math.max(.60,Math.min(1.25,(1350/mass)**.24));
   if(cause==='melee')return swingKind==='kick'?2:1;
   if(cause==='weapon'){
     if(!Object.hasOwn(weaponCatalog,weapon)||weapon==='fist')return 0;
-    const factor=weapon==='rocket'?(part==='engine'?1.04:.64):part==='engine'?.50:part==='glass'?.09:(partMask[part]&30)?.10:.31;
+    const factor=part==='engine'?.50:part==='glass'?.09:(partMask[part]&30)?.10:.31;
     return Math.max(1,Math.round(weaponCatalog[weapon].damage*factor*vulnerability));
   }
   if(cause!=='crash'||!Number.isFinite(speed))return 0;
@@ -31,7 +38,7 @@ export function chassisDamage(type,{cause,speed,weapon,part,swingKind}){
   }
   if(speed<5.5)return 0;
   const closing=Math.min(85,speed)-4.5;
-  return Math.min(76,Math.max(1,Math.round((.12*closing+.037*closing**2)*vulnerability)));
+  return Math.min(76,Math.max(1,Math.round((.12*closing+.037*closing**2)*vulnerability*(type==='tank'?.18:type==='armored'?.46:1))));
 }
 
 export const partMask={body:0,engine:0,glass:1,frontLeft:2,frontRight:4,rearLeft:8,rearRight:16,
@@ -46,6 +53,7 @@ export const blastRadius=8.5;
 export function blastDamage(distance,max=52){
   return Math.max(0,Math.round(max*(1-distance/blastRadius)));
 }
+export const vehicleBlastDamage=(type,distance)=>blastDamage(distance,type==='tank'?8:type==='armored'?25:65);
 export function chassisHealthAt(wear,now){
   const hp=chassisHealth(wear?.hp);
   if(!wear?.fireAt)return hp;
@@ -94,9 +102,12 @@ export function wheelPart(front,right){return (front?2:8)*(right?2:1);}
 
 // Bodywork can crumple or a tyre can fail without starting an engine fire.
 export function incendiaryImpact(hit) {
-  return hit.cause==='blast'||hit.part==='engine'||hit.cause==='crash'&&hit.speed>=27;
+  return instantImpact(hit)||hit.cause==='blast'||hit.part==='engine'&&!armoredHull(hit.type)||hit.cause==='crash'&&hit.speed>=27;
 }
 
+export function instantImpact(hit){
+  return hit.cause==='weapon'&&isHeavyShot(hit.weapon)||hit.cause==='crash'&&!!hit.tankRam;
+}
 export function nextChassis(previous,hit,amount,now){
   const start=chassisHealth(previous?.hp);
   const floor=hit.cause==='melee'?Math.min(start,meleeWearFloor):0;
@@ -104,5 +115,5 @@ export function nextChassis(previous,hit,amount,now){
   const fireAt=previous?.fireAt||(hp<=ignitionHealth&&incendiaryImpact(hit)?now:0);
   const disabledAt=hp===0&&!fireAt?now:0;
   return {...hit,hp,...(previous?.repairedAt?{repairedAt:previous.repairedAt}:{}),parts:(previous?.parts||0)|(partMask[hit.part]||0),
-    disabledAt,fireAt,fireHp:fireAt?(previous?.fireHp||hp||1):0,explodeAt:fireAt?(previous?.explodeAt||fireAt+vehicleBurnDelay):0};
+    disabledAt,fireAt,fireHp:fireAt?(previous?.fireHp||hp||1):0,explodeAt:hp===0&&instantImpact(hit)?now:fireAt?(previous?.explodeAt||fireAt+vehicleBurnDelay):0};
 }

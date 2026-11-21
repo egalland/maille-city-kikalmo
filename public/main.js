@@ -240,11 +240,13 @@ function onState(next){
   $('#carSpeed').textContent=(state.speed||0)+' km/h'+(state.gear==null||state.piloting||state.train?'':' · '+(state.gear<0?'R':'D'+state.gear));
   $('#vehicleName').textContent=state.vehicleName||'Au volant';
   const driveHint=$('#parkingHint'),atPlatform=state.train&&state.railStation&&state.speed===0;
-  driveHint.hidden=!state.canPark&&!state.train;
+  driveHint.hidden=!state.canPark&&!state.train&&state.cannon==null;
   driveHint.textContent=state.train?(atPlatform?state.railStation+' · E pour descendre':state.railDestination+' · '+state.railDistance+' m'):
-    'E · Se garer et sortir';
+    state.cannon==null?'E · Se garer et sortir':state.cannon>.15?'Canon · '+state.cannon.toFixed(1)+' s':'Canon prêt · Clic gauche ou F';
   const condition=$('#chassisStatus'),integrity=Math.round(state.vehicleHealth??100);
   $('#driveNitro').hidden=state.nitro==null;
+  $('#driveCannon').hidden=state.cannon==null;
+  $('#driveCannon').disabled=state.cannon>.15||integrity===0;
   condition.textContent=state.train?(state.passenger?'Voyage en train':'↑ Traction · ↓ Frein · R Inverser'):integrity===0?'En panne':
     'Carrosserie · '+integrity+' %'+(state.nitro==null?'':' · Nitro '+state.nitro+' % · J');
   const wear=chassisStage(integrity);
@@ -307,6 +309,7 @@ if(!sectorTransfer){
 $('#openAvatar').onclick=()=>panels.open('settings');
 $('#healHud').onclick=()=>game.action('heal');
 $('#guard').onclick=()=>game.action('guard');
+$('#driveCannon').onclick=()=>{game.action('touchFire');game.action('touchFire',false);};
 $('#heal').onclick=()=>game.action('heal');
 editor=installHudEditor({scene:$('#scene'),onEdit:()=>{
   if(panels?.isOpen())panels.close();releaseTouchInputs();game.setPaused(true);

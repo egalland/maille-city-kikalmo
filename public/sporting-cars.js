@@ -89,6 +89,16 @@ function wheels(art,axles,r,track,width,racing){
     const wheel=art.section('roue',[x,r,track*s]),p=wheel.parts,z=s*width/2;
     wheel.r=r;wheel.front=x>0;
     disc(p,[0,0,0],r,width,yarn.tyre);
+    disc(p,[0,0,z*.85],r*.94,.026,'#363a3e');
+    for(let i=0;i<34;i++){
+      const a=i*Math.PI/17,begin=[Math.cos(a)*r*.996,Math.sin(a)*r*.996,-width*.41];
+      const end=[Math.cos(a+.027)*r*.996,Math.sin(a+.027)*r*.996,width*.41];
+      art.rod(p,begin,end,.0063,i%2?'#414445':'#242727');
+    }
+    for(let i=0;i<16;i++){
+      const a=i*Math.PI/8;
+      disc(p,[Math.cos(a)*r*.59,Math.sin(a)*r*.59,z+s*.024],.012,.009,'#303337');
+    }
     disc(p,[0,0,z],r*.79,.013,racing?yarn.silver:linen);
     disc(p,[0,0,z+s*.012],r*.70,.012,racing?lining:petrol);
     disc(p,[0,0,z+s*.020],r*.53,.014,racing?'#756d72':'#c3aea0');
@@ -197,5 +207,15 @@ export function createSportingCarRecipe(type,paint,art){
   const chassis=art.section('carrosserie'),racing=type==='supercar';
   const shape=(racing?aiguille:meridienne)(chassis.parts,art,paint);
   cockpit(chassis.parts,art,shape.seats3D,racing?petrol:leather,racing?'#d78765':linen);
+  for(const side of [-1,1]){
+    const rear=racing?-2.23:-2.34,tail=racing?.332:.392,width=shape.track;
+    for(let i=0;i<4;i++){
+      const z=side*(width*.46+i*.106);
+      art.rod(chassis.parts,[rear+.11,tail,z],[rear+.175,tail+.13,z],.021,'#34373a');
+    }
+    const tailpipe=side*(racing?.52:.49);
+    art.rod(chassis.parts,[rear+.145,tail+.09,tailpipe],[rear-.022,tail+.09,tailpipe],.052,yarn.silver);
+    art.rod(chassis.parts,[rear-.026,tail+.09,tailpipe],[rear-.038,tail+.09,tailpipe],.041,'#161a1b');
+  }
   return {chassis,seats3D:shape.seats3D,wheels:wheels(art,shape.axles,shape.r,shape.track,shape.width,racing)};
 }

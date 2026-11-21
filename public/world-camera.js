@@ -21,7 +21,7 @@ export function createWorldCamera(spawn){
       (a,b)=>terrainHeight(a,b,p.angle,floor);
     const base=groundAt(x,y),offset=(p.lift||0)-(swimming?.55:0);
     const focus=offset+(car?Math.max(1.32,spec.height*.77):1.17);
-    const outdoorHeight=(car?Math.max(2.92,spec.height+1.05):2.18)+pitch*2.8;
+    const outdoorHeight=(car?Math.max(2.92,spec.height+1.05)+(road?Math.min(1.1,Math.abs(speed)*.042):0):2.18)+pitch*2.8;
     const height=offset+(indoors?1.9+Math.max(-.25,Math.min(.32,pitch)):outdoorHeight);
     const far=cameraConfig?.mode==='near'?5.1:road&&car.type!=='train'?9.05:8.15;
     const reach=car?far+Math.max(0,spec.halfLength-2)*1.24+(airborne?2.8:0)+Math.min(heli?5.5:2.25,Math.abs(speed)*.065):indoors?1.75:5.25;
@@ -45,7 +45,7 @@ export function createWorldCamera(spawn){
     const endGround=cameraGround(x-c*reach,y-s*reach);
     const lift=base+focus+(endGround-base+height+extra-focus)*arm/reach+.12;
     const shake=(vehicleImpact||0)*Math.sin(time*35)*.19;
-    const look=road?Math.min(3.35,.55+arm*.32):car?5.8:indoors?2.15:4.15;
+    const look=road?Math.min(8.6,.60+arm*.33+Math.abs(speed)*.12):car?5.8:indoors?2.15:4.15;
     return {x:x-c*arm,y:y-s*arm,z:lift+shake,
       aimX:x+c*look,aimY:y+s*look,aimZ:groundAt(x+c*look,y+s*look)+focus+pitch*.72,
       reset,ground:base,arm};

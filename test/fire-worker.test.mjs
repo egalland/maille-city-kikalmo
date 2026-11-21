@@ -130,18 +130,17 @@ test('bad origins, expired shots and impossible fan rays are discarded; off-axis
   assert.equal(old.events.at(-1).data.firedAt,undefined);
 });
 
-test('fan, arc, radius and chained contacts survive the canonical protocol with weapon-specific caps',async t=>{
+test('cone, arc, radius and chained contacts survive the canonical protocol with weapon-specific caps',async t=>{
   const w=world(t),a=await w.player(0,0);
   for(const weapon of ['shotgun','boomerang','pompom','chime'])await equipTestFirearm(w.DB,a.id,weapon);
   const direct=await w.player(10,0),side=await w.player(10,3),behind=await w.player(10,7);
   const polar=(angle,d)=>({x:Math.cos(angle)*d,y:Math.sin(angle)*d});
   const fan=(angle,length)=>({...polar(angle,.35),angle,length});
-  const gun='shotgun',spread=weaponShotShape(gun).spreads,foePos=polar(spread[1],20);
-  const fanTarget=await w.player(foePos.x,foePos.y);
+  const gun='shotgun',radius=weaponShotShape(gun).cone,conePos=polar(radius*.79,16);
+  const coneTarget=await w.player(conePos.x,conePos.y);
   w.advance(300);
-  const rays=spread.map((angle,i)=>fan(angle,i===0?8.98:i===1?18.98:22));
-  let report=await w.fire(a,w.packet([w.hit(direct),w.hit(fanTarget)],{...rays[0],rays,kind:gun}));
-  assert.deepEqual(report.events.filter(e=>e.type==='hit').map(e=>e.data.target),[direct.id,fanTarget.id]);
+  let report=await w.fire(a,w.packet([w.hit(direct),w.hit(coneTarget),w.hit(side)],{kind:gun}));
+  assert.deepEqual(report.events.filter(e=>e.type==='hit').map(e=>e.data.target),[direct.id,coneTarget.id]);
   w.advance(1200);
   const chain=[fan(0,9.05),{x:9.4,y:0,angle:Math.atan2(3,.6),length:Math.hypot(3,.6)}];
   report=await w.fire(a,w.packet([w.hit(direct,{damage:99}),w.hit(side,{damage:99})],{...chain[0],rays:chain,kind:'boomerang'}));
@@ -155,6 +154,33 @@ test('fan, arc, radius and chained contacts survive the canonical protocol with 
   w.advance(1100);
   report=await w.fire(a,w.packet([w.hit(listen)],{kind:'chime',length:10}));
   assert.equal(report.events.at(-1).data.target,listen.id);
+});
+
+test('a tank cannon uses the claimed vehicle, has its own cooldown, and a direct rocket destroys a civilian chassis only',async t=>{
+  const w=world(t),a=await w.player(0,0),tank={id:'moulin-test-tank',type:'tank',x:0,y:0,angle:0,occupied:true};
+  const shell=()=>w.packet([],{kind:'tankShell',x:2.5,length:20});
+  assert.equal((await w.fire(a,shell())).events.length,0);
+  await w.api('sync',a,{state:w.state(0,0,{vehicle:tank})});
+  assert.equal((await w.fire(a,shell())).events.filter(e=>e.type==='shot').length,0);
+  await w.api('sync',a,{state:w.state(0,0,{vehicle:tank}),events:[{op:'claim-tank',type:'vehicle',data:tank}]});
+  w.advance(400);
+  const first=await w.fire(a,shell());
+  assert.equal(first.events.find(e=>e.type==='shot')?.data.kind,'tankShell');
+  w.advance(400);
+  const second=await w.fire(a,shell());
+  assert.equal(second.events.filter(e=>e.type==='shot').length,1);
+  await w.api('sync',a,{state:w.state(0,0,{vehicle:null})});
+  await equipTestFirearm(w.DB,a.id,'rocket');
+  for(const type of ['compact','tank','armored']){
+    w.advance(3000);
+    const fire=w.packet([],{kind:'rocket',length:10});
+    const d={id:'test-'+type,type,x:10.35,y:0,angle:0,cause:'weapon',part:'engine',weapon:'rocket',shotId:fire.shotId};
+    const hit=await w.api('sync',a,{events:[{op:fire.shotId,type:'fire',data:fire},{op:'damage-'+type,type:'vehicleDamage',data:d}]});
+    const wear=hit.events.find(e=>e.data.id===d.id)?.data;
+    assert.ok(wear,JSON.stringify(hit.events));
+    if(type==='compact'){assert.equal(wear.hp,0);assert.equal(wear.explodeAt,w.now);}
+    else{assert.ok(wear.hp>=70);assert.equal(wear.explodeAt,0);}
+  }
 });
 
 test('steady misses and targeted fan uploads use only two storage round trips on a warm world',async t=>{

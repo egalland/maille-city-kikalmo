@@ -953,7 +953,7 @@ export function createCanvasView(canvas,spawn,onNotice){
   function effect(kind,x,y,angle=0,len=0,colors=[],lift=0,age=0){
     const debris=propDebris(kind,colors?.type,angle);
     if(effects.length>60)effects.shift();
-    effects.push({kind,x,y,angle,len,lift:lift+(debris?.height||0),born:clock-age,duration:kind==='rocket'?rocketFlightTime(len):debris?.lifetime,barrel:colors?.barrel,flash:colors?.flash,drop:colors?.drop,
+    effects.push({kind,x,y,angle,len,lift:lift+(debris?.height||0),born:clock-age,duration:kind==='rocket'?rocketFlightTime(len,colors?.barrel):debris?.lifetime,barrel:colors?.barrel,flash:colors?.flash,drop:colors?.drop,
       firstAge:colors?.barrel?age:null,
       fibers:debris?.strands||(kind==='meleeImpact'?impactFibers(angle,len):null)});
   }
@@ -1251,7 +1251,7 @@ export function createCanvasView(canvas,spawn,onNotice){
       const ground=terrainHeight(e.x,e.y);
       const roadOffset=(e.isCar&&(isAircraft(e.type)||e.type==='train')?baseTerrainHeight(e.x,e.y):terrainHeight(e.x,e.y,e.angle))-ground;
       const lift=swimmer?swimGround(e.x,e.y)-terrainHeight(e.x,e.y)-.67:(e.lift||0)+roadOffset,base=at(e.x,e.y,lift),high=e.isCar?vehicleSpec(e.type).height:1.78,top=at(e.x,e.y,lift+high);
-      if(!base||!top||base.d>(e.isCar?160:96)||base.d<.61)continue;
+      if(!base||!top||base.d>(e.isCar?(state.car?345:165):96)||base.d<.61)continue;
       const ph=base.y-top.y;if(ph<2||base.x<-ph*2||base.x>w+ph*2)continue;
       // Collinear urban façades can hide traffic even though the shared simulation still runs behind them.
       if(!e.self&&base.d>4){const d=Math.hypot(e.x-camX,e.y-camY);if(cameraDistance(camX,camY,camH-terrainHeight(camX,camY),Math.atan2(e.y-camY,e.x-camX),d,lift+high*.78,destroyed)<d-1.5)continue;}
@@ -1262,6 +1262,13 @@ export function createCanvasView(canvas,spawn,onNotice){
         if(shadow&&!swimmer){g.fillStyle='rgba(62,49,64,.25)';g.beginPath();g.ellipse(shadow.x,shadow.y-1,Math.max(1,wid*shadowScale),Math.max(1,wid*.2*shadowScale),0,0,tau);g.fill();}
         const theta=Math.atan2(e.y-camY,e.x-camX)-(e.angle||0);
         if(e.isCar){
+          if(e.farTraffic){
+            const half=Math.max(2,ph*(.32+.48*Math.abs(Math.sin(theta))));
+            g.fillStyle='#65737c';g.fillRect(base.x-half,base.y-ph*.64,half*2,ph*.48);
+            g.fillStyle='#3f505a';g.fillRect(base.x-half*.69,base.y-ph*.93,half*1.38,ph*.33);
+            if(Math.cos(theta)<0){g.fillStyle='#fff2c3';g.fillRect(base.x-half*.82,base.y-ph*.46,half*1.64,Math.max(1,ph*.08));}
+            return;
+          }
           const slope=terrainGradient(e.x,e.y,e.angle);
           g.save();g.translate(base.x,base.y);g.rotate(-Math.atan(-fy*slope.x+fx*slope.y));drawCanvasCar(g,e,0,0,ph,time,theta);g.restore();
           if(e.siren)for(const [side,color] of emergencyColors.entries()){
@@ -1323,7 +1330,8 @@ export function createCanvasView(canvas,spawn,onNotice){
     for(let i=effects.length-1;i>=0;i--){const e=effects[i];
       if(e.firstAge!=null){e.born=time-e.firstAge;e.firstAge=null;}
       const age=time-e.born;
-      const duration=e.duration??(e.fibers?fiberLifetime:e.kind==='burst'?.55:e.kind==='carExplosion'?1.35:effectDuration(e.kind));
+      const heavy=e.kind==='shellExplosion'?1.75:e.kind==='rocketExplosion'?1.32:0;
+      const duration=e.duration??(heavy?2.3:e.fibers?fiberLifetime:e.kind==='burst'?.55:e.kind==='carExplosion'?1.35:effectDuration(e.kind));
       if(age>duration){effects.splice(i,1);continue;}
       if(e.fibers){
         const height=terrainHeight(e.x,e.y)+e.lift;
@@ -1340,12 +1348,19 @@ export function createCanvasView(canvas,spawn,onNotice){
           g.quadraticCurveTo(projected[1].x,projected[1].y,projected[2].x,projected[2].y);g.stroke();
         }
         g.restore();
-      }else if(e.kind==='carExplosion'){
+      }else if(e.kind==='carExplosion'||heavy){
         const pp=at(e.x,e.y,.8+e.lift+age*.65);if(!pp)continue;
-        g.save();g.globalAlpha=Math.min(1,(1.35-age)*2.2);
-        for(let j=0;j<19;j++){
-          const a=j*2.399,spread=(.30+age*(1.9+j%4*.4))*f/pp.d;
-          const r=(.26+age*.72)*f/pp.d;
+        g.save();g.globalAlpha=Math.min(1,(duration-age)*2.2);
+        const extent=heavy||1;
+        if(heavy&&age<.59){
+          const ring=f/pp.d*(.8+age*16)*extent;
+          g.strokeStyle='#ffb470';g.lineWidth=Math.max(1,f*.10/pp.d);g.globalAlpha=1-age/.59;
+          g.beginPath();g.ellipse(pp.x,pp.y+f*.46/pp.d,ring,ring*.46,0,0,tau);g.stroke();
+          g.globalAlpha=Math.min(1,(duration-age)*2.2);
+        }
+        for(let j=0;j<(heavy?33:19);j++){
+          const a=j*2.399,spread=(.30+age*(1.9+j%4*.4))*f/pp.d*extent;
+          const r=(.26+age*.72)*f/pp.d*extent;
           g.fillStyle=age<.42?['#ffe091','#e9874d','#d75343'][j%3]:['#554650','#806765','#6b6067'][j%3];
           g.beginPath();g.ellipse(pp.x+Math.cos(a)*spread,pp.y+Math.sin(a)*spread*.68,r,r*.82,0,0,tau);g.fill();
         }g.restore();

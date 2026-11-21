@@ -51,9 +51,9 @@ test('the pump is strongest up close, the scoped rifle holds distance and a rock
   assert.ok(weaponDamageAt('shotgun',3)>weaponDamageAt('marksman',3));
   assert.ok(weaponDamageAt('shotgun',20)<weaponDamageAt('pistol',20));
   assert.ok(weaponDamageAt('marksman',65)>weaponDamageAt('marksman',10));
-  const direct=at('direct',8),splash=at('splash',8,4),far=at('far',8,8);
+  const direct=at('direct',8),splash=at('splash',8,4),far=at('far',8,11);
   const result=resolveWeaponShot('rocket',0,angle=>shot(angle,direct),[direct,splash,far],()=>true);
-  assert.equal(result.impact.radius,7.2);
+  assert.equal(result.impact.radius,9.5);
   assert.deepEqual(result.hits.map(h=>h.target.id),['direct','splash']);
   assert.ok(result.hits[0].damage>result.hits[1].damage);
 });

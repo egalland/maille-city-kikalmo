@@ -1,6 +1,5 @@
 import {cleanRoadCoast,sampleRoadCoast} from '../public/road-coast.js';
 import {armorySchema,openArmory,readArmory,privateAmmo} from './armory.js';
-import {moulinFleet} from '../public/moulin-garage.js';
 import {isServiceUnit} from '../public/service-depots.js';
 import {reportSchema,reportPlayer} from './social.js';
 import {withJacket} from '../public/outfit-shop.js';
@@ -15,7 +14,7 @@ import {validFlightPath,sampleAutorotation,flightSampleMs} from '../public/autor
 import {airfields,isAircraft,flightCeiling} from '../public/airfield.js';
 import {isVehicleType,vehicleSpec,isTrain} from '../public/vehicle-types.js';
 import {railTrain,validatedRailPose,atRailStation,autonomousRail} from '../public/enfer-rail.js';
-import {chassisDamage,partMask,incendiaryImpact,ignitionHealth,meleeWearFloor,vehicleBurnDelay,blastRadius,blastDamage} from '../public/vehicle-damage.js';
+import {chassisDamage,partMask,incendiaryImpact,instantImpact,ignitionHealth,meleeWearFloor,vehicleBurnDelay,blastRadius,vehicleBlastDamage} from '../public/vehicle-damage.js';
 import {meleeMoves} from '../public/melee-moves.js';
 import {cleanTrafficPacket} from '../public/traffic-sync.js';
 import {normalizeAppearance} from '../public/kikalmo-schema.js';
@@ -196,6 +195,10 @@ function playerState(raw,now,room,previous) {
     if(isAircraft(result.vehicle.type))Object.assign(result.vehicle,{lift:result.lift||0,
       bank:num(s.vehicle.bank,0,-.68,.68),carPitch:num(s.vehicle.carPitch,0,-.42,.42)});
     for(const k of ['brake','headlamps','fare'])if(typeof s.vehicle[k]==='boolean')result.vehicle[k]=s.vehicle[k];
+    if(result.vehicle.type==='tank'){
+      if(Number.isFinite(s.vehicle.turretAngle))result.vehicle.turretAngle=num(s.vehicle.turretAngle,0,-Math.PI,Math.PI);
+      if(Number.isFinite(s.vehicle.gunPitch))result.vehicle.gunPitch=num(s.vehicle.gunPitch,0,-.15,.32);
+    }
     if(tunable(result.vehicle.type)&&tuningBits(s.vehicle.tune))result.vehicle.tune=tuningBits(s.vehicle.tune);
   }
   else result.vehicle=null;
@@ -227,7 +230,7 @@ function eventData(type,raw,now) {
         return damage>0?{...prop,cause:'weapon',weapon:d.weapon,damage}:null;
       }
       if(d.cause==='traffic' && Number.isFinite(d.speed))
-        return {...prop,cause:'traffic',speed:num(d.speed,0,0,70),damage:Math.round(num(d.damage,0,0,150))};
+        return {...prop,cause:'traffic',speed:num(d.speed,0,0,70),damage:Math.round(num(d.damage,0,0,170))};
       return null;
     }
     case 'melee':
@@ -516,7 +519,7 @@ function vehicleImpact(raw,actor,previous){
   const distance=Math.hypot(x-actor.x,y-actor.y);
   if(cause==='blast'){
     if(!key(blast)||id===blast||!Number.isFinite(range)||range<0||range>blastRadius||distance>145)return null;
-    const damage=blastDamage(range,65);
+    const damage=vehicleBlastDamage(type,range);
     return damage?{id,type,cause,blast,x:num(x),y:num(y),angle:num(angle,0,-7,7),part,damage}:null;
   }
   if(cause==='weapon'){
@@ -525,10 +528,12 @@ function vehicleImpact(raw,actor,previous){
     if(!Object.hasOwn(meleeMoves,swingKind)||!Number.isSafeInteger(swingAt)||actor.vehicle||
       distance>vehicleSpec(type).halfLength+meleeMoves[swingKind].reach+1.1)return null;
   }else if(cause!=='crash'||distance>15||!(actor.vehicle||previous.vehicle))return null;
-  const damage=chassisDamage(type,{cause,speed,weapon,part,swingKind});
-  return damage?{id,type,cause,x:num(x),y:num(y),angle:num(angle,0,-7,7),part,damage,...(cause==='melee'?{swingAt,swingKind}:{}),...(cause==='crash'?{speed:num(speed,0,0,85)}:{})}:null;
+  const tankRam=cause==='crash'&&Number.isFinite(speed)&&actor.vehicle?.type==='tank'&&id!==actor.vehicle.id;
+  const damage=chassisDamage(type,{cause,speed,weapon,part,swingKind,tankRam});
+  return damage?{id,type,cause,x:num(x),y:num(y),angle:num(angle,0,-7,7),part,damage,...(cause==='weapon'?{weapon}:{}),...(cause==='melee'?{swingAt,swingKind}:{}),...(cause==='crash'?{speed:num(speed,0,0,85),...(tankRam?{tankRam:true}:{})}:{})}:null;
 }
 function vehicleDamageStatement(q,{room,id,op,name,data,now},guard){
+  const instant=Number(instantImpact(data));
   const ignite=`(coalesce(json_extract(old,'$.fireAt'),0)>0 OR (next_hp<=${ignitionHealth} AND ignition=1))`;
   const blastGuard=data.cause==='blast'?` AND EXISTS (
       SELECT 1 FROM mc_items source
@@ -552,13 +557,13 @@ function vehicleDamageStatement(q,{room,id,op,name,data,now},guard){
     '$.disabledAt',CASE WHEN next_hp=0 AND NOT ${ignite} THEN ? ELSE 0 END,
     '$.fireAt',CASE WHEN ${ignite} THEN coalesce(nullif(json_extract(old,'$.fireAt'),0),?) ELSE 0 END,
     '$.fireHp',CASE WHEN ${ignite} THEN coalesce(nullif(json_extract(old,'$.fireHp'),0),max(1,next_hp)) ELSE 0 END,
-    '$.explodeAt',CASE WHEN ${ignite} THEN
+    '$.explodeAt',CASE WHEN next_hp=0 AND ${instant}=1 THEN ? WHEN ${ignite} THEN
       coalesce(nullif(json_extract(old,'$.explodeAt'),0),coalesce(nullif(json_extract(old,'$.fireAt'),0),?)+?) ELSE 0 END),?
   FROM item ${guard.clause||'WHERE 1'} AND hp>next_hp
     AND coalesce(nullif(json_extract(old,'$.explodeAt'),0),?+1)>?
     AND NOT EXISTS (SELECT 1 FROM mc_items WHERE room=? AND kind='vehicleRetired' AND item=? AND at>?)`+blastGuard,
     room,data.id,data.cause==='melee'?meleeWearFloor:0,data.damage,Number(incendiaryImpact(data)),room,id,op,name,JSON.stringify(data),
-    partMask[data.part]||0,now,now,now,vehicleBurnDelay,now,...guard.args,now,now,room,data.id,now,...blastArgs);
+    partMask[data.part]||0,now,now,now,now,vehicleBurnDelay,now,...guard.args,now,now,room,data.id,now,...blastArgs);
 }
 function contactGuard(type,data,actor,room,id,now){
   const kind=data.swingKind||data.kind,range=meleeMoves[kind].reach+.5+1.75;
@@ -686,13 +691,17 @@ async function sync(db,b,now,room) {
         AND json_extract(data,'$.shotId')=? AND json_extract(data,'$.id')=?)`,
         args:[room,id,'fire:'+shotId,now-2600,kind,...(data.zone?[data.x,data.y]:[]),room,id,type,now-2600,shotId,data.id]};
     }
+    if(data.tankRam||type==='propDamage'&&data.cause==='traffic'&&actor.vehicle?.type==='tank'){
+      guard={clause:"WHERE EXISTS (SELECT 1 FROM mc_items WHERE room=? AND kind='vehicle' AND item=? AND owner=? AND json_extract(data,'$.type')='tank')",
+        args:[room,actor.vehicle.id,id]};
+    }
     if(type==='propDamage'){
       if(!Number.isFinite(actor.x)||!Number.isFinite(actor.y))continue;
       const distance=Math.hypot(actor.x-data.x,actor.y-data.y);
       if(data.cause==='traffic'){
         if(!actor.vehicle||distance>16)continue;
         const spec=vehicleSpec(actor.vehicle.type);
-        data.damage=Math.min(data.damage,vehiclePropDamage(Math.min(data.speed,Math.max(spec.forward,spec.reverse)),spec.halfLength));
+        data.damage=Math.min(data.damage,vehiclePropDamage(Math.min(data.speed,Math.max(spec.forward,spec.reverse)),spec.halfLength,actor.vehicle.type,data.type));
         if(data.damage<=0)continue;
       }
       if(data.cause==='weapon' && distance>weaponCatalog[data.weapon].range+20)continue;
@@ -745,19 +754,17 @@ async function sync(db,b,now,room) {
         AND EXISTS (SELECT 1 FROM mc_items WHERE room=? AND kind='vehicle' AND item=? AND owner=?)
         AND NOT EXISTS (SELECT 1 FROM mc_items WHERE room=? AND kind='vehicle' AND item<>?
           AND json_extract(data,'$.parkingSlot')=? AND json_extract(data,'$.expiresAt')>?)`:'';
-      const privateStock=moulinFleet.some(car=>car.id===data.id);
-      const access=privateStock?` AND EXISTS (SELECT 1 FROM mc_moulin_claims WHERE profile=${profile})`:'';
       const parkArgs=data.parkingSlot?[data.parkingOwner,room,id,room,data.id,id,room,data.id,data.parkingSlot,now]:[];
       stmts.push(q(accept+` WHERE NOT EXISTS (
         SELECT 1 FROM mc_items i JOIN mc_members m ON m.room=i.room AND m.id=i.owner
         WHERE i.room=? AND i.kind='vehicle' AND i.item=? AND i.owner<>? AND m.seen>?
-          AND (json_extract(m.state,'$.vehicle.id')=i.item OR i.at>?)) ${flightGuard}  ${reservationGuard} ${parkGuard} ${access}
+          AND (json_extract(m.state,'$.vehicle.id')=i.item OR i.at>?)) ${flightGuard}  ${reservationGuard} ${parkGuard}
         AND NOT EXISTS (SELECT 1 FROM mc_items WHERE room=? AND item=? AND
           ((kind='vehicleRetired' AND at>?) OR (kind='vehicleDamage' AND
             ((? AND (json_extract(data,'$.hp')<=0 OR json_extract(data,'$.fireAt')>0)) OR
             coalesce(nullif(json_extract(data,'$.explodeAt'),0),json_extract(data,'$.disabledAt'),0) BETWEEN 1 AND ?))))`,
         ...values,room,data.id,id,now-GONE,now-6500,...flightArgs,room,data.id,now,Number(data.occupied),room,id,
-        ...parkArgs,...(privateStock?[room,id]:[]),room,data.id,now,Number(data.occupied),now-wreckFor));
+        ...parkArgs,room,data.id,now,Number(data.occupied),now-wreckFor));
     } else if(type==='chat'){
       stmts.push(q(accept+" WHERE (SELECT count(*) FROM mc_events WHERE room=? AND player=? AND type='chat' AND at>?)<6",...values,room,id,now-5000));
     } else if(type==='vehicleDamage'){
@@ -835,7 +842,7 @@ export async function handleApi(request, env) {
   if(['join','sync','career'].includes(operation))await sweepVehicles(env.DB,room,Date.now(),operation==='join');
   if(operation==='partners')return json(await runPartners(env.DB,b,room,Date.now(),GONE));
   if(operation==='report')return json(await reportPlayer(env.DB,b,room,Date.now()));
-  if (operation==='career') return json(await runCareer(env.DB,b,room,Date.now(),env.MAILLE_MOULIN_KEY));
+  if (operation==='career') return json(await runCareer(env.DB,b,room,Date.now()));
   if (operation==='join') return join(env.DB,b,Date.now(),room);
   if (operation==='leave') {
     const release=b.roadRelease;

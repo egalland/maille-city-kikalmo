@@ -1,8 +1,7 @@
-import { weaponCatalog,weaponDamageAt } from './weapon-catalog.js';
+import { weaponCatalog,weaponDamageAt,isHeavyShot } from './weapon-catalog.js';
 
 // Aim-assist, manual shots and the fan all use the same caller-provided first-contact trace.
 const spreads={
-  shotgun:[0,-.072,.072],
   shuttle:[0,.045],
   button:[0,-.048,.048,-.096,.096],
   confetti:[0,-.10,.10,-.21,.21,-.34,.34],
@@ -12,7 +11,9 @@ const spreads={
 };
 const interactions={
   pompom:{area:3.1,limit:5},
-  rocket:{area:7.2,limit:7},
+  rocket:{area:9.5,limit:9},
+  tankShell:{area:13.5,limit:13},
+  shotgun:{cone:.16,limit:10},
   boomerang:{chain:5.1,limit:1},
   spool:{chain:3.5,limit:3},
   spark:{chain:4.8,limit:2}
@@ -20,6 +21,16 @@ const interactions={
 const straight=[0];
 export function weaponShotShape(kind){
   return {spreads:spreads[kind]||straight,...interactions[kind]};
+}
+export const legacyShotgunSpread=[0,-.072,.072];
+export function coneContact(shot,target,aperture,reach,padding=0){
+  const dx=target.x-shot.x,dy=target.y-shot.y,c=Math.cos(shot.angle),s=Math.sin(shot.angle);
+  const along=dx*c+dy*s,horizontal=dy*c-dx*s;
+  const vertical=Number.isFinite(shot.z)&&Number.isFinite(target.z)?target.z-shot.z-along*(shot.slope||0):0;
+  const side=Math.hypot(horizontal,vertical);
+  const width=Math.tan(aperture)*Math.max(.45,along)+padding;
+  if(along<-.15||along>reach+padding||side>width)return null;
+  return {distance:Math.hypot(dx,dy),weight:1-.64*Math.min(1,side/width)};
 }
 const radians=(from,to)=>Math.atan2(to.y-from.y,to.x-from.x);
 const distance=(from,to)=>Math.hypot(to.x-from.x,to.y-from.y);
@@ -33,6 +44,22 @@ export function resolveWeaponShot(kind,angle,trace,targets=[],visible,firstRay=n
     used.add(target.id);hits.push({target,damage:Math.max(1,Math.round(damage)),...(zone?{zone}:{})});
   };
   const shape=weaponShotShape(kind);
+  if(shape.cone){
+    const center=firstRay||trace(angle);
+    if(!center?.origin||!Number.isFinite(center.length))return {rays,hits,impact:null};
+    rays.push({...center,angle:center.angle??angle});
+    const ray={...center.origin,angle,slope:center.slope};
+    const candidates=targets.filter(t=>!t.stunned).map(target=>({
+      target,contact:coneContact(ray,target,shape.cone,weapon.range,.19)
+    })).filter(t=>t.contact).sort((a,b)=>a.contact.distance-b.contact.distance);
+    if(center.hit)add(center.hit,weaponDamageAt(kind,center.length));
+    for(const {target,contact} of candidates){
+      if(used.has(target.id)||!target.id||hits.length>=shape.limit)continue;
+      const bearing=radians(center.origin,target),path=trace(bearing,target);
+      if(path?.hit?.id===target.id)add(target,weaponDamageAt(kind,contact.distance)*contact.weight);
+    }
+    return {rays,hits,impact:null};
+  }
   for(const spread of shape.spreads){
     const direction=angle+spread;
     const result=(spread===0&&firstRay)||trace(direction);
@@ -48,7 +75,7 @@ export function resolveWeaponShot(kind,angle,trace,targets=[],visible,firstRay=n
   if(!(mode.area||mode.chain)||!primary)return {rays,hits,impact:null};
   let origin=tip(primary),sourceId=primary.hit?.id;
   // Start visibility just outside the sampled impact surface, on the incoming side.
-  const splashSight=kind==='rocket'&&primary.surface?tip({...primary,length:Math.max(0,primary.length-.35)}):null;
+  const splashSight=isHeavyShot(kind)&&primary.surface?tip({...primary,length:Math.max(0,primary.length-.35)}):null;
   const impact=mode.area?{...origin,radius:mode.area}:null;
   if(typeof visible!=='function'||(mode.chain&&!primary.hit))return {rays,hits,impact};
   for(let i=0;i<mode.limit;i++){

@@ -1,7 +1,7 @@
 import {weaponCatalog,weaponList} from './weapon-catalog.js';
 
-const lifetimes={shot:.13,rocket:.43,fist:.18,yarn:.32,ribbon:.36,pompom:.44,confetti:.38,boomerang:.48,bubbles:.5,spool:.42,star:.36,chime:.48};
-export const rocketFlightTime=length=>Math.max(.092,length/205);
+const lifetimes={shot:.13,cone:.17,rocket:.43,fist:.18,yarn:.32,ribbon:.36,pompom:.44,confetti:.38,boomerang:.48,bubbles:.5,spool:.42,star:.36,chime:.48};
+export const rocketFlightTime=(length,kind)=>Math.max(.092,length/(kind==='tankShell'?430:205));
 const byEffect=Object.fromEntries(weaponList.map(w=>[w.effect,w.palette]));
 const effectName=kind=>weaponCatalog[kind]?.effect||kind;
 export function effectDuration(kind){return lifetimes[effectName(kind)]||.17;}
@@ -26,6 +26,14 @@ export function buildShotEffect(kind,x,y,angle,length,progress=.5,barrel=false,d
     curve('#ffe8bb',2.5,9,t=>pt(len*(.38+.54*Math.sin(Math.PI*t)),(t-.5)*1.35,1.0+.13*Math.sin(Math.PI*t)));
   }else if(key==='shot'){
     line('#ffdb9a',1.45,[pt(0,0,1.03),pt(len,0,1.01+drop)]);
+  }else if(key==='cone'){
+    // A short expanding muzzle plume suggests the spread. No long pellet beams.
+    const reach=Math.min(3.65,len)*(.28+.72*u),spread=reach*.16;
+    for(let i=0;i<6;i++){
+      const a=i*Math.PI/3,side=Math.cos(a),up=Math.sin(a);
+      line(i%2?'#c89e74':'#f7cf96',2.9,[pt(reach*.30,side*spread*.24,1.03+up*spread*.24),
+        pt(reach,side*spread,1.03+up*spread+drop*reach/len)]);
+    }
   }else if(key==='rocket'){
     const tip=len*u,body=Math.max(0,tip-.76),tail=Math.max(0,body-8.5);
     const flame=Math.max(0,body-.85),height=d=>1.03+drop*d/len;

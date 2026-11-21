@@ -7,7 +7,7 @@ import {sirenTone} from './emergency-signals.js';
 const reports={
   sidearm:[4100,310,.075,.23],revolver:[3500,240,.105,.27],compact:[5300,360,.065,.20],
   shotgun:[2500,145,.19,.31],double:[2900,166,.17,.31],rifle:[4700,212,.114,.25],
-  assault:[5050,206,.103,.26],sniper:[3800,172,.175,.29],launcher:[1500,98,.26,.32],rocket:[2300,71,.52,.37]
+  assault:[5050,206,.103,.26],sniper:[3800,172,.175,.29],launcher:[1500,98,.26,.32],rocket:[2300,71,.52,.37],cannon:[5300,53,.86,.51]
 };
 export function createStreetAudio(){
   let context,master,bed,noise,roll,own,ambient,siren,enabled=false,footAt=0;
