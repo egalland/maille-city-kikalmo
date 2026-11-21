@@ -8,7 +8,7 @@ const shapes={
   confetti:[.408,.146,true],boomerang:[.198,.116,false],bubbles:[.298,.126,false],
   spool:[.272,.154,false],star:[.283,.149,false],chime:[.258,.164,false],
   needle:[.516,.092,true],shuttle:[.399,.092,true],button:[.346,.101,true],spark:[.359,.090,true],
-  service:[.262,.078,false],marksman:[.483,.106,true]
+  service:[.262,.078,false],marksman:[.483,.106,true],rocket:[.61,.176,true]
 };
 const bound=value=>Math.max(0,Math.min(1,value));
 

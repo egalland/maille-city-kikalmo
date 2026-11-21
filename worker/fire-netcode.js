@@ -1,6 +1,6 @@
 import {canFireSql,canFireArgs} from './armory.js';
 import {vehicleMotionLimit} from '../public/vehicle-types.js';
-import {weaponCatalog} from '../public/weapon-catalog.js';
+import {weaponCatalog,weaponDamageAt} from '../public/weapon-catalog.js';
 import {weaponShotShape} from '../public/weapon-patterns.js';
 import {noPartnerHit} from './partners.js';
 
@@ -166,7 +166,7 @@ function eligibleContact(packet,p,muzzle,usedRays){
   for(let i=0;i<rays.length;i++){
     if(usedRays.has(i)||distance(end(rays[i]),p)>margin)continue;
     const factor=shape.chain ? .78**i : 1;
-    return {ray:i,max:Math.round(weapon.damage*factor)};
+    return {ray:i,max:Math.round(weaponDamageAt(shot.kind,rays[i].length)*factor)};
   }
   if(shape.area){
     const d=distance(shot.impact,p);
@@ -223,5 +223,5 @@ export function recordFire(stmts,q,room,id,name,packet,tracks,actor,now){
     WHERE json_extract(value,'$.type')<>'hit' OR ${noPartnerHit("json_extract(value,'$.data.target')")}
     ORDER BY CAST(key AS INTEGER)`,
     ...canFireArgs(room,id,weapon,shot.firedAt),room,id,shotOp,room,id,now-FIRE_AGE-1300,shot.firedAt,shot.kind,Math.floor(weapon.interval*900),
-    room,id,name,now,JSON.stringify(rows),room,id,id));
+    room,id,name,now,JSON.stringify(rows),room,id));
 }

@@ -7,10 +7,10 @@ const featuredCells=new Map([
   ['0:-4','bubbles'],['-1:-5','spool'],['18:6','star'],['24:7','chime']
 ]);
 export const dropCellSize=220;
-const newArms=['service','marksman'];
+const newArms=['service','marksman','rocket'];
 const originalArms=findableWeaponIds.filter(id=>!newArms.includes(id));
 export function encodeDropId(weapon,x,y){
-  if(!findableWeaponIds.includes(weapon)||!Number.isFinite(x)||!Number.isFinite(y)||Math.abs(x)>100000||Math.abs(y)>100000)return null;
+  if((weapon!=='pistol'&&!findableWeaponIds.includes(weapon))||!Number.isFinite(x)||!Number.isFinite(y)||Math.abs(x)>100000||Math.abs(y)>100000)return null;
   return 'wp-'+weapon+':'+Math.round(x*10)+':'+Math.round(y*10);
 }
 export function decodeDropId(id){
@@ -51,9 +51,20 @@ export const authoredWeaponDrops=Object.freeze([
 ].map(([weapon,x,y])=>Object.freeze({id:encodeDropId(weapon,x,y),weapon,x,y})));
 export const enferWeaponDrops=Object.freeze([
   ['yarn',-29.4,-267.1],['smg',-43.1,-271.5],['shotgun',75.1,-280.2],
-  ['needle',-114.9,-179.5],['shuttle',134.3,-273.5],['button',-33.2,-392.2],['spark',124,-126.5]
+  ['needle',-114.9,-179.5],['shuttle',134.3,-273.5],['button',-33.2,-392.2],['spark',124,-126.5],
+  ['rocket',176,-169.1],['rocket',-1709.6,1209.6]
 ].map(([weapon,x,y])=>Object.freeze({id:encodeDropId(weapon,x,y),weapon,x,y})));
-const enferWeaponIds=new Set(enferWeaponDrops.map(p=>p.id));
+// Public footways near fast-travel stops, rail stations and the shopping area.
+export const enferAmmoDrops=Object.freeze([
+  [-14.1,-271],[61.6,-277.1],[801.8,192.3],[739.1,235.6],[-1091.4,1830.9],[-1030,1881.9],
+  [-381.5,2374],[-367.2,2450.2],[2532.8,1096.9],[2598.6,1056.9],[3420.6,2947.6],[3445.5,2871.1],
+  [4354,1491.2],[4364.4,1414.2],[3865.1,-693.7],[3899.9,-760.6],[4609.4,-1824.1],[4559.7,-1765.6],
+  [-595.2,2050.1],[-620.4,1978.5],[3089,3208.3],[3034.9,3273.2],[-235.5,608.5],[-301,647.2],
+  [476.9,357.5],[443.1,290.3],[1369.3,837],[1330.9,770.9],[409.3,1266.6],[344.3,1228.2],
+  [-1653.6,1140.9],[-23.3,-352.5],[17.9,-202.4],[-88.7,-160.9],[-64.7,-86.8],[9.2,-465.6],
+  [67.8,-406.9],[97.8,-162.8]
+].map(([x,y])=>Object.freeze({id:encodeDropId('pistol',x,y),weapon:'pistol',ammoOnly:true,x,y})));
+const enferWeaponIds=new Set([...enferWeaponDrops,...enferAmmoDrops].map(p=>p.id));
 const authoredWeaponIds=new Set(authoredWeaponDrops.map(p=>p.id));
 export function isActiveGridDrop(x,y){
   const ix=Math.floor(x/dropCellSize),iy=Math.floor(y/dropCellSize);

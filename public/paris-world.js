@@ -5,7 +5,7 @@ import {parkingLots,lotPoint,lotSpaces,parkingSign} from './enfer-parking-lots.j
 import {corridorPlans} from './enfer-corridors.js';
 import {boundarySpans} from './residential-boundaries.js';
 import {containsPoint as inRing,edgeContact} from './collision-ring.js';
-import {teammate} from './partners.js';
+import {socialMarkers} from './partners.js';
 import {careerPlaces} from './career-catalog.js';
 import {careerGoal,paintCareerNavigation} from './career-navigation.js';
 import {cityClimate} from './city-climate.js';
@@ -1217,8 +1217,8 @@ function ensureAtlas(){
   c.setTransform(atlasRatio,0,0,atlasRatio,-landBounds.minX*atlasRatio,-landBounds.minY*atlasRatio);
   drawBaseMap(c,(landBounds.minX+landBounds.maxX)/2,(landBounds.minY+landBounds.maxY)/2,Math.max(dx,dy),atlasRatio,true);
 }
-function mapView(w,h,player,full,zoom,important){
-  if(full&&zoom==='nearby')return {x:player.x,y:player.y,scale:Math.min(w/620,h/350)};
+function mapView(w,h,player,full,zoom,important,focus){
+  if(full&&(focus||zoom==='nearby'))return {x:(focus||player).x,y:(focus||player).y,scale:Math.min(w/620,h/350)};
   if(full){
     let box=landBounds;
     if(isEnfer&&zoom==='missions')box=bounds(Object.values(careerPlaces).map(p=>[p.x,p.y]),45);
@@ -1245,17 +1245,18 @@ function drawLocalMap(context,canvas,view,w,h,dpr){
   const left=tile.x-(w/2+pad)/scale,top=tile.y-(h/2+pad)/scale;
   context.drawImage(tile.source,left,top,tile.source.width/(dpr*scale),tile.source.height/(dpr*scale));
 }
-export function paintMap(canvas,player,{full=false,zoom='city',peers=[],vehicles=[],parked=[],pickups=[],tracked=null,
+export function paintMap(canvas,player,{full=false,zoom='city',focus=null,trains=[],peers=[],vehicles=[],parked=[],pickups=[],tracked=null,
   search=null,police=[],dpr=Math.min(2,globalThis.devicePixelRatio||1)}={}){
   if(!canvas||!player)return;
   const rect=canvas.getBoundingClientRect?.(),w=Math.round(rect?.width||canvas.width),h=Math.round(rect?.height||canvas.height);
   if(!w||!h)return;
   const outW=Math.round(w*dpr),outH=Math.round(h*dpr);
   if(canvas.width!==outW||canvas.height!==outH){canvas.width=outW;canvas.height=outH;}
-  const buddy=teammate(),goal=isEnfer?careerGoal():null;
-  const important=[player,buddy,goal,search,tracked].filter(p=>p&&Number.isFinite(p.x+p.y));
-  const overview=full&&zoom==='city',c=canvas.getContext('2d');
-  const v=mapView(w,h,player,full,zoom,important);
+  const relations=socialMarkers().filter(p=>Number.isFinite(p.x+p.y)),goal=isEnfer?careerGoal():null;
+  const relationIds=new Set(relations.map(p=>p.id));
+  const important=[player,...relations,...trains,goal,search,tracked].filter(p=>p&&Number.isFinite(p.x+p.y));
+  const overview=full&&zoom==='city'&&!focus,c=canvas.getContext('2d');
+  const v=mapView(w,h,player,full,zoom,important,focus);
   const ux=w*.5-v.x*v.scale,uy=h*.5-v.y*v.scale,px=x=>x*v.scale+ux,py=y=>y*v.scale+uy;
   c.setTransform(dpr,0,0,dpr,0,0);
   c.fillStyle=mapPalette.land;c.fillRect(0,0,w,h);
@@ -1267,6 +1268,11 @@ export function paintMap(canvas,player,{full=false,zoom='city',peers=[],vehicles
   const circle=(x,y,r,color,stroke)=>{
     c.beginPath();c.arc(x,y,r,0,TAU);c.fillStyle=color;c.fill();
     if(stroke){c.strokeStyle=stroke;c.lineWidth=1.7;c.stroke();}
+  };
+  const onMap=(x,y,margin=0)=>x>=margin&&x<=w-margin&&y>=margin&&y<=h-margin;
+  const markText=(label,x,y,color)=>{
+    c.save();c.font='bold 10px system-ui';c.textAlign='center';c.textBaseline='middle';
+    c.fillStyle=color;c.fillText(label,x,y+.5);c.restore();
   };
   if(search){
     const x=px(search.x),y=py(search.y),r=Math.max(full?10:0,search.radius*v.scale);
@@ -1293,7 +1299,7 @@ export function paintMap(canvas,player,{full=false,zoom='city',peers=[],vehicles
   }
   if(full){
     const short={gare:'Avenue de la Gare','trois-ponts':'Trois Arches',arche:'La Défense',etoile:'Étoile',maillot:'Maillot',neuilly:'Neuilly',concorde:'Concorde',louvre:'Louvre'};
-    const visible=destinations.filter(d=>zoom!=='missions'&&(isEnfer||d.key==='sector'||short[d.key]))
+    const visible=destinations.filter(d=>(focus||zoom!=='missions')&&(isEnfer||d.key==='sector'||short[d.key]))
       .map(d=>({x:px(d.x),y:py(d.y),label:short[d.key]||d.label,rail:d.rail}))
       .filter(p=>p.x>=4&&p.x<=w-4&&p.y>=4&&p.y<=h-4);
     const reserved=[...important,...police,...parked].map(p=>({x:px(p.x),y:py(p.y),r:9}));
@@ -1317,6 +1323,7 @@ export function paintMap(canvas,player,{full=false,zoom='city',peers=[],vehicles
     }
   } else {
     for(const vcar of vehicles){
+      if(vcar.type==='train')continue;
       const x=px(vcar.x),y=py(vcar.y);
       if(x<1||x>w-1||y<1||y>h-1)continue;
       c.fillStyle='#f3ccb0';c.save();c.translate(x,y);c.rotate(vcar.angle||0);c.fillRect(-2,-1,4,2);c.restore();
@@ -1338,14 +1345,26 @@ export function paintMap(canvas,player,{full=false,zoom='city',peers=[],vehicles
     c.fillStyle='#a9d3ff';c.fill();c.strokeStyle='#223955';c.lineWidth=1.35;c.stroke();c.restore();
   }
   for(const p of peers){
+    if(relationIds.has(p.id))continue;
     const x=px(p.x),y=py(p.y);
     if(x>=0&&x<=w&&y>=0&&y<=h)circle(x,y,3.5,'#f2a89a',yarnPalette.ink);
   }
-  if(buddy&&Number.isFinite(buddy.x+buddy.y)){
-    let x=px(buddy.x),y=py(buddy.y);
-    if(!overview){x=clamp(x,7,w-7);y=clamp(y,7,h-7);}
-    circle(x,y,6,'#6fe6f0','#173c48');
-    c.save();c.fillStyle='#183841';c.textAlign='center';c.textBaseline='middle';c.font='bold 9px system-ui';c.fillText('D',x,y+.5);c.restore();
+  for(const train of trains){
+    const x=px(train.x),y=py(train.y);
+    if(!onMap(x,y,8))continue;
+    if(focus?.id===train.id)circle(x,y,13,'#c9b0ff44','#e7d5ff');
+    c.save();c.translate(x,y);c.rotate(train.angle);
+    c.fillStyle='#e1ccff';c.beginPath();c.moveTo(12,0);c.lineTo(6,4);c.lineTo(6,-4);c.closePath();c.fill();c.restore();
+    circle(x,y,7,'#d2b7ff','#4d376e');markText(train.number,x,y,'#3c2859');
+  }
+  for(const person of relations){
+    let x=px(person.x),y=py(person.y);
+    if(!full&&person.relation==='group'){x=clamp(x,8,w-8);y=clamp(y,8,h-8);}
+    if(!onMap(x,y,7))continue;
+    if(focus?.id===person.id)circle(x,y,13,'#fff5ce44','#fff5ce');
+    const member=person.relation==='group';
+    circle(x,y,6.5,member?'#6fe6f0':'#b3e5a0','#173c48');
+    markText(member?'G':'A',x,y,'#183841');
   }
   c.save();c.translate(px(player.x),py(player.y));c.rotate(player.angle||0);c.beginPath();c.moveTo(7,0);c.lineTo(-5,5);c.lineTo(-2,0);c.lineTo(-5,-5);c.closePath();
   c.fillStyle='#a6ecd0';c.fill();c.strokeStyle='#1f423f';c.lineWidth=1.7;c.stroke();c.restore();

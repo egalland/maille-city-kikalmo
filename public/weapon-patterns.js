@@ -1,4 +1,4 @@
-import { weaponCatalog } from './weapon-catalog.js';
+import { weaponCatalog,weaponDamageAt } from './weapon-catalog.js';
 
 // Aim-assist, manual shots and the fan all use the same caller-provided first-contact trace.
 const spreads={
@@ -12,6 +12,7 @@ const spreads={
 };
 const interactions={
   pompom:{area:3.1,limit:5},
+  rocket:{area:7.2,limit:7},
   boomerang:{chain:5.1,limit:1},
   spool:{chain:3.5,limit:3},
   spark:{chain:4.8,limit:2}
@@ -37,7 +38,7 @@ export function resolveWeaponShot(kind,angle,trace,targets=[],visible,firstRay=n
     const result=(spread===0&&firstRay)||trace(direction);
     if(!result?.origin||!Number.isFinite(result.length))continue;
     const ray={...result,angle:result.angle??direction};rays.push(ray);
-    add(ray.hit,weapon.damage,ray.zone);
+    add(ray.hit,weaponDamageAt(kind,ray.length),ray.zone);
   }
   if(kind==='chime'&&rays.length){
     const length=Math.max(...rays.map(r=>r.length));

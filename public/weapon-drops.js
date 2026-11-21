@@ -1,5 +1,5 @@
 // Shared geographic positions. The IGN road layer determines which regional candidates can be reached on foot.
-import { authoredWeaponDrops, enferWeaponDrops, dropCellSize, gridDrop, isActiveGridDrop } from './drop-id.js';
+import { authoredWeaponDrops, enferWeaponDrops, enferAmmoDrops, dropCellSize, gridDrop, isActiveGridDrop } from './drop-id.js';
 import { streets,isEnfer } from './paris-data.js';
 import { vehicleSpec } from './vehicle-types.js';
 import { contactAt, moveBody, parkedCars } from './paris-world.js';
@@ -39,7 +39,7 @@ function onReachableGround(drop,segments){
   }
   return false;
 }
-const items=(isEnfer?enferWeaponDrops:authoredWeaponDrops).filter(item=>!contactAt(item.x,item.y,{...shapes,radius:.65}));
+const items=(isEnfer?[...enferWeaponDrops,...enferAmmoDrops]:authoredWeaponDrops).filter(item=>!contactAt(item.x,item.y,{...shapes,radius:.65}));
 for(const {ix,iy,segments} of roadCells.values()){
   const item=gridDrop(ix,iy);
   if(!isActiveGridDrop(item.x,item.y))continue;

@@ -31,6 +31,17 @@ function overlap(a,b){
   return Math.abs(a.x-b.x)<ah+bh&&Math.abs(a.y-b.y)<av+bv;
 }
 
+test('drivers accelerate away from an alarm but slow down facing it and still stop for pedestrian traffic',()=>{
+  const alarm={x:0,y:1.5,radius:65,until:origin+7000};
+  const outbound=run(createTrafficFlow(straight),[seed('out','east',8)],2,{alarms:[alarm]}).at(-1)[0];
+  const inbound=run(createTrafficFlow(straight),[seed('in','east',-25)],2,{alarms:[alarm]}).at(-1)[0];
+  assert.ok(outbound.speed>9);
+  assert.ok(inbound.speed<6);
+  const blocked=run(createTrafficFlow(straight),[seed('out','east',8)],5,
+    {alarms:[alarm],blockers:[{x:32,y:1.5,r:.42}]}).at(-1)[0];
+  assert.ok(blocked.speed<.2&&blocked.x+vehicleSpec(blocked.type).halfLength<32);
+});
+
 test('a train closes both barriers in advance; opposing trains hold the queue until both tracks clear',()=>{
   const site={id:'crossing',d:600,gates:[
     {x:-6,y:0,angle:Math.PI/2,width:8},{x:6,y:0,angle:-Math.PI/2,width:8}

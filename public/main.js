@@ -280,7 +280,8 @@ function onState(next){
   showEquipment();
   const hint=$('#pickupHint'),drop=state.nearPickup;
   hint.hidden=!drop;
-  if(drop)hint.textContent=drop.online===false?'Ramassage disponible à la reconnexion':weaponNames.get(drop.weapon)+' · '+Math.max(0,Math.round(drop.distance))+' m';
+  if(drop)hint.textContent=drop.online===false?'Ramassage disponible à la reconnexion':
+    (drop.ammoOnly?'Caisse de munitions':weaponNames.get(drop.weapon))+' · '+Math.max(0,Math.round(drop.distance))+' m';
 
 }
 function setName(value){const clean=net.setName(value);write('name',clean);$('#playerName').textContent=clean;}

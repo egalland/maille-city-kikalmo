@@ -6,7 +6,7 @@ import {drawWeapon} from './weapon-artwork.js';
 const patches=new Map();
 export const pickupRange=110;
 export const pickupMarkerWidth=1.54;
-export const pickupStyle=kind=>weaponCatalog[kind]?.palette;
+export const pickupStyle=kind=>weaponCatalog[kind==='ammo'?'pistol':kind]?.palette;
 export function pickupLift(time,seed){return 1.46+.025*Math.sin(time*1.7+seed);}
 export function pickupPhase(id){
   let h=2166136261;for(const c of String(id)){h^=c.charCodeAt(0);h=Math.imul(h,16777619);}return (h>>>0)%628/100;
@@ -33,7 +33,11 @@ export function pickupPatch(kind){
   c.restore();
   c.save();c.translate(60,46);c.scale(.84,.78);c.translate(-60,-46);
   pennant(c);c.strokeStyle='#e0c59a';c.lineWidth=1.45;c.setLineDash([3,3.4]);c.stroke();c.restore();
-  drawWeapon(c,kind,16,16,88,52);
+  if(kind==='ammo'){
+    c.fillStyle='#8fa59b';c.fillRect(31,28,58,30);c.fillStyle='#354b45';c.fillRect(31,35,58,5);
+    c.fillStyle='#efcd8e';
+    for(const x of [44,57,70]){c.fillRect(x,39,6,13);c.beginPath();c.moveTo(x,39);c.lineTo(x+3,34);c.lineTo(x+6,39);c.fill();}
+  }else drawWeapon(c,kind,16,16,88,52);
   c.fillStyle='#e6bf7e';c.beginPath();c.ellipse(60,76,2.1,2.1,0,0,Math.PI*2);c.fill();
   patches.set(kind,canvas);return canvas;
 }

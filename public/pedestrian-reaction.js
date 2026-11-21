@@ -1,13 +1,16 @@
 import {motionSeed} from './locomotion-pose.js';
 
-export function reactionTo(actor,threat,now,direct=false){
+export function reactionTo(actor,threat,now,direct=false,alarm=false){
   if(actor.responder||actor.down)return null;
-  return {x:threat.x,y:threat.y,until:now+(direct?9400:5600),
-    fight:direct&&motionSeed(String(actor.id))%5===0};
+  const seed=motionSeed(String(actor.id));
+  return {x:threat.x,y:threat.y,until:now+(alarm?7600+seed%5200:direct?9400:5600),
+    start:now+(alarm&&!direct?140+seed%490:0),pace:alarm?4.1+(seed%9)*.11:4.1,
+    fight:direct&&!alarm&&seed%5===0};
 }
 
-export function reactionGoal(actor,reaction,blocked){
+export function reactionGoal(actor,reaction,blocked,now=Infinity){
   const away=Math.atan2(actor.y-reaction.y,actor.x-reaction.x);
+  if(now<reaction.start)return {...actor,angle:away+Math.PI,moving:false,speed:0};
   if(reaction.fight&&Math.hypot(actor.x-reaction.x,actor.y-reaction.y)<1.55)
     return {...actor,angle:away+Math.PI,moving:false,speed:0,closeContact:true};
   const heading=reaction.fight?away+Math.PI:away;
@@ -19,7 +22,7 @@ export function reactionGoal(actor,reaction,blocked){
     const rank=reach-Math.abs(turn)*1.35;
     if(reach&&rank>score){
       score=rank;best={...actor,x:actor.x+c*reach,y:actor.y+s*reach,angle,
-        moving:true,speed:reaction.fight?3.05:4.1,sprinting:!reaction.fight,closeContact:reaction.fight};
+        moving:true,speed:reaction.fight?3.05:reaction.pace??4.1,sprinting:!reaction.fight,closeContact:reaction.fight};
     }
   }
   return best||actor;

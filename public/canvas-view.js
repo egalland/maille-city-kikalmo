@@ -925,14 +925,14 @@ export function createCanvasView(canvas,spawn,onNotice){
     return clear;
   }
   function queuePickup(p,time,destroyed){
-    const style=pickupStyle(p.weapon);
+    const kind=p.ammoOnly?'ammo':p.weapon,style=pickupStyle(kind);
     if(!style||!Number.isFinite(p.x+p.y)||!seen({x:p.x,y:p.y,r:1.25},pickupRange))return;
     const reach=Math.hypot(p.x-camX,p.y-camY);if(reach>pickupRange||reach<.43)return;
     const phase=pickupPhase(p.id),height=pickupLift(time,phase);
     const base=at(p.x,p.y,.11),icon=at(p.x,p.y,height),body=at(p.x,p.y,.23),cap=at(p.x,p.y,.45);
     if(!base||!icon||!body||!cap)return;
     if(!pickupClear(p.id,p.x,p.y,height,reach,time,destroyed))return;
-    const unit=f/base.d,art=pickupPatch(p.weapon),iconWidth=pickupMarkerWidth*f/icon.d;
+    const unit=f/base.d,art=pickupPatch(kind),iconWidth=pickupMarkerWidth*f/icon.d;
     if(icon.x+iconWidth*.55<0||icon.x-iconWidth*.55>w||base.y<0||icon.y-iconWidth*.42>h)return;
     queue.push({z:depth(p.x,p.y),draw:()=>{
       const radius=.57*unit;

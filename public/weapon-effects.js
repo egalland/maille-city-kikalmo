@@ -1,6 +1,6 @@
 import {weaponCatalog,weaponList} from './weapon-catalog.js';
 
-const lifetimes={shot:.13,fist:.18,yarn:.32,ribbon:.36,pompom:.44,confetti:.38,boomerang:.48,bubbles:.5,spool:.42,star:.36,chime:.48};
+const lifetimes={shot:.13,rocket:.43,fist:.18,yarn:.32,ribbon:.36,pompom:.44,confetti:.38,boomerang:.48,bubbles:.5,spool:.42,star:.36,chime:.48};
 const byEffect=Object.fromEntries(weaponList.map(w=>[w.effect,w.palette]));
 const effectName=kind=>weaponCatalog[kind]?.effect||kind;
 export function effectDuration(kind){return lifetimes[effectName(kind)]||.17;}
@@ -25,6 +25,10 @@ export function buildShotEffect(kind,x,y,angle,length,progress=.5,barrel=false,d
     curve('#ffe8bb',2.5,9,t=>pt(len*(.38+.54*Math.sin(Math.PI*t)),(t-.5)*1.35,1.0+.13*Math.sin(Math.PI*t)));
   }else if(key==='shot'){
     line('#ffdb9a',1.45,[pt(0,0,1.03),pt(len,0,1.01+drop)]);
+  }else if(key==='rocket'){
+    const at=len*u,tail=Math.max(0,at-Math.min(8,len*.7));
+    curve('#d7d3c6',3.6,10,t=>{const d=tail+(at-tail)*t;return pt(d,.09*Math.sin(t*12+u*7),1.03+drop*d/len);});
+    line('#ffc281',3,[pt(Math.max(0,at-.6),0,1.03+drop*at/len),pt(at,0,1.03+drop*at/len)]);
   }else if(key==='yarn'||key==='ribbon'){
     const ribbon=key==='ribbon',turns=ribbon?2.5:3.75;
     for(let j=0;j<(ribbon?2:1);j++)curve(j?pal.trim:pal.accent,j?1.3:2.4,24,t=>{

@@ -1,5 +1,6 @@
-// A duo belongs to the live sessions in the same public world. Positions, chat
-// and game simulation continue to use the global roster.
+import {friendSchema,readFriends} from './friends.js';
+
+const maxGroup=6;
 export const partnerSchema=[
   `CREATE TABLE IF NOT EXISTS mc_partner_invites(
     room TEXT NOT NULL,sender TEXT NOT NULL,recipient TEXT NOT NULL,expires INTEGER NOT NULL,
@@ -8,59 +9,97 @@ export const partnerSchema=[
   `CREATE TABLE IF NOT EXISTS mc_partners(
     room TEXT NOT NULL,first TEXT NOT NULL,second TEXT NOT NULL,
     PRIMARY KEY(room,first),UNIQUE(room,second))`,
-  `CREATE TRIGGER IF NOT EXISTS mc_partner_member_left AFTER DELETE ON mc_members BEGIN
-    DELETE FROM mc_partners WHERE room=OLD.room AND (first=OLD.id OR second=OLD.id);
+  `CREATE TABLE IF NOT EXISTS mc_group_members(
+    room TEXT NOT NULL,id TEXT NOT NULL,party TEXT NOT NULL,PRIMARY KEY(room,id))`,
+  'CREATE INDEX IF NOT EXISTS mc_group_party ON mc_group_members(room,party)',
+  `INSERT OR IGNORE INTO mc_group_members (room,id,party)
+    SELECT room,first,first FROM mc_partners UNION ALL SELECT room,second,first FROM mc_partners`,
+  'DELETE FROM mc_partners',
+  `CREATE TRIGGER IF NOT EXISTS mc_group_member_left AFTER DELETE ON mc_members BEGIN
+    DELETE FROM mc_group_members WHERE room=OLD.room AND id=OLD.id;
     DELETE FROM mc_partner_invites WHERE room=OLD.room AND (sender=OLD.id OR recipient=OLD.id);
   END`,
-  `CREATE TRIGGER IF NOT EXISTS mc_partner_invites_done AFTER INSERT ON mc_partners BEGIN
-    DELETE FROM mc_partner_invites WHERE room=NEW.room AND
-      (sender IN (NEW.first,NEW.second) OR recipient IN (NEW.first,NEW.second));
-  END`
+  `CREATE TRIGGER IF NOT EXISTS mc_group_prune_invites AFTER INSERT ON mc_group_members BEGIN
+    DELETE FROM mc_partner_invites WHERE room=NEW.room AND recipient=NEW.id;
+  END`,
+  `CREATE TRIGGER IF NOT EXISTS mc_group_dissolve AFTER DELETE ON mc_group_members BEGIN
+    DELETE FROM mc_group_members WHERE room=OLD.room AND party=OLD.party AND
+      (SELECT count(*) FROM mc_group_members WHERE room=OLD.room AND party=OLD.party)=1;
+  END`,
+  ...friendSchema
 ];
 const actions=new Set(['state','invite','accept','decline','cancel','leave']);
-// Check the live relationship in the same database statement that records the hit.
-export const noPartnerHit=target=>`NOT EXISTS (SELECT 1 FROM mc_partners WHERE room=?
-  AND ((first=? AND second=${target}) OR (second=? AND first=${target})))`;
+
+// Check group membership in the same database statement as the hit.
+export const noPartnerHit=target=>`NOT EXISTS (SELECT 1 FROM mc_group_members a
+  JOIN mc_group_members b ON a.room=b.room AND a.party=b.party
+  WHERE a.room=? AND a.id=? AND b.id=${target})`;
+
 export async function runPartners(db,b,room,now,gone){
-  const {id,token,action,target}=b;
-  if(!actions.has(action))return {ok:false,error:'Demande inconnue.'};
+  const {id,token,action,target}=b,live=now-gone;
+  const friendAction=['friend-invite','friend-accept','friend-remove'].includes(action);
+  if(!actions.has(action)&&!friendAction)return {ok:false,error:'Demande inconnue.'};
   const q=(sql,...args)=>db.prepare(sql).bind(...args);
-  const self=q('SELECT 1 FROM mc_members WHERE room=? AND id=? AND secret=? AND seen>?',room,id,token,now-gone);
-  if(!await self.first())return {ok:false,error:'Reconnecte-toi au monde pour former un duo.'};
+  const self=await q('SELECT 1 FROM mc_members WHERE room=? AND id=? AND secret=? AND seen>?',room,id,token,live).first();
+  if(!self)return {ok:false,error:'Reconnecte-toi au monde pour gérer ton groupe.'};
+  if(['invite','accept','decline','cancel'].includes(action)&&(typeof target!=='string'||target===id||target.length!==36))
+    return {ok:false,error:'Ce joueur est indisponible.'};
+
   const ops=[];
-  if(action!=='state')ops.push(q('DELETE FROM mc_partner_invites WHERE room=? AND expires<=?',room,now));
-  // Stale peers may still exist until the next join performs world cleanup.
-  if(action!=='state')ops.push(q(`DELETE FROM mc_partners WHERE room=? AND (first IN (?,?) OR second IN (?,?)) AND
-    (SELECT count(*) FROM mc_members m WHERE m.room=mc_partners.room AND m.id IN (first,second) AND m.seen>?)<2`,room,id,target||'',id,target||'',now-gone));
+  if(action!=='state'&&!friendAction){
+    ops.push(q(`DELETE FROM mc_group_members AS g WHERE room=? AND NOT EXISTS
+      (SELECT 1 FROM mc_members m WHERE m.room=g.room AND m.id=g.id AND m.seen>?)`,room,live));
+    ops.push(q('DELETE FROM mc_partner_invites WHERE room=? AND expires<=?',room,now));
+  }
+  let mutation=-1;
   if(action==='invite'||action==='accept'){
-    if(typeof target!=='string'||target===id||target.length!==36)return {ok:false,error:'Ce joueur est indisponible.'};
-    // Both live sessions must be free at the instant the statement executes.
-    const guard=`EXISTS(SELECT 1 FROM mc_members WHERE room=? AND id=? AND secret=? AND seen>?) AND
-      EXISTS(SELECT 1 FROM mc_members WHERE room=? AND id=? AND seen>?) AND
-      NOT EXISTS(SELECT 1 FROM mc_partners WHERE room=? AND (first IN (?,?) OR second IN (?,?)))`;
-    const args=[room,id,token,now-gone,room,target,now-gone,room,id,target,id,target];
+    const sender=action==='invite'?id:target,recipient=action==='invite'?target:id;
+    // The captain is implicit: any member can invite. Recheck seats and
+    // membership when the invitation is accepted, inside the write batch.
+    const eligible=`WITH args(room,sender,recipient,live,now,fallback) AS (VALUES (?,?,?,?,?,?)),
+      eligible AS MATERIALIZED (
+        SELECT args.*,coalesce(g.party,fallback) AS party FROM args
+        JOIN mc_members s ON s.room=args.room AND s.id=args.sender AND s.seen>args.live
+        JOIN mc_members r ON r.room=args.room AND r.id=args.recipient AND r.seen>args.live
+        LEFT JOIN mc_group_members g ON g.room=args.room AND g.id=args.sender
+        WHERE NOT EXISTS (SELECT 1 FROM mc_group_members m WHERE m.room=args.room AND m.id=args.recipient)
+        AND (SELECT count(*) FROM mc_group_members m WHERE m.room=args.room AND m.party=g.party)<${maxGroup}
+      )`;
+    mutation=ops.length;
     if(action==='invite'){
-      ops.push(q(`INSERT OR IGNORE INTO mc_partner_invites(room,sender,recipient,expires) SELECT ?,?,?,?
-        WHERE ${guard} RETURNING sender`,room,id,target,now+60000,...args));
+      ops.push(q(eligible+` INSERT OR IGNORE INTO mc_partner_invites
+        SELECT room,sender,recipient,now+60000 FROM eligible RETURNING sender`,room,sender,recipient,live,now,''));
     }else{
-      ops.push(q(`INSERT OR IGNORE INTO mc_partners(room,first,second) SELECT ?,?,?
-        WHERE ${guard} AND EXISTS(SELECT 1 FROM mc_partner_invites WHERE room=? AND sender=? AND recipient=? AND expires>?)
-        RETURNING first`,room,id,target,...args,room,target,id,now));
+      ops.push(q(eligible+`, accepted AS MATERIALIZED (
+        SELECT e.* FROM eligible e JOIN mc_partner_invites i
+        ON i.room=e.room AND i.sender=e.sender AND i.recipient=e.recipient AND i.expires>e.now
+      )
+      INSERT OR IGNORE INTO mc_group_members (room,id,party)
+      SELECT room,sender,party FROM accepted UNION ALL SELECT room,recipient,party FROM accepted RETURNING id`,
+      room,sender,recipient,live,now,crypto.randomUUID()));
     }
   }else if(action==='leave'){
-    ops.push(q('DELETE FROM mc_partners WHERE room=? AND (first=? OR second=?)',room,id,id));
+    ops.push(q('DELETE FROM mc_group_members WHERE room=? AND id=?',room,id),
+      q('DELETE FROM mc_partner_invites WHERE room=? AND sender=?',room,id));
   }else if(action==='decline'||action==='cancel'){
     const sent=action==='cancel';
-    ops.push(q('DELETE FROM mc_partner_invites WHERE room=? AND sender=? AND recipient=?',room,sent?id:target||'',sent?target||'':id));
+    ops.push(q('DELETE FROM mc_partner_invites WHERE room=? AND sender=? AND recipient=?',room,sent?id:target,sent?target:id));
   }
-  const mutateIndex=ops.length-1;
-  ops.push(q(`SELECT CASE WHEN first=? THEN second ELSE first END AS id FROM mc_partners WHERE room=? AND (first=? OR second=?) AND
-      (SELECT count(*) FROM mc_members m WHERE m.room=mc_partners.room AND m.id IN (first,second) AND m.seen>?)=2`,id,room,id,id,now-gone),
-    q(`SELECT sender,recipient FROM mc_partner_invites i WHERE room=? AND (sender=? OR recipient=?) AND expires>? AND
-      (SELECT count(*) FROM mc_members m WHERE m.room=i.room AND m.id IN (i.sender,i.recipient) AND m.seen>?)=2 ORDER BY expires`,room,id,id,now,now-gone));
-  const result=await db.batch(ops),partner=result.at(-2).results[0]?.id||null,invites=result.at(-1).results;
-  const state={partner,received:invites.filter(i=>i.recipient===id).map(i=>i.sender),sent:invites.find(i=>i.sender===id)?.recipient||null};
-  if(['accept','invite'].includes(action)&&!result[mutateIndex].results.length&&partner!==target&&!(action==='invite'&&state.sent===target))
-    return {ok:false,error:'Invitation indisponible. Vérifie que vous êtes tous les deux libres.',state};
+  ops.push(q(`SELECT g.id FROM mc_group_members self
+    JOIN mc_group_members g ON g.room=self.room AND g.party=self.party AND g.id<>self.id
+    JOIN mc_members m ON m.room=g.room AND m.id=g.id AND m.seen>?
+    WHERE self.room=? AND self.id=? ORDER BY g.id`,live,room,id),
+    q(`SELECT i.sender,i.recipient FROM mc_partner_invites i
+      JOIN mc_members s ON s.room=i.room AND s.id=i.sender AND s.seen>?
+      JOIN mc_members r ON r.room=i.room AND r.id=i.recipient AND r.seen>?
+      WHERE i.room=? AND (i.sender=? OR i.recipient=?) AND i.expires>? ORDER BY i.expires`,live,live,room,id,id,now));
+  const result=await db.batch(ops),members=result.at(-2).results.map(row=>row.id),invites=result.at(-1).results;
+  const state={members,maxGroup,partner:members[0]||null,
+    received:invites.filter(i=>i.recipient===id).map(i=>i.sender),sent:invites.find(i=>i.sender===id)?.recipient||null};
+  const {ok:friendOK,error:friendError,...friends}=await readFriends(db,{room,id,profile:b.profile,action,target,now,live});
+  Object.assign(state,friends);
+  if(friendOK===false)return {ok:false,error:friendError,state};
+  if(mutation>=0&&!result[mutation].results.length&&!(action==='invite'&&state.sent===target))
+    return {ok:false,error:'Invitation indisponible. Le groupe peut être complet ou le joueur déjà en groupe.',state};
   return {ok:true,state};
 }

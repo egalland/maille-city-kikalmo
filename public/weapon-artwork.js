@@ -76,6 +76,11 @@ function drawFirearm(c,spec){
   else if(kind==='shotgun'||kind==='double'){c.fillStyle='#896a56';c.fillRect(58,36,16,7);if(kind==='double'){c.fillStyle=edge;c.fillRect(76,37,15,2);}}
   if(spec.id==='service'){c.fillStyle='#c0b7a2';c.fillRect(35,34,23,2);c.fillStyle=dark;c.fillRect(55,31,9,4);}
   if(spec.id==='marksman'){c.fillStyle='#525b66';c.fillRect(35,46,11,6);c.fillRect(55,20,16,8);c.fillRect(71,32,12,5);}
+  if(spec.id==='rocket'){
+    c.fillStyle='#778765';c.fillRect(42,28,40,13);
+    c.fillStyle='#e1c18a';c.fillRect(72,28,4,13);c.fillRect(47,30,3,9);
+    poly([[86,28],[94,31],[97,34],[94,37],[86,40]],edge);
+  }
   c.strokeStyle='#46505b';c.lineWidth=2;c.beginPath();c.moveTo(origin+13,44);c.lineTo(origin+24,44);
   c.lineTo(origin+22,51);c.lineTo(origin+12,51);c.stroke();
 }

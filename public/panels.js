@@ -1,6 +1,6 @@
 import {createDiagnosticsToggle} from './diagnostics.js';
 import {cameraSettingsControls} from './camera-options.js';
-import {teammate} from './partners.js';
+import {socialMarkers} from './partners.js';
 import {addSocialControls} from './social-controls.js';
 import {readRadio,storeRadio} from './car-radio.js';
 import {airfields} from './airfield.js';
@@ -277,7 +277,7 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
     const cancel=event=>{if(event.pointerId===finger)finger=null;};
     ring.addEventListener('pointercancel',cancel);ring.addEventListener('lostpointercapture',cancel);
   }
-  function mapPanel() {
+  function mapPanel(initialTarget) {
     const sheet=frame('map','Carte',isEnfer?'Maille City':metadata.sector?.name||'Paris et petite couronne');
     const pad=node('div','mc-body');
     const nav=node('div','gp-mode');nav.setAttribute('role','group');nav.setAttribute('aria-label','Échelle du plan');
@@ -287,7 +287,7 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
     const detail=node('div','gp-local'),regional=node('div','gp-regional');
     const map=node('div','mc-map-box');
     const canvas=node('canvas','mc-map-canvas');canvas.width=840;canvas.height=448;
-    canvas.setAttribute('aria-label','Plan local avec les joueurs, les véhicules, les armes et la zone de recherche de la police');
+    canvas.setAttribute('aria-label','Plan avec les trains, le groupe, les amis et les patrouilles');
     map.append(canvas);detail.append(map);
     const legends=node('div','mc-map-legends');
     const position=game.getPosition?.();
@@ -302,17 +302,58 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
       line.append(node('i',i?'mc-police-marker':'mc-police-area'),node('span','',label));legends.append(line);
       line.hidden=!state().wanted;return line;
     });
-    const buddy=teammate();
-    if(buddy){
-      const line=node('span','mc-map-legend');line.append(node('i','mc-partner-dot'),node('span','','Équipier · '+buddy.name));legends.append(line);
+    const trackedLegends=[['mc-partner-dot','Groupe'],['mc-friend-dot','Amis'],['mc-train-dot','Trains']].map(([style,text])=>{
+      const line=node('span','mc-map-legend');line.append(node('i',style),node('span','',text));legends.append(line);return line;
+    });
+    const tracking=node('div','mc-map-tracking');
+    const followTarget=node('select','mc-input');followTarget.id='mc-map-follow';
+    const trackedStatus=node('span','mc-map-tracking-status');
+    tracking.append(fieldLabel('Suivre sur la carte',followTarget.id),followTarget,trackedStatus);
+    map.after(tracking);
+    let trackingId=initialTarget||'',trackingSignature='';
+    followTarget.addEventListener('change',()=>{
+      trackingId=followTarget.value;renderCurrent();
+    });
+    function syncTracking(people,trains){
+      const grouped=[['Groupe',people.filter(p=>p.relation==='group')],['Amis',people.filter(p=>p.relation==='friend')],['Trains',trains]];
+      const signature=JSON.stringify(grouped.map(([,items])=>items.map(p=>[p.id,p.name])));
+      if(signature!==trackingSignature){
+        trackingSignature=signature;
+        const off=node('option','','Aucun suivi');off.value='';
+        followTarget.replaceChildren(off);
+        for(const [label,items] of grouped){
+          if(!items.length)continue;
+          const group=node('optgroup','');group.label=label;
+          for(const person of items){
+            const option=node('option','',person.name);option.value=person.id;group.append(option);
+          }
+          followTarget.append(group);
+        }
+        followTarget.value=trackingId;
+      }
+      const target=[...people,...trains].find(p=>p.id===trackingId);
+      const pos=game.getPosition?.(),distance=target&&pos?Math.round(Math.hypot(pos.x-target.x,pos.y-target.y)):0;
+      const label=target?[target.status||districtAt(target.x,target.y),distance>=1000?(distance/1000).toFixed(1).replace('.',',')+' km':distance+' m'].join(' · '):
+        trackingId?'Position indisponible':'';
+      if(trackedStatus.textContent!==label)trackedStatus.textContent=label;
+      tracking.hidden=!people.length&&!trains.length&&!trackingId;
+      trackedLegends[0].hidden=!grouped[0][1].length;
+      trackedLegends[1].hidden=!grouped[1][1].length;
+      trackedLegends[2].hidden=!trains.length;
+      return target;
     }
     const finder=node('details','mc-depot-search');
     const missing=weaponList.filter(it=>!it.starter&&!state().ownedWeapons?.includes(it.id));
-    if(missing.length){
-      const summary=node('summary','','Localiser une arme à trouver');
-      const label=fieldLabel('Arme recherchée','mc-find-weapon');
+    if(missing.length||isEnfer){
+      const summary=node('summary','','Localiser une arme ou des munitions');
+      const label=fieldLabel('Dépôt recherché','mc-find-weapon');
       const field=node('select','mc-input');field.id='mc-find-weapon';
-      const nearest=node('option','','Arme manquante la plus proche');nearest.value='*';field.append(nearest);
+      if(missing.length){
+        const nearest=node('option','','Arme manquante la plus proche');nearest.value='*';field.append(nearest);
+      }
+      if(isEnfer){
+        const supply=node('option','','Munitions les plus proches');supply.value='ammo';field.append(supply);
+      }
       const missingIds=new Set(missing.map(it=>it.id));
       for(const it of missing){
         const option=node('option','',it.name);option.value=it.id;field.append(option);
@@ -327,7 +368,7 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
         const from=game.getPosition(),cooldowns=net.world?.()?.pickups||{},now=net.serverTime?.()??Date.now();
         let closest=null,distance=Infinity;
         for(const drop of game.getAvailableDrops?.()||weaponDrops){
-          const matches=field.value==='*'?missingIds.has(drop.weapon):drop.weapon===field.value;
+          const matches=field.value==='ammo'?drop.ammoOnly:!drop.ammoOnly&&(field.value==='*'?missingIds.has(drop.weapon):drop.weapon===field.value);
           if(!matches||cooldowns[drop.id]>now)continue;
           const reach=Math.hypot(drop.x-from.x,drop.y-from.y);
           if(reach<distance){closest=drop;distance=reach;}
@@ -376,9 +417,10 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
       for(const [mode,title] of modes){
         const choice=button(title,'',()=>{
           zoom=mode;
-          for(const item of views.children)item.setAttribute('aria-pressed',String(item===choice));
+          trackingId=followTarget.value='';
           renderCurrent?.();
         });
+        choice.dataset.mapZoom=mode;
         choice.setAttribute('aria-pressed',String(mode===zoom));views.append(choice);
       }
       map.before(views);
@@ -420,9 +462,14 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
       renderCurrent();
     }
     renderCurrent=()=>{
-      dropsLegend.hidden=isEnfer&&zoom==='city';
       for(const legend of pursuitLegends)legend.hidden=!state().wanted;
-      if(!region)game.drawFullMap?.(canvas,zoom);
+      if(!region){
+        const trains=game.mapTrains?.()||[],target=syncTracking(socialMarkers(),trains);
+        dropsLegend.hidden=isEnfer&&zoom==='city'&&!target;
+        for(const control of detail.querySelectorAll('[data-map-zoom]'))
+          control.setAttribute('aria-pressed',String(!target&&control.dataset.mapZoom===zoom));
+        game.drawFullMap?.(canvas,zoom,target,trains);
+      }
     };
     switchMap('local');
     interval=setInterval(()=>renderCurrent?.(),300);
@@ -569,14 +616,15 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
         const empty=online?'Aucun joueur connecté.':status==='offline'?'La liste sera actualisée à la reconnexion.':'Recherche des joueurs…';
         roster.append(node('li','mc-roster-empty',empty));return;
       }
-      const sorted=[...players].sort((a,b)=>Number(b.id===net.id)-Number(a.id===net.id)||(a.name||'').localeCompare(b.name||'','fr'));
+      const sorted=[...players].sort((a,b)=>Number(b.id===net.id)-Number(a.id===net.id)||
+        (partners?.rank(b.id)||0)-(partners?.rank(a.id)||0)||(a.name||'').localeCompare(b.name||'','fr'));
       for(const person of sorted) {
         const entry=node('li','mc-person'),face=node('canvas','mc-face');face.setAttribute('aria-hidden','true');
         paintCanvas(face,(ctx,s)=>drawAvatar(ctx,0,0,s,person.variant||'fox'),30);
         entry.append(face,node('span','mc-person-name',person.name||'Joueur'));
         if(person.id===net.id)entry.append(node('small','mc-self','Vous'));
+        partners?.render(entry,person,id=>open('map',id));
         if(person.id!==net.id){
-          partners?.render(entry,person,()=>open('map'));
           addSocialControls(entry,person,net,feedback);
         }
         roster.append(entry);
@@ -597,7 +645,7 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
       const sheet=frame(kind,'Les Vieilles Mailles','Missions et garage');
       const body=node('div','mc-body career-body');sheet.append(body);
       career.openPanel();renderCurrent=()=>career.renderPanel(body);renderCurrent();
-    }else if(kind==='map')mapPanel();
+    }else if(kind==='map')mapPanel(id);
     else if(kind==='settings')settingsPanel();
     else if(kind==='help')helpPanel();
     else playersPanel();

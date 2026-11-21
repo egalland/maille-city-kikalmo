@@ -6,7 +6,7 @@ import {seatSchema,seatedRosterSQL,attachPassengers,requestSeat,continueReleased
 import {abandonedFor,disconnectedFor,wreckFor,wreckExpired,replacementDelay} from '../public/vehicle-lifecycle.js';
 import {parkingBay,parkingLease} from '../public/enfer-parking-lots.js';
 import {hitSeverity, woundDuration, activeBleeding} from '../public/bleeding.js';
-import {weaponCatalog} from '../public/weapon-catalog.js';
+import {weaponCatalog,weaponDamageAt} from '../public/weapon-catalog.js';
 import {isHitZone,npcWeaponDamage} from '../public/shot-volume.js';
 import {propMaxHealth, vehiclePropDamage} from '../public/prop-damage.js';
 import {validFlightPath,sampleAutorotation,flightSampleMs} from '../public/autorotation.js';
@@ -635,7 +635,7 @@ async function sync(db,b,now,room) {
     if (!data) continue;
     let guard={clause:'',args:[]};
     if(type==='hit'&&data.cause!=='melee'&&data.cause!=='traffic'){
-      guard={clause:'WHERE '+noPartnerHit('?'),args:[room,id,data.target,id,data.target]};
+      guard={clause:'WHERE '+noPartnerHit('?'),args:[room,id,data.target]};
     }
     if(type==='melee'){
       if(!Number.isFinite(actor.x)||!Number.isFinite(actor.y)||actor.vehicle||actor.health===0||actor.downUntil>now||
@@ -651,7 +651,9 @@ async function sync(db,b,now,room) {
       if(!key(shotId)||!Object.hasOwn(weaponCatalog,kind)||kind==='fist'||!Number.isFinite(data.x+data.y))continue;
       if(Math.hypot(data.x-actor.x,data.y-actor.y)>weaponCatalog[kind].range+15)continue;
       if(type==='npc'){
-        data.weapon=kind;data.damage=Math.min(data.damage||0,npcWeaponDamage(weaponCatalog[kind].damage,data.type,data.zone));
+        data.weapon=kind;
+        const reach=Math.max(0,Math.hypot(data.x-actor.x,data.y-actor.y)-(actor.vehicle?1.8:.35)-1);
+        data.damage=Math.min(data.damage||0,npcWeaponDamage(weaponDamageAt(kind,reach),data.type,data.zone));
       }
       data.shotId=shotId;
       const location=data.zone?` AND EXISTS (SELECT 1 FROM json_each(json_extract(data,'$.contacts')) WHERE

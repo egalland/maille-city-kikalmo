@@ -3,7 +3,7 @@ import test from 'node:test';
 import {localDatabase} from '../scripts/local-db.mjs';
 import {handleApi} from '../worker/game-api.js';
 import {ammoCapacity,reloadMagazine} from '../public/ammunition.js';
-import {enferWeaponDrops} from '../public/drop-id.js';
+import {enferAmmoDrops,enferWeaponDrops} from '../public/drop-id.js';
 
 test('two sessions share ammunition and cannot replay a pickup or skip a reload',async t=>{
   const db=localDatabase();t.after(()=>db.close());
@@ -45,6 +45,15 @@ test('two sessions share ammunition and cannot replay a pickup or skip a reload'
   assert.equal(collected.ammo[drop.weapon],ammoCapacity(drop.weapon));assert.equal(collected.ammo.pistol,24);
   const replay=await post('sync',b,{events:[pick]});assert.deepEqual(replay.ammo,collected.ammo);
   assert.equal((await post('join',user())).ammo[drop.weapon],ammoCapacity(drop.weapon));
+  clock+=1800;
+  await post('sync',b,{events:[trigger(drop.weapon)]});
+  const supply=enferAmmoDrops[0];
+  Object.assign(pose,{x:supply.x,y:supply.y});
+  const refill={op:'pick-'+clock.toString(36)+'-2',type:'pickup',data:{id:supply.id,weapon:supply.weapon}};
+  const refilled=await post('sync',b,{events:[refill]});
+  assert.equal(refilled.pickupResults[0].ok,true);
+  assert.deepEqual(refilled.ammo,{pistol:36,[drop.weapon]:ammoCapacity(drop.weapon)});
+  assert.deepEqual((await post('sync',b,{events:[refill]})).ammo,refilled.ammo);
 });
 
 test('partial reloading transfers only rounds still carried in reserve',()=>{

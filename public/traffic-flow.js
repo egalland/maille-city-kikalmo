@@ -7,6 +7,23 @@ const planPeriod=.12, stepLimit=.065;
 const distanceSquared=(a,b)=>(a.x-b.x)**2+(a.y-b.y)**2;
 const byId=(a,b)=>a.id<b.id?-1:a.id>b.id?1:0;
 
+function alarmSpeed(car,alarms){
+  const {pose,body,seed}=car;
+  let nearest=null,distance=Infinity;
+  for(const alarm of alarms){
+    const d=distanceSquared(pose,alarm);
+    if(d<distance&&d<alarm.radius**2){nearest=alarm;distance=d;}
+  }
+  if(!nearest)return seed.cruiseSpeed;
+  const d=Math.sqrt(distance),dx=pose.x-nearest.x,dy=pose.y-nearest.y;
+  const away=(dx*body.c+dy*body.s)/(d||1);
+  // Escape along the current lane. Vehicles facing the incident ease off
+  // before reaching it. Junctions, pedestrians and level crossings still win.
+  if(away>.24||d<4)return Math.min(seed.cruiseSpeed+2,seed.cruiseSpeed*1.28);
+  if(away<-.45)return seed.cruiseSpeed*(d<22?.58:.81);
+  return seed.cruiseSpeed;
+}
+
 function makeBody(entity,traffic=false){
   const box=traffic||entity.isCar||entity.vehicle||entity.halfLength;
   const spec=box?(entity.halfLength?entity:vehicleSpec(entity.vehicle?.type||entity.type)):null;
@@ -203,9 +220,9 @@ export function createTrafficFlow(sample,chooseDetour){
     }
   }
 
-  function planSpeed(car,bodies,blockedPose){
+  function planSpeed(car,bodies,blockedPose,alarms){
     const {pose,body,seed,spec}=car,j=pose.junction;
-    let target=seed.cruiseSpeed;
+    let target=alarmSpeed(car,alarms);
     const roadBrake=Math.min(4.1,spec.brake*.45),stopping=car.speed**2/(2*roadBrake);
     if(j && j.distance>=-body.length && j.distance<32){
       if(!permitted(seed.id,j)){
@@ -424,7 +441,7 @@ export function createTrafficFlow(sample,chooseDetour){
     return true;
   }
 
-  function step(seeds,{dt=0,epoch=Date.now(),blockers=[],observer=null,excluded=new Set(),checkpoints=[],blockedPose,onVehicleContact,recycleAfter=0}={}){
+  function step(seeds,{dt=0,epoch=Date.now(),blockers=[],observer=null,excluded=new Set(),checkpoints=[],blockedPose,onVehicleContact,recycleAfter=0,alarms=[]}={}){
     const actualDt=clamp(dt,0,.5);
     const established=observer&&lastObserver&&distanceSquared(observer,lastObserver)<110**2;
     lastObserver=observer?{x:observer.x,y:observer.y}:null;
@@ -467,6 +484,7 @@ export function createTrafficFlow(sample,chooseDetour){
     }
 
     const states=[...cars.values()].sort((a,b)=>byId(a.seed,b.seed));
+    const activeAlarms=alarms.filter(a=>a.until>epoch);
     const steps=Math.max(1,Math.ceil(actualDt/stepLimit));
     for(let i=0;i<steps;i++){
       const elapsed=actualDt/steps;tick+=elapsed;planIn-=elapsed;
@@ -474,7 +492,7 @@ export function createTrafficFlow(sample,chooseDetour){
         planIn=planPeriod;
         for(const car of states)if(cars.has(car.seed.id))considerDetour(car,bodies,blockedPose);
         planJunctions(states,bodies,epoch);
-        for(const car of states)if(cars.has(car.seed.id))car.target=planSpeed(car,bodies,blockedPose);
+        for(const car of states)if(cars.has(car.seed.id))car.target=planSpeed(car,bodies,blockedPose,activeAlarms);
       }
       for(const car of states){
         if(!cars.has(car.seed.id))continue;

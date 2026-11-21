@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {weaponCatalog,weaponList,starterWeapons,findableWeaponIds,inventoryWeapons} from '../public/weapon-catalog.js';
+import {weaponCatalog,weaponList,starterWeapons,findableWeaponIds,inventoryWeapons,weaponDamageAt} from '../public/weapon-catalog.js';
 import {resolveWeaponShot} from '../public/weapon-patterns.js';
 import {buildShotEffect,effectDuration} from '../public/weapon-effects.js';
 import {drawWeapon} from '../public/weapon-artwork.js';
@@ -12,10 +12,10 @@ const at=(id,x,y=0)=>({id,x,y});
 const shot=(a,hit=null,length=8)=>({origin,angle:a,length,hit});
 
 test('Every collectible has its own HUD artwork, readable effect geometry and turntable miniature',()=>{
-  assert.equal(weaponList.length,19);
+  assert.equal(weaponList.length,20);
   assert.deepEqual(starterWeapons,['fist','pistol']);
-  assert.equal(findableWeaponIds.length,17);
-  assert.equal(new Set(weaponList.map(w=>w.name)).size,19);
+  assert.equal(findableWeaponIds.length,18);
+  assert.equal(new Set(weaponList.map(w=>w.name)).size,20);
   const recorder=()=>{const operations=[];const ctx=new Proxy({},{
     get(target,key){if(key in target)return target[key];return (...args)=>operations.push([key,...args]);}
   });return {ctx,operations};};
@@ -45,6 +45,17 @@ test('Every collectible has its own HUD artwork, readable effect geometry and tu
   }finally{
     if(original===undefined)delete globalThis.document;else globalThis.document=original;
   }
+});
+
+test('the pump is strongest up close, the scoped rifle holds distance and a rocket affects nearby targets',()=>{
+  assert.ok(weaponDamageAt('shotgun',3)>weaponDamageAt('marksman',3));
+  assert.ok(weaponDamageAt('shotgun',20)<weaponDamageAt('pistol',20));
+  assert.ok(weaponDamageAt('marksman',65)>weaponDamageAt('marksman',10));
+  const direct=at('direct',8),splash=at('splash',8,4),far=at('far',8,8);
+  const result=resolveWeaponShot('rocket',0,angle=>shot(angle,direct),[direct,splash,far],()=>true);
+  assert.equal(result.impact.radius,7.2);
+  assert.deepEqual(result.hits.map(h=>h.target.id),['direct','splash']);
+  assert.ok(result.hits[0].damage>result.hits[1].damage);
 });
 
 test('Fan patterns share touch aim and apply a single impact per target and trigger',()=>{
