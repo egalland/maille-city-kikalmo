@@ -1,4 +1,6 @@
 import {createWorldCamera} from './world-camera.js';
+import {auchanModel,paintAuchanLetters} from './auchan-model.js';
+import {auchanApron,auchanFront} from './auchan-layout.js';
 import {frontageSigns,namedFronts,paintFrontageSign} from './enfer-frontage.js';
 import {railXY,railSections,railStations,railGaugeOffsets,railwayPlatformOffset,railwayPlatformLength} from './enfer-rail.js';
 import {storeByBuilding,shopOpening,shopFixture} from './enfer-retail.js';
@@ -62,7 +64,7 @@ function getSpatial(){
     const bounds=loopBounds(o.poly);
     if(!isEnfer&&(skipLandmark(o.id)||String(o.id)==='157326'||String(o.id)==='444657'||['245184969','245198908'].includes(String(o.id))))continue;
     let area=0;for(let i=0;i<o.poly.length;i++){const a=o.poly[i],b=o.poly[(i+1)%o.poly.length];area+=a[0]*b[1]-b[0]*a[1];}
-    blocks.add({o,bounds,ground:buildingGround(o.poly),wind:Math.sign(area),seed:Math.abs(Math.floor(Number(o.id)||bounds.x+bounds.y))});
+    blocks.add({o,bounds,ground:o.baseElevation??buildingGround(o.poly),wind:Math.sign(area),seed:Math.abs(Math.floor(Number(o.id)||bounds.x+bounds.y))});
   }
   for(const way of streets){if(way.level<0)continue;
     for(let i=1;i<way.path.length;i++){
@@ -644,6 +646,36 @@ export function createCanvasView(canvas,spawn,onNotice){
   }
   function building(item,skyline=false){
     const {o,wind,seed,bounds}=item,poly=o.poly,H=Math.max(2.2,o.h||13);
+    if(isEnfer&&o.auchan){
+      const store=storeByBuilding.get(String(o.id));
+      const add=(points,color,sign=false)=>{
+        const pp=projectPoly(points);
+        if(!pp)return;
+        const z=points.reduce((sum,p)=>sum+depth(p[0],p[1]),0)/points.length;
+        queue.push({z,base:item.ground,draw:()=>{
+          if(!sign){fillPath(pp,color);return;}
+          let texture=facadeSigns.get('auchanLetters');
+          if(!texture){
+            texture=makeCanvas(1024,192);paintAuchanLetters(texture.getContext('2d'),1024,192);
+            facadeSigns.set('auchanLetters',texture);
+          }
+          const uv=[[0,192],[1024,192],[1024,0],[0,0]];
+          texturedFace(texture,points.map((point,i)=>[...point,...uv[i]]));
+        }});
+      };
+      for(const {p,ring,height,color,mat} of auchanModel(o,store,baseTerrainHeight,!skyline&&Math.hypot(o.poly[0][0]-camX,o.poly[0][1]-camY)<185)){
+        add(ring?ring.map(p=>[...p,height]):p.map(([x,h,y])=>[x,y,h]),color,mat==='auchanLetters');
+      }
+      if(store&&!skyline)for(const fixture of [store.booth,...store.furnishings]){
+        const ring=shopFixture(store,fixture);
+        for(let i=0;i<4;i++){
+          const a=ring[i],d=ring[(i+1)%4];
+          add([[...a,0],[...d,0],[...d,fixture.h],[...a,fixture.h]],i%2?store.tint:'#99745e');
+        }
+        add(ring.map(p=>[...p,fixture.h]),'#ddc29b');
+      }
+      return;
+    }
     const site=isEnfer&&heritageByFootprint.get(String(o.id));
     if(site){
       projectionBase=baseTerrainHeight(site.x,site.y);
@@ -1043,6 +1075,8 @@ export function createCanvasView(canvas,spawn,onNotice){
     }
     if(isEnfer&&seen({x:-1635,y:1053,r:47},streetViewRange))
       poly3(marketForecourt.map(p=>[...p,.067]),'#a5a6aa');
+    if(isEnfer&&seen({...auchanFront,r:18},streetViewRange))
+      poly3(auchanApron.map(p=>[...p,.072]),'#bfb0a8');
     if(isEnfer)for(const {a,b,width,kind} of marketPaving){
       if(!seen({x:(a[0]+b[0])/2,y:(a[1]+b[1])/2,r:22},streetViewRange))continue;
       const dx=b[0]-a[0],dy=b[1]-a[1],k=width/(2*Math.hypot(dx,dy)),u=-dy*k,v=dx*k;

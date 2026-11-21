@@ -64,11 +64,11 @@ export function shopFixture(store,{at,offset,width,depth}){
 }
 export function shopColliders(building,store){
   const [left,right]=shopOpening(building.poly,store),items=[];
-  const add=(poly,h)=>items.push({id:store.id+'-solid-'+items.length,type:'building',poly,h});
+  const add=(poly,h,baseElevation)=>items.push({id:store.id+'-solid-'+items.length,type:'building',poly,h,baseElevation});
   const wall=(a,b)=>{
     const dx=b[0]-a[0],dy=b[1]-a[1],k=.11/Math.hypot(dx,dy);
     if(Number.isFinite(k))add([[a[0]-dy*k,a[1]+dx*k],[b[0]-dy*k,b[1]+dx*k],
-      [b[0]+dy*k,b[1]-dx*k],[a[0]+dy*k,a[1]-dx*k]],building.h);
+      [b[0]+dy*k,b[1]-dx*k],[a[0]+dy*k,a[1]-dx*k]],building.h,building.baseElevation);
   };
   for(const poly of [building.poly,...building.holes]){
     poly.forEach((a,i)=>{

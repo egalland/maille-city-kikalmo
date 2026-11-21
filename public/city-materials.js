@@ -5,6 +5,7 @@ import {glassCloth, windowCloth, shopCloth, shopCloths, zincCloth} from './paris
 import {paintStreetFabric} from './street-fabric.js';
 import {paintKnit} from './wool-art.js';
 import {enferStyles,enferWall} from './enfer-architecture.js';
+import {paintAuchanLetters} from './auchan-model.js';
 import * as THREE from './three.js';
 
 function tile(width,height,paint) {
@@ -80,6 +81,21 @@ export function cityMaterials(enfer=false){
   material.foliage.alphaTest=.34;
   for(let i=0;i<shopCloths.length;i++)material['shop'+i]=lambert(shopTile(i));
   if(enfer){
+    material.auchanLetters=lambert(tile(1024,192,paintAuchanLetters));
+    material.auchanLetters.alphaTest=.38;
+    material.auchanBrick=lambert(tile(128,128,(c,w,h)=>{
+      rect(c,0,0,w,h,'#dfcec0');
+      for(let y=0;y<h;y+=4){
+        rect(c,0,y,w,.65,'#b3a499');
+        for(let x=(y%8?8:0);x<w;x+=16)rect(c,x,y,.62,4,'#baaa9c');
+      }
+    }));
+    material.auchanMetal=lambert(tile(128,64,(c,w,h)=>{
+      rect(c,0,0,w,h,'#dfdacf');
+      for(let x=0;x<w;x+=11){
+        rect(c,x,0,2.3,h,'#b8b5ab');rect(c,x+2.3,0,1.7,h,'#f9f4e8');
+      }
+    }));
     for(const [key,style] of [['parcelMasonry','brick'],['parcelWood','board'],['parcelMesh','mesh']]){
       const cloth=enclosureTextile(style);
       material[key]=lambert(tile(cloth.width,cloth.height,c=>c.drawImage(cloth,0,0)));

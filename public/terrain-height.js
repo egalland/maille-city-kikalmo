@@ -2,11 +2,12 @@
 import {bridgeGround,bridgeDeckHeight,roadGround} from './enfer-bridges.js';
 import {riverbanks} from './riverbanks.js';
 import {grid,waterLevels} from './paris-heights.js';
+import {auchanFront,auchanGrade} from './auchan-layout.js';
 
 const bytes=Uint8Array.from(atob(grid.data),char=>char.charCodeAt(0));
 const data=new DataView(bytes.buffer);
 const packaged={...grid,values:Float32Array.from({length:bytes.length/2},(_,i)=>data.getInt16(i*2,true)/10)};
-let surface=packaged,buildingBases=new WeakMap(),shoreGround=null;
+let surface=packaged,buildingBases=new WeakMap(),shoreGround=null,auchanFloor=null;
 const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
 const cubic=(a,b,c,d,t)=>b+.5*t*(c-a+t*(2*a-5*b+4*c-d+t*(3*(b-c)+d-a)));
 
@@ -18,7 +19,15 @@ function surveyHeight(x,y){
   const row=k=>{const n=k*cols;return cubic(values[n+i0],values[n+i],values[n+i2],values[n+i3],t);};
   return cubic(row(Math.max(0,j-1)),row(j),row(Math.min(rows-1,j+1)),row(Math.min(rows-1,j+2)),s);
 }
-export function baseTerrainHeight(x,y){return shoreGround?shoreGround(x,y):surveyHeight(x,y);}
+const rawGround=(x,y)=>shoreGround?shoreGround(x,y):surveyHeight(x,y);
+export function baseTerrainHeight(x,y){
+  const raw=rawGround(x,y);
+  return auchanFloor===null?raw:auchanGrade(x,y,raw,auchanFloor);
+}
+export function selectAuchanGrade(){
+  auchanFloor=rawGround(auchanFront.x,auchanFront.y);
+  return auchanFloor;
+}
 export function selectRiverbanks(waters){shoreGround=waters?.length?riverbanks(waters,surveyHeight,waterLevel).ground:null;}
 export function terrainHeight(x,y,heading,previousHeight){return bridgeGround(x,y,baseTerrainHeight(x,y),heading,previousHeight);}
 export function aircraftDeck(x,y){return bridgeDeckHeight(x,y,baseTerrainHeight(x,y));}
@@ -36,7 +45,7 @@ export function buildingGround(poly){
   const base=baseTerrainHeight(x/n,y/n);buildingBases.set(poly,base);return base;
 }
 export function selectSectorTerrain(field){
-  buildingBases=new WeakMap();shoreGround=null;
+  buildingBases=new WeakMap();shoreGround=null;auchanFloor=null;
   if(field&&field.values?.length===field.cols*field.rows)surface=field;
   else surface=packaged;
 }

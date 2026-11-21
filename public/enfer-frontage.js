@@ -1,3 +1,5 @@
+import {auchanEntrance,auchanFront,auchanMain} from './auchan-layout.js';
+
 export const frontageSigns=[
   {name:'BOULANGERIE',caption:'AU LEVAIN',color:'#7d423e',awning:'#ad5648'},
   {name:'ÉPICERIE',caption:'LES QUATRE SAISONS',color:'#315651',awning:'#57867a'},
@@ -26,7 +28,8 @@ export const frontageSigns=[
   {name:'NORAUTO',caption:'CENTRE AUTO',color:'#253d75',awning:'#ebc765'},
   {name:'BUREAU VALLÉE',caption:'PAPETERIE',color:'#2f7066',awning:'#a8c99d'},
   {name:'SORTIE',caption:'← ALLÉE DE CIRCULATION',color:'#4f626b',awning:'#9fb7bb'},
-  {name:'MONT RENAUD',caption:'AUCHAN · GALERIE · DRIVE',color:'#932d3a',awning:'#e1b7ae'}
+  {name:'MONT RENAUD',caption:'AUCHAN · GALERIE · DRIVE',color:'#932d3a',awning:'#e1b7ae'},
+  {name:'BRICOMARCHÉ',caption:'BRICOLAGE ET JARDIN',color:'#633037',awning:'#d9c8b3'}
 ];
 // Facades facing the public contract stops in the pilot district.
 export const careerFronts=new Map([
@@ -43,13 +46,14 @@ export const neighborhoodShops=[
   {id:'four-tisserands',name:'Boulangerie · Le Four des Tisserands',building:'317661398',edge:7,style:9,x:-25.85,y:-276.88},
   {id:'glycines',name:'Fleuriste · Les Glycines',building:'317662645',edge:9,style:10,x:138.96,y:-204.71},
   {id:'pages-cousues',name:'Librairie · Les Pages Cousues',building:'317662704',edge:6,style:11,x:55.54,y:-116.77},
-  commercialStore('bobines','317656059','Auchan · Mont Renaud',12,34,[-1661.8,1077.8],[-1637.4,1019.2],true),
+  {id:'bobines',building:auchanMain,name:'Auchan · Mont Renaud',style:12,edge:auchanEntrance.edge,mall:true,
+    door:[auchanFront.x,auchanFront.y,auchanFront.angle],x:auchanFront.point(0,-2)[0],y:auchanFront.point(0,-2)[1]},
   commercialStore('action-noyon','317656069','Action · Mont Renaud',13,0,[-1798.4,1075.1],[-1847.7,1053.9],true),
   commercialStore('kiabi-noyon','317656086','Kiabi · Mont Renaud',14,0,[-1526.5,1072.1],[-1519.9,1099.3],true),
-  commercialStore('sport-noyon','317656056','Intersport · Mont Renaud',15,0,[-1730.4,1193.6],[-1744.7,1227.7],false)
+  commercialStore('sport-noyon','2206464950','Intersport · Mont Renaud',15,3,[-1647.6,905.5],[-1611.5,907.8],true)
 ];
 const satelliteFronts=[
-  ['317656105',{style:22,edge:0}],['2206464950',{style:23,edge:0}],
+  ['317656105',{style:28,edge:1}],
   ['317656053',{style:24,edge:0}],['317656007',{style:25,edge:0}]
 ];
 export const namedFronts=new Map([...careerFronts,...satelliteFronts,...neighborhoodShops.map(shop=>[shop.building,shop])]);

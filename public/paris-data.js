@@ -1,6 +1,7 @@
 import {selectedWorld} from './world-link.js';
 import {selectBridgeDecks} from './enfer-bridges.js';
-import {selectSectorTerrain,selectRiverbanks,baseTerrainHeight} from './terrain-height.js';
+import {selectSectorTerrain,selectRiverbanks,selectAuchanGrade,baseTerrainHeight} from './terrain-height.js';
+import {auchanParts} from './auchan-layout.js';
 import {bundledSectors} from './sector-crossing.js';
 import {readMapArchive} from './map-archive.js';
 import {marketHedges} from './mont-renaud.js';
@@ -60,5 +61,14 @@ if(isEnfer){
   buildings.push(...railStationBuildings);
   assignBuiltUpStreets(streets,buildings);
   selectRiverbanks(water);
+  const auchanFloor=selectAuchanGrade();
+  for(const building of buildings){
+    const height=auchanParts.get(String(building.id));
+    if(height){
+      building.h=height;
+      building.baseElevation=auchanFloor;
+      building.auchan=true;
+    }
+  }
   selectBridgeDecks(streets,water,baseTerrainHeight);
 }

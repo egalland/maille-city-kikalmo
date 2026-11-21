@@ -19,6 +19,7 @@ import {enferStops,enferDistrict,enferStreet} from './enfer-places.js';
 import { baseTerrainHeight, terrainHeight, buildingGround, waterLevel, roadHeight, aircraftDeck } from './terrain-height.js';
 import {workshopId,workshopColliders} from './workshop.js';
 import {storeByBuilding,shopColliders} from './enfer-retail.js';
+import {auchanFront,auchanVestibuleColliders} from './auchan-layout.js';
 import {facilitySolids,inMarketDistrict,marketPaving,marketLotsGround} from './mont-renaud.js';
 import {railStations,railSections,railXY,railSpacing,railDistance,railPoint} from './enfer-rail.js';
 import {createRailCrossings} from './rail-crossings.js';
@@ -139,6 +140,7 @@ const eiffelFeet=new Set(['162158','162159','162160','162699']);
 const pyramidIds=new Set(['245184969','253248239','253248246','253248248']);
 const retailBuildings=[];
 if(isEnfer)for(const item of facilitySolids)terrain.insert(item,bounds(item.poly));
+if(isEnfer)for(const item of auchanVestibuleColliders(baseTerrainHeight(auchanFront.x,auchanFront.y)))terrain.insert(item,bounds(item.poly));
 for(const b of buildings){
   if(!b.poly?.length || !isEnfer&&(eiffelFeet.has(String(b.id)) || importedMonument(b)))continue;
   const store=isEnfer&&storeByBuilding.get(String(b.id));
@@ -269,7 +271,7 @@ export const vaultableProp = item => (item.type==='enclosure'&&item.h<=1.34)||['
 export function surfaceTop(item,x,y) {
   if(item.type==='enclosure')return item.h;
   if(item.heritage)return heritageHeight(item.heritage,x,y,heritagePlinthHeight(item.heritage,String(item.id)))+baseTerrainHeight(item.heritage.x,item.heritage.y)-terrainHeight(x,y);
-  const base=item.poly?buildingGround(item.poly):terrainHeight(item.x,item.y);
+  const base=item.baseElevation??(item.poly?buildingGround(item.poly):terrainHeight(item.x,item.y));
   const relativeBase=base-terrainHeight(x,y)+(item.lift||0);
   const height=item.h??(item.type==='building'?11:item.fallen ? .50 : 1.63);
   if(item.type==='pickup'&&item.isCar){
@@ -313,7 +315,9 @@ function testPose(x,y,opt={},propsEnabled=true) {
   for(const b of terrain.area(x,y,reach)){
     if(b.type==='water' && (opt.camera || (isEnfer && opt.swimmer) || isBridge(x,y,reach)))continue;
     if(b.type==='building'){
-      const clear=footZ==null ? z>=(b.heritage?surfaceTop(b,x,y):b.h||11)||z<(b.minHeight||0)
+      const absolute=Number.isFinite(b.baseElevation);
+      const baseOffset=absolute?b.baseElevation-terrainHeight(x,y):0;
+      const clear=footZ==null ? z>=(b.heritage||absolute?surfaceTop(b,x,y):b.h||11)||(b.minHeight>0&&z<b.minHeight+baseOffset)
         : footZ>=surfaceTop(b,x,y)-.002 || (b.minHeight>0 && footZ+(opt.bodyHeight||1.55)<=surfaceTop(b,x,y)-b.h+b.minHeight);
       if(clear)continue;
     }

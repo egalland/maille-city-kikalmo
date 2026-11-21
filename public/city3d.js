@@ -6,6 +6,8 @@ import {drawBoundary} from './residential-boundaries.js';
 import {vehicleSpec} from './vehicle-types.js';
 import {nearbySignals,nearbyEnclosures,nearbyParkedCars,railCrossings} from './paris-world.js';
 import {pavementRuns} from './curb-clearance.js';
+import {auchanModel} from './auchan-model.js';
+import {auchanApron,auchanFront} from './auchan-layout.js';
 import {pavedStreetWidth,streetHasCentreMarking,streetVerge} from './street-scale.js';
 import {frontageSigns,frontageStyle,namedFronts} from './enfer-frontage.js';
 import {railXY,railSections,railStations,railSpacing,railGaugeOffsets,railwayPlatformOffset,railwayPlatformLength} from './enfer-rail.js';
@@ -611,6 +613,17 @@ function addBuilding(b,building,detail,skyline=false,heritageDetail=false){
   if(specialFootprint(String(building.id),cx,cz))return;
   const id=hash(building.id),h=Math.max(1.9,Math.min(260,Number(building.h)||14));
   if(isEnfer){
+    if(building.auchan){
+      b.base=building.baseElevation;b.foundation=false;b.drape=false;
+      const store=storeByBuilding.get(String(building.id));
+      for(const {p,ring,height,color,mat,uv} of auchanModel(building,store,baseTerrainHeight,detail&&!skyline)){
+        if(ring)flatWithHoles(b,mat,ring,building.holes,height,color,4.3);
+        else if(p.length===4)b.face(mat,...p,color,uv);
+        else b.tri(mat,...p,color,uv);
+      }
+      if(store&&!skyline)retailInterior(b,poly,store);
+      return;
+    }
     if(building.station){paintStationBuilding(b,building,detail&&!skyline);return;}
     const site=heritageByFootprint.get(String(building.id));
     if(site)addHeritageBuilding(b,site,building,detail||heritageDetail,skyline);
@@ -1250,6 +1263,7 @@ export function createCity3D(scene,{software=false}={}){
         if(key(station.x,station.y)===target.key)paintRailStation(b,station);
       }
       if(key(-1635,1053)===target.key)b.flat('pave',marketForecourt,.067,'#a5a6aa',streetFabric.paving.meters);
+      if(key(auchanFront.x,auchanFront.y)===target.key)b.flat('pave',auchanApron,.072,'#d4bbab',streetFabric.paving.meters);
       for(const {x,y,poly} of marketLotsGround){
         if(key(x,y)===target.key)paintMarketSurface(b,poly,.114,'#dfd9d3');
       }
