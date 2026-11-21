@@ -6,11 +6,12 @@ import {drawBoundary} from './residential-boundaries.js';
 import {vehicleSpec} from './vehicle-types.js';
 import {nearbySignals,nearbyEnclosures,nearbyParkedCars,railCrossings} from './paris-world.js';
 import {pavementRuns} from './curb-clearance.js';
-import {frontageSigns,frontageStyle,namedFronts,montRenaudPaving,montRenaudPoint} from './enfer-frontage.js';
+import {frontageSigns,frontageStyle,namedFronts} from './enfer-frontage.js';
 import {railXY,railSections,railStations,railSpacing,railGaugeOffsets,railwayPlatformOffset,railwayPlatformLength} from './enfer-rail.js';
+import {facilityShelters,marketPoint,marketDrive,driveBays,marketSigns,marketForecourt,marketPaving} from './mont-renaud.js';
 import {parkingLots,lotPoint,parkingWidth,parkingDepth,parkingMarkings,parkingSign,parkingDriveways} from './enfer-parking-lots.js';
 import {workshopId,workshopEdge,bayDoor,headroom} from './workshop.js';
-import {storeByBuilding,shopHeadroom,shopOpening,shopFixture} from './enfer-retail.js';
+import {storeByBuilding,shopOpening,shopFixture} from './enfer-retail.js';
 import {drawStreetTree} from './street-trees.js';
 import {cityViewRange,streetViewRange} from './view-range.js';
 import {streetFabric} from './street-fabric.js';
@@ -451,11 +452,11 @@ function retailInterior(b,poly,store){
   const drape=b.drape;
   b.drape=true;b.flat('pave',poly,.065,store.large?'#bdb8a5':'#b58d75',2.4);b.drape=drape;
   for(const [i,j,k] of triIndex(poly)){
-    b.tri('felt',...[i,j,k].map(n=>[poly[n][0],shopHeadroom,poly[n][1]]),'#e5d3ae');
+    b.tri('felt',...[i,j,k].map(n=>[poly[n][0],store.headroom,poly[n][1]]),'#e5d3ae');
   }
   for(const [across,depth] of store.large?[[0,2.8],[0,5.4],[-5,7],[5,7]]:[[0,1.6],[0,3.2]]){
     const light=(x,y)=>store.point(across+x,depth+y);
-    b.quad('signalLight',[light(-.35,-.17),light(.35,-.17),light(.35,.17),light(-.35,.17)],shopHeadroom-.06,'#ffe4a9');
+    b.quad('signalLight',[light(-.35,-.17),light(.35,-.17),light(.35,.17),light(-.35,.17)],store.headroom-.06,'#ffe4a9');
   }
   for(const fixture of [store.booth,...store.furnishings]){
     const ring=shopFixture(store,fixture),counter=fixture===store.booth;
@@ -474,20 +475,35 @@ function retailInterior(b,poly,store){
 function retailFacade(b,a,d,left,right,outward,eaves,store){
   const len=Math.hypot(d[0]-a[0],d[1]-a[1]),dx=(d[0]-a[0])/len,dz=(d[1]-a[1])/len;
   const item=frontageSigns[store.style],p=(u,v,h)=>[a[0]+dx*u+dz*outward*v,h,a[1]+dz*u-dx*outward*v];
-  const center=len/2,width=Math.min(store.large?10.5:5.4,len-.24),top=Math.min(eaves,3.55);
+  const center=len/2,width=Math.min(store.large?30:store.mall?11.8:5.4,len-.24),top=Math.min(eaves-.35,store.mall?4.75:3.55);
   const panel=(l,r,low,high,depth,col,mat='felt',uv)=>
     b.face(mat,p(l,depth,low),p(r,depth,low),p(r,depth,high),p(l,depth,high),col,uv);
   b.wall('felt',a,left,0,eaves,item.color);b.wall('felt',right,d,0,eaves,item.color);
-  b.wall('felt',left,right,shopHeadroom,eaves,item.color);
+  b.wall('felt',left,right,store.headroom,eaves,item.color);
   for(const side of [-1,1]){
     const inner=center+side*(store.halfWidth+.12),outer=center+side*(width/2-.08);
     panel(Math.min(inner,outer),Math.max(inner,outer),.77,2.42,.045,'#769591');
-    panel(inner-.035,inner+.035,.15,shopHeadroom,.075,'#e7cba5');
+    panel(inner-.035,inner+.035,.15,store.headroom,.075,'#e7cba5');
   }
-  panel(center-width/2,center+width/2,top-.48,top-.035,.14,white,'sign'+store.style,
+  if(store.mall){
+    panel(.14,len-.14,top-.09,eaves-.08,.12,'#d8cec3');
+    panel(.14,len-.14,top+.04,top+.25,.18,item.awning);
+    for(const side of [-1,1]){
+      const from=center+side*width*.17,to=center+side*width*.45;
+      const glassLo=Math.min(from,to),glassHi=Math.max(from,to);
+      panel(glassLo,glassHi,.23,2.68,.105,'#718d91');
+      for(let u=glassLo+1.65;u<glassHi;u+=1.65)panel(u-.035,u+.035,.23,2.68,.13,'#d1c9ba');
+    }
+  }
+  panel(center-width/2,center+width/2,top-(store.large?2.05:store.mall?1.35:.48),top-.035,.23,white,'sign'+store.style,
     outward<0?[[0,0],[1,0],[1,1],[0,1]]:[[1,0],[0,0],[0,1],[1,1]]);
-  b.face('felt',p(center-width/2,.10,top-.5),p(center+width/2,.10,top-.5),
-    p(center+width/2,.85,top-.69),p(center-width/2,.85,top-.69),item.awning);
+  const awning=store.mall?3.4:.85,edge=store.large?2.91:store.mall?2.98:top-.5;
+  b.face('felt',p(center-width/2,.10,edge),p(center+width/2,.10,edge),
+    p(center+width/2,awning,edge-.19),p(center-width/2,awning,edge-.19),item.awning);
+  if(store.mall)for(const side of [-1,1]){
+    const [x,,z]=p(center+side*(width*.49),awning-.33,0);
+    b.box(x,0,z,.17,edge-.19,.17,'#74666a');
+  }
 }
 function addEnferBuilding(b,building,poly,detail,skyline,h){
   const index=enferStyle(building),{wall,roof,bay}=enferStyles[index];
@@ -529,15 +545,15 @@ function addEnferBuilding(b,building,poly,detail,skyline,h){
       if(store&&ring===poly&&i===shopEdge){
         const [left,right]=shopOpening(poly,store);
         retailFacade(b,a,d,left,right,outward,eaves,store);
-        b.wall('felt',inset(left),inset(a),0,shopHeadroom,'#d9be98');
-        b.wall('felt',inset(d),inset(right),0,shopHeadroom,'#d9be98');
+        b.wall('felt',inset(left),inset(a),0,store.headroom,'#d9be98');
+        b.wall('felt',inset(d),inset(right),0,store.headroom,'#d9be98');
       }else if(entry){
         const split=[a[0]+(d[0]-a[0])/bays,a[1]+(d[1]-a[1])/bays],bottom=eaves/floors;
         b.wall('enferEntry'+index,a,split,0,bottom,white);
         if(bays>1)b.wall(mat,split,d,0,bottom,white,bays-1,1);
         b.wall(mat,a,d,bottom,eaves,white,bays,floors-1);
       }else b.wall(mat,a,d,0,eaves,skyline?wall:white,bays,floors);
-      if(store&&i!==shopEdge)b.wall('felt',inset(d),inset(a),0,shopHeadroom,store.large?'#adc0ad':'#d9be98');
+      if(store&&i!==shopEdge)b.wall('felt',inset(d),inset(a),0,store.headroom,store.large?'#adc0ad':'#d9be98');
       if(ring===poly&&i===shopEdge&&!store)storefront(b,a,d,outward,eaves,business);
       if(detail&&ring===poly&&len>3.7&&(entry||i===shopEdge)&&!(store&&i===shopEdge))frontageDetails(b,a,d,outward,hash(building.id+i),i===shopEdge);
       if(detail&&ring===poly&&index!==3&&!(store&&i===shopEdge))facadeRelief(b,a,d,len,outward,bays,floors,eaves,index,entry,i===shopEdge);
@@ -779,18 +795,63 @@ function paintStationBuilding(b,building,detail){
     panel(0,.29,eaves+.815,eaves+.875,-.258,'#384253');
   }
 }
-function paintMallPylon(b){
-  const point=(u,h,off=0)=>{const [x,z]=montRenaudPoint(u,-3.9+off);return [x,h,z];};
-  for(const u of [-7.9,-6.05]){
-    const [x,,z]=point(u,0);b.box(x,0,z,.16,4.26,.16,'#56535b');
+function paintMarketShelter(b,{site,style,height,width,depth,posts,equipment}){
+  const red='#a93242',trim='#f2e5da',u=width/2,v=depth/2;
+  const p=(x,z,h)=>{const [px,pz]=marketPoint(site,x,z);return [px,h,pz];};
+  const roof=[[-u,-v],[u,-v],[u,v],[-u,v]].map(([a,d])=>marketPoint(site,a,d));
+  b.quad('felt',roof,height+.36,trim);
+  b.quad('felt',[...roof].reverse(),height,'#cec1b5');
+  for(let i=0;i<roof.length;i++)b.wall('felt',roof[i],roof[(i+1)%4],height,height+.36,red);
+  for(const [a,d] of posts){
+    const [x,z]=marketPoint(site,a,d);
+    b.box(x,0,z,.36,height,.36,'#706d75');b.box(x,.05,z,.43,.62,.43,red);
   }
-  for(let i=0;i<4;i++){
-    const h=1.46+i*.69,style=15-i;
-    for(const facing of [-1,1]){
-      const side=facing*.045,face=(u,y)=>point(-6.975+u*facing,y,side);
-      b.face('sign'+style,face(-.995,h),face(.995,h),face(.995,h+.60),face(-.995,h+.60),
-        white,[[0,0],[1,0],[1,1],[0,1]]);
+  for(const [a,d] of equipment){
+    const [x,z]=marketPoint(site,a,d);
+    b.box(x,.055,z,1.12,.16,1.65,'#c9b8a5');
+    b.box(x,.20,z,.78,1.29,.68,trim);b.box(x,.69,z,.80,.49,.70,red);
+    b.box(x,1.01,z,.42,.24,.72,'#415462');
+  }
+  for(const offset of [-v*.62,0,v*.62]){
+    const light=(a,d)=>marketPoint(site,a,d);
+    b.quad('signalLight',[light(-u*.73,offset-.065),light(u*.73,offset-.065),
+      light(u*.73,offset+.065),light(-u*.73,offset+.065)].reverse(),height-.045,'#fff1c4');
+  }
+  for(const side of [-1,1]){
+    const at=side*(u+.045);
+    b.face('sign'+style,p(at,side*v*.65,height-.6),p(at,-side*v*.65,height-.6),
+      p(at,-side*v*.65,height+.29),p(at,side*v*.65,height+.29),white);
+    b.face('sign'+style,p(-side*u*.72,side*(v+.045),height-.4),p(side*u*.72,side*(v+.045),height-.4),
+      p(side*u*.72,side*(v+.045),height+.29),p(-side*u*.72,side*(v+.045),height+.29),white);
+  }
+  if(site===marketDrive)for(const bay of driveBays){
+    const across=bay.across;
+    b.face('driveBay'+bay.id,p(-u-.12,across+.55,height-.97),p(-u-.12,across-.55,height-.97),
+      p(-u-.12,across-.55,height-.56),p(-u-.12,across+.55,height-.56),white);
+  }
+}
+function paintMarketSign(b,site){
+  const high=site.style===27?4.85:3.1,low=high-site.span*.31;
+  for(const u of [-site.span*.39,site.span*.39]){
+    const [x,z]=marketPoint(site,u,0);b.box(x,0,z,.18,high,.18,'#64606a');
+  }
+  for(const side of [-1,1]){
+    const p=(u,h)=>{const [x,z]=marketPoint(site,side*u,.12*side);return [x,h,z];};
+    b.face('sign'+site.style,p(-site.span/2,low),p(site.span/2,low),p(site.span/2,high),p(-site.span/2,high),white);
+  }
+}
+function paintMarketPaving(b,{a,d,width,kind}){
+  if(kind==='crosswalk'){
+    const dx=d[0]-a[0],dz=d[1]-a[1],len=Math.hypot(dx,dz);
+    for(let t=.28;t<len;t+=.85){
+      const x=a[0]+dx*t/len,z=a[1]+dz*t/len;
+      strip(b,'plain',[x-dz/len*width*.5,z+dx/len*width*.5],
+        [x+dz/len*width*.5,z-dx/len*width*.5],.42,.156,'#e8e1cc');
     }
+  }else{
+    const mark=kind==='paint',walk=kind==='walk';
+    strip(b,mark?'plain':'pave',a,d,width,mark?.161:walk?.127:.089,
+      mark?'#ece4cc':walk?'#c7b39d':'#777b84',streetFabric.paving.meters);
   }
 }
 function disc([x,z],r,sides){
@@ -1163,16 +1224,17 @@ export function createCity3D(scene,{software=false}={}){
       for(const station of railStations){
         if(key(station.x,station.y)===target.key)paintRailStation(b,station);
       }
-      if(key(...montRenaudPoint(-7,-3.9))===target.key)paintMallPylon(b);
-      for(const {a,b:d,width} of montRenaudPaving){
-        if(key((a[0]+d[0])/2,(a[1]+d[1])/2)===target.key)
-          strip(b,'pave',a,d,width,.10,'#c7b39d',streetFabric.paving.meters);
-      }
+      if(key(-1635,1053)===target.key)b.flat('pave',marketForecourt,.067,'#a5a6aa',streetFabric.paving.meters);
+      for(const {a,b:d,width,kind,x,y} of marketPaving)
+        if(key(x,y)===target.key)paintMarketPaving(b,{a,d,width,kind});
+      for(const shelter of facilityShelters)if(key(shelter.site.x,shelter.site.y)===target.key)paintMarketShelter(b,shelter);
+      for(const sign of marketSigns)if(key(sign.x,sign.y)===target.key)paintMarketSign(b,sign);
       for(const lot of parkingLots){
         if(key(lot.x,lot.y)!==target.key)continue;
         const at=(u,v)=>lotPoint(lot,u,v);
-        strip(b,'pave',at(-parkingWidth/2,0),at(parkingWidth/2,0),parkingDepth,.11,'#999ba0',streetFabric.paving.meters);
-        strip(b,'pave',at(0,-6.55),at(0,-4.6),6.4,.12,'#baa99b',streetFabric.paving.meters);
+        const width=lot.width||parkingWidth,depth=lot.depth||parkingDepth;
+        strip(b,'pave',at(-width/2,0),at(width/2,0),depth,.11,'#999ba0',streetFabric.paving.meters);
+        if(!lot.mall)strip(b,'pave',at(0,-6.55),at(0,-4.6),6.4,.12,'#baa99b',streetFabric.paving.meters);
         for(const [a,d] of parkingMarkings(lot))strip(b,'plain',a,d,.09,.133,'#e4d5b5',1);
         const [sx,sz]=parkingSign(lot),c=Math.cos(lot.angle),s=Math.sin(lot.angle);
         b.box(sx,.68,sz,.075,1.47,.075,'#46515e');

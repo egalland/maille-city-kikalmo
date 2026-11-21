@@ -18,6 +18,7 @@ import {enferStops,enferDistrict,enferStreet} from './enfer-places.js';
 import { baseTerrainHeight, terrainHeight, buildingGround, waterLevel, roadHeight, aircraftDeck } from './terrain-height.js';
 import {workshopId,workshopColliders} from './workshop.js';
 import {storeByBuilding,shopColliders} from './enfer-retail.js';
+import {facilitySolids,inMarketDistrict} from './mont-renaud.js';
 import {railStations,railSections,railXY,railSpacing,railDistance,railPoint} from './enfer-rail.js';
 import {createRailCrossings} from './rail-crossings.js';
 import {airfields} from './airfield.js';
@@ -136,6 +137,7 @@ const eiffel={id:'eiffel',x:3257.7,y:2420.6,yaw:.802,h:330};
 const eiffelFeet=new Set(['162158','162159','162160','162699']);
 const pyramidIds=new Set(['245184969','253248239','253248246','253248248']);
 const retailBuildings=[];
+if(isEnfer)for(const item of facilitySolids)terrain.insert(item,bounds(item.poly));
 for(const b of buildings){
   if(!b.poly?.length || !isEnfer&&(eiffelFeet.has(String(b.id)) || importedMonument(b)))continue;
   const store=isEnfer&&storeByBuilding.get(String(b.id));
@@ -669,7 +671,7 @@ export const destinations=sector?[genuineSectorStop()]:coreDestinations;
 export const SPAWN=destinations[0];
 export function getTravelPoint(key){return destinations.find(d=>d.key===key)||null;}
 export function districtAt(x,y){
-  if(isEnfer)return enferDistrict(x,y);
+  if(isEnfer)return inMarketDistrict(x,y)?'Mont Renaud':enferDistrict(x,y);
   if(sector)return sector.name||'Secteur local';
   if(x>5940)return 'Le Louvre';
   if(x>5410)return 'Jardin des Tuileries';
@@ -945,11 +947,14 @@ if(isEnfer)for(const [id,x,y,angle,type,color,bay] of streetParking)
   parkedCars.push({id,x,y,angle,type,color,bay,kind:'car',parked:true,moving:false,speed:0});
 if(isEnfer)for(const lot of parkingLots){
   const spaces=lotSpaces(lot);
-  for(const [index,type] of [[0,'compact'],[3,'sedan']]){
+  const rows=lot.mall?[0,Math.floor(spaces.length/3),Math.floor(spaces.length*.69),spaces.length-1]:[0,3];
+  for(const [i,index] of rows.entries()){
+    const type=i%2?'sedan':'compact';
+    if(lot.mall&&(!clearsTrafficAtRest(spaces[index],type)||contactAt(spaces[index].x,spaces[index].y,{radius:1.5})))continue;
     parkedCars.push({...spaces[index],type,color:lot.colors[index?1:0],bay:'lot',kind:'car',parked:true,moving:false,speed:0});
   }
-  const posts=[parkingSign(lot),lotPoint(lot,6.9,-4.25)];
-  if(lot.id!=='parking-mont-renaud-est')posts.push(lotPoint(lot,-6.9,4.62),lotPoint(lot,6.9,4.62));
+  const posts=[parkingSign(lot)];
+  if(!lot.mall)posts.push(lotPoint(lot,6.9,-4.25),lotPoint(lot,-6.9,4.62),lotPoint(lot,6.9,4.62));
   for(const [index,[x,y]] of posts.entries()){
     const prop={id:lot.id+'-post-'+index,type:'bollard',x,y,angle:lot.angle,r:.16,h:.87};
     props.push(prop);decor.insert(prop,bounds([[x,y]],.16));

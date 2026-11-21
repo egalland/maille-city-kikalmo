@@ -6,6 +6,42 @@ import {careerPlaces,careerContracts,careerGarage} from '../public/career-catalo
 import {retailStores} from '../public/enfer-retail.js';
 import {lotSpaces,parkingLots,parkingLease} from '../public/enfer-parking-lots.js';
 import {dealership} from '../public/vehicle-dealership.js';
+import {driveBays,driveOrderWait} from '../public/mont-renaud.js';
+
+test('the Auchan Drive debits a single order and hands it to the driver in a valid bay after reconnecting',async t=>{
+  const {active,who,pose,post,drive,car,tick,actor}=await harness(t);
+  const initial=(await active(who,'state')).state;
+  const command=(user,action,revision,product)=>post('career',user,{action,revision,product});
+  assert.equal((await command(who,'orderDrive',initial.revision,'ballon')).ok,false);
+  const orders=await Promise.all([
+    command(who,'orderDrive',initial.revision,'provisions'),
+    command(who,'orderDrive',initial.revision,'provisions')
+  ]);
+  const [order]=orders.filter(r=>r.ok);
+  assert.equal(orders.filter(r=>r.ok).length,1);
+  assert.equal(order.state.cash,initial.cash-14);
+  assert.deepEqual(order.state.goods,{});
+  const bay=driveBays[2],revision=order.state.revision;
+  await pose(bay,{angle:bay.angle});
+  assert.equal((await command(who,'collectDrive',revision)).ok,false);
+  tick(driveOrderWait+500);
+  const next={...actor(),profile:who.profile};
+  await post('join',next,{state:drive(bay,{vehicle:null,angle:bay.angle})});
+  assert.deepEqual((await active(next,'state')).state.driveOrder,order.state.driveOrder);
+  assert.equal((await command(next,'collectDrive',revision)).ok,false);
+  const passengerCar={id:'drive-test',type:car.type};
+  const record={...passengerCar,x:bay.x,y:bay.y,angle:bay.angle,occupied:true};
+  await post('sync',next,{state:drive(bay,{vehicle:passengerCar,angle:bay.angle,speed:2}),
+    events:[{type:'vehicle',op:'drive-claim',data:record}]});
+  assert.equal((await command(next,'collectDrive',revision)).ok,false);
+  await post('sync',next,{state:drive(bay,{vehicle:passengerCar,angle:bay.angle})});
+  const receipts=await Promise.all([command(next,'collectDrive',revision),command(next,'collectDrive',revision)]);
+  const [receipt]=receipts.filter(r=>r.ok);
+  assert.equal(receipts.filter(r=>r.ok).length,1);
+  assert.deepEqual(receipt.state.goods,{provisions:1});
+  assert.equal(receipt.state.cash,order.state.cash);
+  assert.equal(receipt.state.driveOrder,null);
+});
 
 test('a vehicle license is bought once at the garage and supports free nearby delivery after reconnecting',async t=>{
   const {DB,active,who,pose,post,drive,actor,tick}=await harness(t);
@@ -69,7 +105,7 @@ test('retail checks the correct counter, debits once and retains purchases acros
 
 test('a parked vehicle keeps its pose and can only be reclaimed by its profile before expiry',async t=>{
   const {active,who,b,post,drive,car,tick,actor}=await harness(t);
-  const [,spot]=lotSpaces(parkingLots.find(p=>p.id==='parking-galerie')),owner=(await active(who,'state')).state.parkingOwner;
+  const [,spot]=lotSpaces(parkingLots.find(p=>p.id==='mont-renaud-parking-principal')),owner=(await active(who,'state')).state.parkingOwner;
   await active(b,'state');
   await post('sync',who,{state:drive(spot)});
   const park={...car,x:spot.x,y:spot.y,angle:spot.angle,occupied:false,parkingSlot:spot.id,parkingOwner:owner};

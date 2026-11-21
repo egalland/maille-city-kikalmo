@@ -4,7 +4,8 @@ import {readFile} from 'node:fs/promises';
 import {vehicleSpec,vehicleDoorways} from '../public/vehicle-types.js';
 import {careerPlaces} from '../public/career-catalog.js';
 import {parkingLots,lotPoint,lotSpaces,parkingBay} from '../public/enfer-parking-lots.js';
-import {neighborhoodShops,namedFronts,montRenaudPoint} from '../public/enfer-frontage.js';
+import {neighborhoodShops,namedFronts} from '../public/enfer-frontage.js';
+import {driveBays,marketDrive,marketPoint,marketParking,atDriveBay} from '../public/mont-renaud.js';
 import {atShopCounter,retailStores} from '../public/enfer-retail.js';
 
 test('street parking is sparse, clear of traffic, accessible and stationary between visits',async t=>{
@@ -34,11 +35,18 @@ test('street parking is sparse, clear of traffic, accessible and stationary betw
     }
   }
   for(const lot of parkingLots){
-    for(const across of [-7,-6,-5,-4,-3,-2]){
+    for(const across of lot.mall?[]:[-7,-6,-5,-4,-3,-2]){
       const [x,y]=lotPoint(lot,0,across);
       assert.equal(contactAt(x,y,{angle:lot.angle+Math.PI/2,halfLength:2.05,halfWidth:.9}),null,lot.id);
     }
-    assert.equal(lotSpaces(lot).filter(space=>!slots.some(car=>car.id===space.id)).length,2);
+    const available=lotSpaces(lot).filter(space=>!slots.some(car=>car.id===space.id)).length;
+    if(lot.mall){
+      assert.ok(available>=5,lot.id);
+      for(const q of lotSpaces(lot)){
+        assert.equal(contactAt(q.x,q.y,{angle:q.angle,halfLength:2.05,halfWidth:.9}),null,q.id);
+        assert.ok(clearsTrafficAtRest(q,'compact'),q.id);
+      }
+    }else assert.equal(available,2);
     const [,space]=lotSpaces(lot);
     assert.equal(parkingBay(space,'compact').id,space.id);
     assert.equal(parkingBay({...space,angle:space.angle+Math.PI},'compact').id,space.id);
@@ -48,10 +56,17 @@ test('street parking is sparse, clear of traffic, accessible and stationary betw
     assert.equal(namedFronts.get(shop.building),shop);
     assert.equal(contactAt(shop.x,shop.y,{radius:.48}),null,shop.name);
   }
-  for(let along=0;along<=38;along+=.25){
-    const [x,y]=montRenaudPoint(along,5.65);
-    assert.equal(contactAt(x,y,{radius:.42,footZ:0,bodyHeight:1.55}),null,'Mont Renaud sidewalk '+along);
+  assert.ok(marketParking.flatMap(lotSpaces).length>=60);
+  for(const bay of driveBays){
+    assert.equal(atDriveBay({...bay,speed:0}),bay);
+    assert.equal(atDriveBay({...bay,speed:5}),null);
+    for(let a=-15;a<15;a+=1){
+      const [x,y]=marketPoint(marketDrive,a,bay.across);
+      assert.equal(contactAt(x,y,{angle:bay.angle,halfLength:2.24,halfWidth:.94}),null,'Drive '+bay.id+'/'+a);
+    }
   }
+  const [hedgeX,hedgeY]=marketPoint(marketDrive,1,9);
+  assert.equal(contactAt(hedgeX,hedgeY,{radius:.44})?.style,'hedge');
   for(const store of retailStores){
     const counterDistance=store.booth.at-.9;
     for(let step=-6;step<=10;step++){

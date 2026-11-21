@@ -6,7 +6,7 @@ export function* boundarySpans(rows){
     // Surveyed lines with no recorded material get a consistent textile finish.
     const style=kind==='fence'?(way%4===0?'board':'mesh'):kind;
     const h=heightDm/10||({brick:1.32,stone:1.50,board:1.58,mesh:1.46})[style];
-    const halfWidth=style==='brick'||style==='stone'?.13:.075;
+    const halfWidth=style==='hedge'?.48:style==='brick'||style==='stone'?.13:.075;
     for(let i=2;i<coords.length;i+=2){
       const ax=coords[i-2]/10,ay=coords[i-1]/10,dx=coords[i]/10-ax,dy=coords[i+1]/10-ay;
       const length=Math.hypot(dx,dy);
@@ -31,6 +31,20 @@ export function drawBoundary(batch,span,detail){
   const color=wall?(brick?'#b57f6a':'#ac9b92'):mesh?'#76958a':'#a47f68';
   const mat=wall?'parcelMasonry':mesh?'parcelMesh':'parcelWood';
   const near=offset(a,halfWidth),far=offset(b,halfWidth),backA=offset(a,-halfWidth),backB=offset(b,-halfWidth);
+  if(style==='hedge'){
+    batch.wall('felt',near,far,0,h*.70,'#46634c');
+    batch.wall('felt',backB,backA,0,h*.70,'#405944');
+    batch.wall('felt',backA,near,0,h*.71,'#425d48');
+    batch.wall('felt',far,backB,0,h*.71,'#425d48');
+    batch.quad('felt',[near,far,backB,backA],h*.71,'#5c7952');
+    const count=Math.ceil(length/(detail?1.25:2.6));
+    for(let i=0;i<count;i++){
+      const t=(i+.5)/count;
+      batch.ball(a[0]+dx*t,h*.68,a[1]+dy*t,length/count*.66,h*.34,.55,
+        i%2?'#607e54':'#517152',detail?9:6,detail?5:4,'felt');
+    }
+    return;
+  }
   const top=h-(wall?.06:mesh?.04:.035);
   const textureWidth=mesh?.90:wall?1.36:.92;
   if(mesh){

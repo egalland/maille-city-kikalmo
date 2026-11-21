@@ -30,6 +30,10 @@ Les maisons de brique et leurs toits s’inspirent des [Maisons de la reconstruc
 
 Relancer `/usr/bin/python3 scripts/geo-enfer.py` avec GDAL, NumPy et SciPy pour extraire la version courante de ce périmètre.
 
+### Zone commerciale du Mont Renaud
+
+Les emprises de la galerie et des bâtiments ainsi que les voies d’accès reprennent la BD TOPO®. Les parkings, les pistes de retrait et les plantations sont adaptés aux déplacements dans le jeu. Les sources de repérage sont le [dossier d’aménagement du Mont Renaud](https://www.hauts-de-france.developpement-durable.gouv.fr/IMG/pdf/cerfa_complet_2023_7682_compressed.pdf), la [fiche de l’hypermarché et de la station-service](https://www.auchan.fr/magasins/hypermarche/auchan-hypermarche-noyon/s-129) et la [fiche du Drive](https://www.auchan.fr/magasins/drive/auchan-drive-noyon/s-524).
+
 ## Clôtures et murs d’Enfer
 
 La couche séparée [enfer-enclosures.js](../public/enfer-enclosures.js) provient des tracés de **© les contributeurs OpenStreetMap**, distribués sous [Open Database Licence 1.0](https://www.openstreetmap.org/copyright). L’extrait est daté dans l’en-tête du fichier et conserve l’identifiant OSM de chaque chemin. Il est également téléchargeable dans les crédits de la carte en jeu. Les murs, clôtures et murs de soutènement suivent leur axe cartographié. Les matériaux et hauteurs manquants sont interprétés dans le style textile du jeu. Une parcelle sans clôture renseignée reste ouverte.

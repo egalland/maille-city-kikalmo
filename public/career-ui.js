@@ -6,6 +6,7 @@ import {outfitShop} from './outfit-shop.js';
 import {placeSymbols,setCareerGoal} from './career-navigation.js';
 import {atShopCounter,retailGoods,foodRecovery} from './enfer-retail.js';
 import {dealership} from './vehicle-dealership.js';
+import {atDriveBay,marketDrive} from './mont-renaud.js';
 const money=n=>Number(n).toLocaleString('fr-FR')+' ₣';
 const until=(timestamp,now)=>Math.max(0,Math.ceil((timestamp-now)/1000));
 const clock=seconds=>Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');
@@ -94,6 +95,8 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       if(which==='buyArmor')notify('Protection équipée.');
       if(which==='buyDye'||which==='equipDye')notify('Tenue mise à jour.');
       if(which==='buyProduct')notify(retailGoods.get(product).name+' ajouté au sac · −'+money(retailGoods.get(product).price));
+      if(which==='orderDrive'){if(!state.mission)manual=marketDrive;close();notify('Commande payée · Suis le panneau Auchan Drive.');}
+      if(which==='collectDrive'){if(manual?.id===marketDrive.id)manual=null;notify('Courses chargées dans le coffre · Disponibles dans ton sac.');}
       if(which==='eatProduct'&&data.food){game.eatShopFood?.(data.food);notify(retailGoods.get(product).name+' consommé.');}
       if(which==='publishLap')notify('Ton chrono est publié.');
       if(which==='hideLap')notify('Ton chrono a été retiré.');
@@ -188,6 +191,17 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       action.textContent='Voir les articles (G)';
       nextAction=closed?null:()=>{staged='retail';open();};
     }
+    const order=state?.driveOrder;
+    const bay=life.inVehicle&&!life.passenger&&!life.inAircraft&&!life.train&&atDriveBay({...pos,speed:life.speed/3.6});
+    if(bay){
+      overlay.hidden=false;pin.hidden=true;
+      const seconds=order?until(order.readyAt,now):null;
+      instruction.textContent='Auchan Drive · Piste '+bay.id;
+      detail.textContent=order?(seconds?'Préparation · '+seconds+' s':'Commande prête'): 'Commande tes courses depuis le menu Missions';
+      action.hidden=false;action.disabled=pending||seconds>0||life.lifeState==='down';
+      action.textContent=(order?'Retirer les courses':'Commander')+' (G)';
+      nextAction=order?()=>send('collectDrive'):()=>{staged='drive';open();};
+    }
     if(panelBody?.isConnected)renderPanel(panelBody);
     if(!document.hidden&&net.status==='online'&&!pending){
       const interval=game.getArmorWear?.()?900:(!state||state.mission&&(until(state.mission.deadline,now)===0||life.lifeState==='down'))?4000:30000;
@@ -200,7 +214,8 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     const inBank=['garage','market','police'].includes(nearby()?.id);
     const market=nearby()?.id==='market';
     const vendor=counter(pos,car);
-    const key=JSON.stringify([incident,incident?.ends>net.serverTime(),wool().phase,wool().slot,market,inBank,car.armor,state?.leaders,state?.revision,state?.cash,state?.mission,nowOnline(),here,car.inVehicle,car.vehicleHealth,pending,lastIssue,staged,vendor?.id,vendor&&game.vendorAvailable?.(vendor.id),car.health>=100,car.lifeState==='down']);
+    const driveWait=state?.driveOrder?until(state.driveOrder.readyAt,net.serverTime()):null;
+    const key=JSON.stringify([incident,incident?.ends>net.serverTime(),wool().phase,wool().slot,market,inBank,car.armor,state?.leaders,state?.revision,state?.cash,state?.mission,nowOnline(),here,car.inVehicle,car.vehicleHealth,pending,lastIssue,staged,vendor?.id,vendor&&game.vendorAvailable?.(vendor.id),car.health>=100,car.lifeState==='down',staged==='drive'?driveWait:null]);
     if(key===lastPanelKey&&body.childNodes.length)return;
     lastPanelKey=key;
     body.dataset.transferFocus=document.activeElement?.id==='career-amount'?'1':'0';
@@ -210,7 +225,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
     if(state)summary.append(make('small','',state.reputation+' de réputation'));
     const tabs=make('div','career-tabs');
     tabs.setAttribute('role','group');tabs.setAttribute('aria-label','Rubrique');
-    for(const [id,title] of [[null,'Contrats'],['garage','Atelier'],['dealership','Concession'],['bank','Banque'],['shop','Boutique'],['bag','Sac'],...(vendor||staged==='retail'?[['retail','Caisse']]:[])]){
+    for(const [id,title] of [[null,'Contrats'],['garage','Atelier'],['dealership','Concession'],['bank','Banque'],['shop','Boutique'],['bag','Sac'],['drive','Auchan Drive'],...(vendor||staged==='retail'?[['retail','Caisse']]:[])]){
       const tab=control(title,()=>{staged=id;renderPanel(body);},'career-tab');
       tab.setAttribute('aria-pressed',String(staged===id));tabs.append(tab);
     }
@@ -422,8 +437,25 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       }
       return page;
     }
+    function drivePage(){
+      const page=make('div','career-shop');
+      page.append(make('h3','','Auchan Drive · Mont Renaud'),
+        make('p','','Commande tes courses, puis arrête-toi au volant dans une des quatre pistes numérotées pour les retirer.'));
+      page.append(control('Guider vers le Drive',()=>guide(marketDrive)));
+      if(state?.driveOrder){
+        const product=retailGoods.get(state.driveOrder.product);
+        page.append(make('p','',product.name+' · '+(driveWait?'Préparation, '+driveWait+' s':'Prêt à retirer')));
+      }else for(const product of retailGoods.values()){
+        if(product.store!=='bobines')continue;
+        const row=make('div','career-dye'),order=control('Commander · '+money(product.price),()=>send('orderDrive',{product:product.id}));
+        order.setAttribute('aria-label','Commander '+product.name+' au Drive');
+        order.disabled=pending||!nowOnline()||!state||state.cash<product.price;
+        row.append(make('strong','',product.name),order);page.append(row);
+      }
+      return page;
+    }
     const footer=make('p','career-message',lastIssue||(!nowOnline()?'Le registre s’ouvre à la reconnexion.':''));
-    footer.setAttribute('role','status');body.replaceChildren(summary,tabs,({bank:bankPage,garage:garagePage,dealership:dealershipPage,shop:shopPage,retail:retailPage,bag:bagPage}[staged]||jobsPage)(),footer);
+    footer.setAttribute('role','status');body.replaceChildren(summary,tabs,({bank:bankPage,garage:garagePage,dealership:dealershipPage,shop:shopPage,retail:retailPage,bag:bagPage,drive:drivePage}[staged]||jobsPage)(),footer);
     if(staged==='bank'&&document.activeElement===document.body&&body.dataset.transferFocus==='1'){body.querySelector('#career-amount')?.focus({preventScroll:true});}
     if(manual&&!job)body.append(control('Arrêter le guidage',()=>{manual=null;lastPanelKey='';update();}));
     if(focused)Array.from(body.querySelectorAll('button,summary')).find(el=>el.textContent===focused)?.focus({preventScroll:true});

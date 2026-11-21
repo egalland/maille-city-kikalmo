@@ -1,7 +1,8 @@
 import {createWorldCamera} from './world-camera.js';
-import {frontageSigns,namedFronts,paintFrontageSign,montRenaudPaving} from './enfer-frontage.js';
+import {frontageSigns,namedFronts,paintFrontageSign} from './enfer-frontage.js';
 import {railXY,railSections,railStations,railGaugeOffsets,railwayPlatformOffset,railwayPlatformLength} from './enfer-rail.js';
-import {storeByBuilding,shopOpening,shopHeadroom,shopFixture} from './enfer-retail.js';
+import {storeByBuilding,shopOpening,shopFixture} from './enfer-retail.js';
+import {facilityShelters,marketPoint,marketDrive,driveBays,marketSigns,marketForecourt,marketPaving} from './mont-renaud.js';
 import {parkingLots,lotPoint,parkingWidth,parkingDepth,parkingMarkings,parkingSign} from './enfer-parking-lots.js';
 import {heritageByFootprint,heritagePlinth} from './enfer-heritage.js';
 import {heritageModel} from './heritage-models.js';
@@ -684,12 +685,14 @@ export function createCanvasView(canvas,spawn,onNotice){
         const a=poly[j],b=poly[(j+1)%poly.length];
         if(j!==store.edge){wall(a,b,0,H,local.wall);continue;}
         wall(a,left,0,H,sign.color);wall(right,b,0,H,sign.color);
-        wall(left,right,shopHeadroom,H,sign.color);
+        wall(left,right,store.headroom,H,sign.color);
+        const signWidth=store.large?15:store.mall?5.9:store.halfWidth;
+        const signTop=store.mall?4.6:store.headroom+.51,signBottom=store.mall?3.1:store.headroom+.04;
         const z=depth(...store.point(0,0)),p=projectPoly([
-          [...store.point(-store.halfWidth,-.08),shopHeadroom+.04],
-          [...store.point(store.halfWidth,-.08),shopHeadroom+.04],
-          [...store.point(store.halfWidth,-.08),shopHeadroom+.51],
-          [...store.point(-store.halfWidth,-.08),shopHeadroom+.51]
+          [...store.point(-signWidth,-.13),signBottom],
+          [...store.point(signWidth,-.13),signBottom],
+          [...store.point(signWidth,-.13),signTop],
+          [...store.point(-signWidth,-.13),signTop]
         ]);
         if(p&&z>0)queue.push({z:z-.06,base:item.ground,draw:()=>{
           let texture=facadeSigns.get(frontage.style);
@@ -698,10 +701,10 @@ export function createCanvasView(canvas,spawn,onNotice){
             facadeSigns.set(frontage.style,texture);
           }
           texturedFace(texture,[
-            [...store.point(-store.halfWidth,-.08),shopHeadroom+.04,0,texture.height],
-            [...store.point(store.halfWidth,-.08),shopHeadroom+.04,texture.width,texture.height],
-            [...store.point(store.halfWidth,-.08),shopHeadroom+.51,texture.width,0],
-            [...store.point(-store.halfWidth,-.08),shopHeadroom+.51,0,0]
+            [...store.point(-signWidth,-.13),signBottom,0,texture.height],
+            [...store.point(signWidth,-.13),signBottom,texture.width,texture.height],
+            [...store.point(signWidth,-.13),signTop,texture.width,0],
+            [...store.point(-signWidth,-.13),signTop,0,0]
           ]);
         }});
       }
@@ -1029,17 +1032,31 @@ export function createCanvasView(canvas,spawn,onNotice){
         }
       }
     }
-    if(isEnfer)for(const {a,b,width} of montRenaudPaving){
+    if(isEnfer&&seen({x:-1635,y:1053,r:47},streetViewRange))
+      poly3(marketForecourt.map(p=>[...p,.067]),'#a5a6aa');
+    if(isEnfer)for(const {a,b,width,kind} of marketPaving){
       if(!seen({x:(a[0]+b[0])/2,y:(a[1]+b[1])/2,r:22},streetViewRange))continue;
       const dx=b[0]-a[0],dy=b[1]-a[1],k=width/(2*Math.hypot(dx,dy)),u=-dy*k,v=dx*k;
-      poly3([[a[0]+u,a[1]+v,.10],[b[0]+u,b[1]+v,.10],[b[0]-u,b[1]-v,.10],[a[0]-u,a[1]-v,.10]],'#c7b39d');
+      if(kind==='crosswalk'){
+        const len=Math.hypot(dx,dy),ux=dx/len*.21,uy=dy/len*.21;
+        for(let t=.28;t<len;t+=.85){
+          const x=a[0]+dx*t/len,y=a[1]+dy*t/len;
+          poly3([[x+u-ux,y+v-uy,.156],[x+u+ux,y+v+uy,.156],
+            [x-u+ux,y-v+uy,.156],[x-u-ux,y-v-uy,.156]],'#e8e1cc');
+        }
+      }else{
+        const z=kind==='paint'?.161:kind==='walk'?.127:.089;
+        poly3([[a[0]+u,a[1]+v,z],[b[0]+u,b[1]+v,z],[b[0]-u,b[1]-v,z],[a[0]-u,a[1]-v,z]],
+          kind==='paint'?'#ece4cc':kind==='walk'?'#c7b39d':'#777b84');
+      }
     }
     if(isEnfer)for(const lot of parkingLots){
-      if(!seen({...lot,r:13},streetViewRange))continue;
+      if(!seen({...lot,r:lot.width||13},streetViewRange))continue;
       const rect=(l,r,a,b,h,tint)=>poly3([[...lotPoint(lot,l,a),h],[...lotPoint(lot,r,a),h],
         [...lotPoint(lot,r,b),h],[...lotPoint(lot,l,b),h]],tint);
-      rect(-parkingWidth/2,parkingWidth/2,-parkingDepth/2,parkingDepth/2,.11,'#96969a');
-      rect(-3.2,3.2,-6.55,-4.6,.20,'#a79889');
+      const width=lot.width||parkingWidth,depth=lot.depth||parkingDepth;
+      rect(-width/2,width/2,-depth/2,depth/2,.11,'#96969a');
+      if(!lot.mall)rect(-3.2,3.2,-6.55,-4.6,.20,'#a79889');
       for(const [a,b] of parkingMarkings(lot)){
         const dx=b[0]-a[0],dy=b[1]-a[1],n=Math.hypot(dx,dy),u=.049*dy/n,v=.049*dx/n;
         poly3([[a[0]-u,a[1]+v,.14],[b[0]-u,b[1]+v,.14],[b[0]+u,b[1]-v,.14],[a[0]+u,a[1]-v,.14]],'#e4d5b5');
@@ -1052,6 +1069,47 @@ export function createCanvasView(canvas,spawn,onNotice){
         g.strokeStyle='#d4e8e0';g.lineWidth=Math.max(.7,size*.045);g.strokeRect(center.x-size*.43,center.y-size*.43,size*.86,size*.86);
         g.save();g.fillStyle='#fff1d3';g.font='bold '+Math.round(size*.71)+'px sans-serif';g.textAlign='center';g.textBaseline='middle';
         g.fillText('P',center.x,center.y+size*.035);g.restore();
+      }});
+    }
+    if(isEnfer)for(const {site,width,depth:span,height,posts,equipment,style} of facilityShelters){
+      if(!seen({...site,r:20},streetViewRange))continue;
+      const local=(u,v,h)=>[...marketPoint(site,u,v),h];
+      const face=(points,tint,label)=>{
+        const pp=projectPoly(points);if(!pp)return;
+        const cx=points.reduce((sum,p)=>sum+p[0],0)/points.length,cy=points.reduce((sum,p)=>sum+p[1],0)/points.length;
+        queue.push({z:depth(cx,cy),draw:()=>{
+          fillPath(pp,tint);
+          if(label){
+            const p=pp.reduce((a,b)=>({x:a.x+b.x/pp.length,y:a.y+b.y/pp.length,d:a.d+b.d/pp.length}),{x:0,y:0,d:0});
+            g.fillStyle='#fff1da';g.font='bold '+Math.max(5,Math.min(24,f*.63/p.d))+'px sans-serif';
+            g.textAlign='center';g.textBaseline='middle';g.fillText(label,p.x,p.y);
+          }
+        }});
+      };
+      const w=width/2,d=span/2;
+      face([local(-w,-d,height+.27),local(w,-d,height+.27),local(w,d,height+.27),local(-w,d,height+.27)],'#ede5d8');
+      const sign=frontageSigns[style];
+      face([local(-w,-d,height-.27),local(-w,d,height-.27),local(-w,d,height+.27),local(-w,-d,height+.27)],'#a73242',sign.name);
+      face([local(-w,d,height-.27),local(w,d,height-.27),local(w,d,height+.27),local(-w,d,height+.27)],'#a73242',sign.caption);
+      for(const [u,v] of posts)face([local(u-.17,v,0),local(u+.17,v,0),local(u+.17,v,height),local(u-.17,v,height)],'#77666a');
+      for(const [u,v] of equipment)face([local(u-.4,v,0),local(u+.4,v,0),local(u+.4,v,1.54),local(u-.4,v,1.54)],'#a73242');
+      if(site===marketDrive)for(const bay of driveBays)face([
+        local(-w-.12,bay.across-.52,height-.97),local(-w-.12,bay.across+.52,height-.97),
+        local(-w-.12,bay.across+.52,height-.56),local(-w-.12,bay.across-.52,height-.56)
+      ],'#9c2737',String(bay.id));
+    }
+    if(isEnfer)for(const sign of marketSigns){
+      if(!seen({...sign,r:5},streetViewRange))continue;
+      const left=marketPoint(sign,-sign.span/2,0),right=marketPoint(sign,sign.span/2,0);
+      const high=sign.style===27?4.85:3.1,low=high-sign.span*.31;
+      const p=projectPoly([[...left,low],[...right,low],[...right,high],[...left,high]]);
+      const title=at(sign.x,sign.y,(high+low)/2);
+      if(p&&title)queue.push({z:title.d,draw:()=>{
+        const style=frontageSigns[sign.style];
+        fillPath(p,style.color);
+        g.fillStyle='#fff4dc';g.textAlign='center';g.textBaseline='middle';
+        g.font='bold '+Math.max(6,Math.min(24,f*sign.span*.13/title.d))+'px sans-serif';
+        g.fillText(style.name,title.x,title.y);
       }});
     }
     if(isEnfer)for(const s of visibleWays){
@@ -1110,6 +1168,7 @@ export function createCanvasView(canvas,spawn,onNotice){
       if(!seen({x,y,r:halfLength},145))continue;
       const points=[[...a,0],[...b,0],[...b,height],[...a,height]],plane=projectPoly(points);
       if(!plane)continue;
+      if(style==='hedge'){queue.push({z:depth(x,y),draw:()=>fillPath(plane,'#547454')});continue;}
       const art=enclosureStrip(style),z=depth(x,y),tile=style==='mesh'?.90:1.36,repeat=96*(halfLength*2)/tile;
       const uv=points.map((pt,i)=>[...pt,i===1||i===2?repeat:0,i<2?96*height/tile:0]);
       queue.push({z,draw:()=>{

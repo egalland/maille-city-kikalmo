@@ -7,6 +7,7 @@ import {abandonedFor,replacementAt} from '../public/vehicle-lifecycle.js';
 import {isAircraft} from '../public/airfield.js';
 import {isVehicleType,vehicleSpec,isTrain} from '../public/vehicle-types.js';
 import {dealership,deliveryRange} from '../public/vehicle-dealership.js';
+import {atDriveBay,driveOrderWait} from '../public/mont-renaud.js';
 
 export const careerSchema=[
   woolSchema,...districtEventsSchema,
@@ -20,6 +21,7 @@ export const careerSchema=[
       layer TEXT,wearer TEXT,dyes TEXT NOT NULL DEFAULT '[]',dye TEXT)`,
   `CREATE TABLE IF NOT EXISTS mc_laps(profile TEXT PRIMARY KEY,best INTEGER,public INTEGER,alias TEXT)`,
   `CREATE TABLE IF NOT EXISTS mc_shop_bags(profile TEXT PRIMARY KEY,goods TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS mc_drive_orders(profile TEXT PRIMARY KEY,product TEXT NOT NULL,ready INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS mc_vehicle_licenses(profile TEXT NOT NULL,model TEXT NOT NULL,car TEXT NOT NULL,
     last_call INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(profile,model))`,
   'CREATE INDEX IF NOT EXISTS mc_ranked_laps ON mc_laps(public,alias) WHERE public IS NOT NULL',
@@ -33,6 +35,7 @@ const profileId=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9
 const maxPoseAge=25000;
 const readCareer=`SELECT c.*,w.slot AS woolSlot,w.picked AS woolPicked,w.paid AS woolPaid,e.bank,e.licensed,e.revenue,l.best,l.public,o.armor,o.layer,o.wearer,o.dyes,o.dye,b.goods,
     (SELECT json_group_array(model) FROM mc_vehicle_licenses WHERE profile=c.profile) AS vehicleLicenses,
+    (SELECT json_object('product',product,'readyAt',ready) FROM mc_drive_orders WHERE profile=c.profile) AS driveOrder,
     (SELECT json_group_array(json_object('name',alias,'ms',public)) FROM
       (SELECT alias,public FROM mc_laps WHERE public IS NOT NULL ORDER BY public,alias,profile LIMIT 5)) AS leaders
     FROM mc_careers c JOIN mc_enterprises e ON c.profile=e.profile
@@ -42,7 +45,7 @@ const readCareer=`SELECT c.*,w.slot AS woolSlot,w.picked AS woolPicked,w.paid AS
 const parse=data=>data?JSON.parse(data):null;
 function publicState(row,rider){
   const mission=parse(row.mission);
-  return {version:3,parkingOwner:row.profile,goods:parse(row.goods)||{},vehicleLicenses:parse(row.vehicleLicenses)||[],wool:woolProgress(row),armor:row.armor||0,armorId:row.layer,wearable:row.wearer===rider,dyes:parse(row.dyes)||[],dye:row.dye,bestLapMs:row.best,publicLapMs:row.public,leaders:parse(row.leaders)||[],bank:row.bank,licensed:!!row.licensed,revenue:row.revenue,revision:row.revision,cash:row.cash,completed:row.completed,reputation:row.reputation,owned:!!row.car,
+  return {version:3,parkingOwner:row.profile,goods:parse(row.goods)||{},driveOrder:parse(row.driveOrder),vehicleLicenses:parse(row.vehicleLicenses)||[],wool:woolProgress(row),armor:row.armor||0,armorId:row.layer,wearable:row.wearer===rider,dyes:parse(row.dyes)||[],dye:row.dye,bestLapMs:row.best,publicLapMs:row.public,leaders:parse(row.leaders)||[],bank:row.bank,licensed:!!row.licensed,revenue:row.revenue,revision:row.revision,cash:row.cash,completed:row.completed,reputation:row.reputation,owned:!!row.car,
     mission:mission?{contract:mission.contract,stage:mission.stage,car:mission.car||null,started:mission.started,deadline:mission.deadline}:null};
 }
 async function hashProfile(profile){
@@ -50,7 +53,7 @@ async function hashProfile(profile){
   return Array.from(bytes,v=>v.toString(16).padStart(2,'0')).join('');
 }
 const near=(actor,place)=>(actor.lift||0)<1.5&&Math.hypot(actor.x-place.x,actor.y-place.y)<=careerRadius;
-const allowed=new Set(['incident','woolPick','woolReturn','state','start','cancel','advance','repair','buy','collect','license','collectRent','deposit','withdraw','publishLap','hideLap','buyArmor','buyDye','equipDye','buyProduct','eatProduct','buyVehicleLicense','deliverVehicle']);
+const allowed=new Set(['incident','woolPick','woolReturn','state','start','cancel','advance','repair','buy','collect','license','collectRent','deposit','withdraw','publishLap','hideLap','buyArmor','buyDye','equipDye','buyProduct','eatProduct','buyVehicleLicense','deliverVehicle','orderDrive','collectDrive']);
 export async function runCareer(db,b,room,now){
   if(room!=='enfer:public'||!profileId.test(b.profile)||!allowed.has(b.action))
     return {ok:false,error:'Demande de carrière invalide.'};
@@ -173,6 +176,27 @@ export async function runCareer(db,b,room,now){
       vehicle={id,type:model.id,x:pose.x,y:pose.y,angle:pose.angle,color:model.color,occupied:false,owner:'',speed:0,moving:false,expiresAt:now+abandonedFor};
       worldEvent('vehicle',vehicle);
     }
+  }else if(b.action==='orderDrive'||b.action==='collectDrive'){
+    const order=parse(row.driveOrder),product=retailGoods.get(b.action==='orderDrive'?b.product:order?.product);
+    const bag=parse(row.goods)||{};
+    if(b.action==='orderDrive'){
+      if(order)return fail('Retire d’abord ta commande en cours.');
+      if(product?.store!=='bobines')return fail('Choisis un article du Drive Auchan.');
+      if(cash<product.price)return fail('Solde insuffisant pour cette commande.');
+      if((bag[product.id]||0)>=99)return fail('Ton sac est plein pour cet article.');
+      cash-=product.price;
+      effects.push(q(`INSERT INTO mc_drive_orders(profile,product,ready) SELECT ?,?,? WHERE ${hasMutation}`,
+        profile,product.id,now+driveOrderWait,profile,marker));
+    }else{
+      if(!order||!product)return fail('Tu n’as aucune commande à retirer.');
+      if(order.readyAt>now)return fail('La commande est encore en préparation.');
+      if(!atDriveBay(actor)||!(await verifyCar()))return fail('Arrête-toi dans une piste du Drive, au volant.');
+      if((bag[product.id]||0)>=99)return fail('Libère une place pour cet article dans ton sac.');
+      bag[product.id]=(bag[product.id]||0)+1;
+      effects.push(q(`INSERT INTO mc_shop_bags(profile,goods) SELECT ?,? WHERE ${hasMutation}
+        ON CONFLICT(profile) DO UPDATE SET goods=excluded.goods`,profile,JSON.stringify(bag),profile,marker));
+      effects.push(q(`DELETE FROM mc_drive_orders WHERE profile=? AND ${hasMutation}`,profile,profile,marker));
+    }
   }else if(b.action==='buyProduct'||b.action==='eatProduct'){
     const product=retailGoods.get(b.product),bag=parse(row.goods)||{};
     if(!product)return fail('Article inconnu.');
@@ -183,6 +207,7 @@ export async function runCareer(db,b,room,now){
       if(parse(clerk?.data)?.health===0)return fail('La caisse est fermée pour le moment.');
       if(cash<product.price)return fail('Solde insuffisant pour cet article.');
       if(count>=99)return fail('Ton sac contient déjà 99 exemplaires de cet article.');
+      if(count===98&&parse(row.driveOrder)?.product===product.id)return fail('Garde de la place pour ta commande Drive.');
       cash-=product.price;bag[product.id]=count+1;
     }else{
       if(!foodRecovery[product.id]||!count)return fail('Tu n’as pas cet aliment dans ton sac.');

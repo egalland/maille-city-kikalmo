@@ -94,6 +94,10 @@ export function cityMaterials(enfer=false){
     frontageSigns.forEach((item,index)=>{
       material['sign'+index]=lambert(tile(256,64,(c,w,h)=>paintFrontageSign(c,w,h,item)));
     });
+    for(let lane=1;lane<=4;lane++)material['driveBay'+lane]=lambert(tile(96,64,c=>{
+      rect(c,0,0,96,64,'#9c2737');c.fillStyle='#fff4e3';c.textAlign='center';c.textBaseline='middle';
+      c.font='bold 39px sans-serif';c.fillText(String(lane),48,33);
+    }));
     material.tileRoof=finish(tile(144,96,wovenTiles),.105,.94);
     for(const [key,depth] of [['pave',.052],['road',.021],['park',.055],['felt',.047],['water',.082]]){
       const old=material[key];

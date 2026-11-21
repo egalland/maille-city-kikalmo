@@ -3,7 +3,7 @@ import {selectBridgeDecks} from './enfer-bridges.js';
 import {selectSectorTerrain,selectRiverbanks,baseTerrainHeight} from './terrain-height.js';
 import {bundledSectors} from './sector-crossing.js';
 import {readMapArchive} from './map-archive.js';
-import {commercialBuildings} from './enfer-retail.js';
+import {marketHedges} from './mont-renaud.js';
 import {railStationBuildings} from './enfer-rail.js';
 async function readPreset(key) {
   const d=await readMapArchive(key);
@@ -47,9 +47,13 @@ const data=await selectData();
 selectSectorTerrain(data.relief);
 export const {buildings,streets,water,green,metadata}=data;
 export const isEnfer=metadata.world==='enfer';
-export const enclosureRows=isEnfer?(await import('./enfer-enclosures.js')).enclosureRows:[];
+export const enclosureRows=isEnfer?[...(await import('./enfer-enclosures.js')).enclosureRows,...marketHedges]:[];
 if(isEnfer){
-  buildings.push(...commercialBuildings,...railStationBuildings);
+  // The frontage shell and the survey block for the petrol canopy are
+  // replaced by the modeled entrance and open pump shelter.
+  const replaced=new Set(['317656048','317656063']);
+  for(let i=buildings.length-1;i>=0;i--)if(replaced.has(buildings[i].id))buildings.splice(i,1);
+  buildings.push(...railStationBuildings);
   selectRiverbanks(water);
   selectBridgeDecks(streets,water,baseTerrainHeight);
 }

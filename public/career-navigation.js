@@ -5,13 +5,15 @@ import {makeCareerRouter} from './career-route.js';
 import {parkingLots} from './enfer-parking-lots.js';
 import {neighborhoodShops} from './enfer-frontage.js';
 import {railStations} from './enfer-rail.js';
+import {marketServices} from './mont-renaud.js';
 // Give directions to the public-facing pavement. A point at the centre of a
 // building could put the last leg of the route inside its collision polygon.
 export const heritageWaypoints=heritageSites.filter(site=>site.approach).map(site=>({
   id:'heritage/'+site.key,name:site.name,x:site.approach[0],y:site.approach[1],
   symbol:site.key.startsWith('mairie')||site.key==='hotel-ville'?'⌂':'✝'
 }));
-const neighborhoodPins=new Map([...parkingLots.map(p=>[p.id,'P']),...neighborhoodShops.map(p=>[p.id,'C']),...railStations.map(p=>[p.id,'T'])]);
+const neighborhoodPins=new Map([...parkingLots.map(p=>[p.id,'P']),...neighborhoodShops.map(p=>[p.id,'C']),...railStations.map(p=>[p.id,'T']),
+  ...marketServices.map((p,i)=>[p.id,i?'S':'D'])]);
 export const placeSymbols={...Object.fromEntries(heritageWaypoints.map(p=>[p.id,p.symbol])),...Object.fromEntries(neighborhoodPins),market:'M',garage:'G',station:'S',quay:'Q',police:'P',helipad:'H',mooring:'A'};
 let goal=null,route=[],districtRouter=null,cityRouter=null,origin=null;
 const inDistrict=(x,y,margin)=>Math.abs(x-careerPlaces.market.x)<=margin&&Math.abs(y-careerPlaces.market.y)<=margin;
@@ -48,7 +50,7 @@ export function paintCareerNavigation(c,player,streets,{px,py,w,h,full}){
   const localPlaces=[...Object.values(careerPlaces),...airfields];
   // At region scale the churches and town halls in the same village coincide.
   if(!full||Math.abs(px(100)-px(0))>=24)localPlaces.push(...heritageWaypoints);
-  if(!full||Math.abs(px(100)-px(0))>=20)localPlaces.push(...parkingLots,...neighborhoodShops,...railStations);
+  if(!full||Math.abs(px(100)-px(0))>=20)localPlaces.push(...marketServices,...parkingLots,...neighborhoodShops,...railStations);
   const pins=goal?[...localPlaces.filter(p=>p.id!==goal.id),goal]:localPlaces;
   for(const p of pins){
     const active=p.id===goal?.id,r=active?8:6.5;

@@ -1,10 +1,4 @@
-import {neighborhoodShops,frontageSigns,montRenaudPoint,montRenaudHeading} from './enfer-frontage.js';
-
-export const commercialBuildings=neighborhoodShops.filter(shop=>shop.footprint).map(shop=>{
-  const {along,front,width,depth,h}=shop.footprint,left=along-width/2,right=along+width/2;
-  return {id:shop.building,kind:'commercial',h,holes:[],observedHeight:true,poly:
-    [montRenaudPoint(left,front),montRenaudPoint(right,front),montRenaudPoint(right,front+depth),montRenaudPoint(left,front+depth)]};
-});
+import {neighborhoodShops,frontageSigns} from './enfer-frontage.js';
 
 const catalogs={
   'four-tisserands':{door:[-27.2,-278.35,-2.3151217116],clerk:'Mina',coat:'#a55748',
@@ -26,20 +20,21 @@ const catalogs={
 export const shopHeadroom=2.75;
 export const retailStores=neighborhoodShops.map(shop=>{
   const {door,clerk,coat,goods,large=false}=catalogs[shop.id];
-  const [x,y,angle]=door||[...montRenaudPoint(shop.footprint.along,shop.footprint.front),montRenaudHeading];
+  const [x,y,angle]=door||shop.door;
   const c=Math.cos(angle),s=Math.sin(angle),point=(across,inside)=>[x+c*inside-s*across,y+s*inside+c*across];
   const bakery=shop.id==='four-tisserands',center=large?4.15:bakery?2.68:3.25,halfWidth=large?1.43:1.06;
   const booth={width:large?2.8:2.14,depth:.56,at:center,offset:0,h:1.02};
   const [buyerX,buyerY]=point(0,center-.9),[clerkX,clerkY]=point(0,center+(bakery?.72:.95));
   const furnishings=large?[
-    ...[-6.5,-3.5,3.5,6.5].map(offset=>({at:6.6,offset,width:1.1,depth:4.8,h:1.46})),
-    {at:10.55,offset:0,width:15.2,depth:.56,h:1.57}
-  ]:shop.footprint?[
+    ...[-15,-11,-7,-3,3,7,11,15].map(offset=>({at:12.3,offset,width:1.22,depth:11.0,h:1.55})),
+    ...[-12,-6,6,12].map(offset=>({at:21.5,offset,width:4.7,depth:1,h:1.68})),
+    ...[-8.5,8.5].map(offset=>({at:4.25,offset,width:1.2,depth:2.8,h:1.02})),
+  ]:shop.mall?[
     {at:5.9,offset:0,width:5.45,depth:.44,h:1.65},
     ...[-2.75,2.75].map(offset=>({at:3.2,offset,width:.59,depth:3.5,h:1.38}))
   ]:bakery?[{at:2,offset:-1.62,width:.46,depth:1.70,h:1.42}]:
     [{at:center+2,offset:0,width:1.8,depth:.4,h:1.65}];
-  return {...shop,large,point,angle,clerk,coat,goods,buyerX,buyerY,clerkX,clerkY,booth,furnishings,
+  return {...shop,large,headroom:shop.mall?3.72:shopHeadroom,point,angle,clerk,coat,goods,buyerX,buyerY,clerkX,clerkY,booth,furnishings,
     tint:frontageSigns[shop.style].color,halfWidth,
     display:[point(-halfWidth,0),point(halfWidth,0)]};
 });
@@ -83,5 +78,5 @@ export function shopColliders(building,store){
     });
   }
   for(const fixture of [store.booth,...store.furnishings])add(shopFixture(store,fixture),fixture.h);
-  return [...items,{...building,type:'building',minHeight:shopHeadroom}];
+  return [...items,{...building,type:'building',minHeight:store.headroom}];
 }
