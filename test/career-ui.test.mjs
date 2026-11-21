@@ -64,7 +64,11 @@ test('career controls start and replay a delivery, validate arrivals, credit cas
   await fields.get('careerAction').onclick();
   await settle(()=>fields.get('careerInstruction').textContent==='Livrer les ballots');
   assert.ok(fields.get('careerAction').hidden);
-  clock+=14000;pos=careerPlaces.quay;await sync();tickUI();await fields.get('careerAction').onclick();
+  clock+=14000;pos=careerPlaces.quay;await sync();tickUI();
+  // A district event can expire during the drive. Wait until the refreshed
+  // HUD enables the action, just as the browser button does.
+  await settle(()=>!fields.get('careerAction').disabled);
+  await fields.get('careerAction').onclick();
   const expected=(45+careerContracts.delivery.reward)+' ₣';
   await settle(()=>fields.get('careerBalance').textContent===expected);
   assert.ok(notices.some(x=>x.includes('Contrat rempli')));
