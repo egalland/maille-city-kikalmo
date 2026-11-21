@@ -7,7 +7,7 @@ import {boundarySpans} from './residential-boundaries.js';
 import {containsPoint as inRing,edgeContact} from './collision-ring.js';
 import {teammate} from './partners.js';
 import {careerPlaces} from './career-catalog.js';
-import {paintCareerNavigation} from './career-navigation.js';
+import {careerGoal,paintCareerNavigation} from './career-navigation.js';
 import {cityClimate} from './city-climate.js';
 import {junctionSignals,crossingWalker,sidewalkRoutine} from './street-signals.js';
 import {yarnPalette} from './wool-art.js';
@@ -1217,15 +1217,15 @@ function ensureAtlas(){
   c.setTransform(atlasRatio,0,0,atlasRatio,-landBounds.minX*atlasRatio,-landBounds.minY*atlasRatio);
   drawBaseMap(c,(landBounds.minX+landBounds.maxX)/2,(landBounds.minY+landBounds.maxY)/2,Math.max(dx,dy),atlasRatio,true);
 }
-function mapView(w,h,player,full,districtZoom){
-  if(districtZoom&&isEnfer){
-    const places=Object.values(careerPlaces),box=bounds(places.map(p=>[p.x,p.y]),45);
-    return {x:(box.minX+box.maxX)/2,y:(box.minY+box.maxY)/2,scale:Math.min(w/(box.maxX-box.minX),h/(box.maxY-box.minY))};
-  }
+function mapView(w,h,player,full,zoom,important){
+  if(full&&zoom==='nearby')return {x:player.x,y:player.y,scale:Math.min(w/620,h/350)};
   if(full){
-    const mx=landBounds.maxX-landBounds.minX,my=landBounds.maxY-landBounds.minY;
-    const scale=Math.min((w-16)/mx,(h-22)/my);
-    return {x:(landBounds.minX+landBounds.maxX)*.5,y:(landBounds.minY+landBounds.maxY)*.5,scale};
+    let box=landBounds;
+    if(isEnfer&&zoom==='missions')box=bounds(Object.values(careerPlaces).map(p=>[p.x,p.y]),45);
+    else if(isEnfer)box=bounds([...destinations,careerPlaces.market,...important].map(p=>[p.x,p.y]),360);
+    const mx=box.maxX-box.minX,my=box.maxY-box.minY;
+    const scale=Math.min(Math.max(1,w-24)/mx,Math.max(1,h-24)/my);
+    return {x:(box.minX+box.maxX)*.5,y:(box.minY+box.maxY)*.5,scale};
   }
   return {x:player.x,y:player.y,scale:Math.max(w/275,h/175)};
 }
@@ -1245,19 +1245,22 @@ function drawLocalMap(context,canvas,view,w,h,dpr){
   const left=tile.x-(w/2+pad)/scale,top=tile.y-(h/2+pad)/scale;
   context.drawImage(tile.source,left,top,tile.source.width/(dpr*scale),tile.source.height/(dpr*scale));
 }
-export function paintMap(canvas,player,{full=false,districtZoom=false,peers=[],vehicles=[],parked=[],pickups=[],tracked=null,
+export function paintMap(canvas,player,{full=false,zoom='city',peers=[],vehicles=[],parked=[],pickups=[],tracked=null,
   search=null,police=[],dpr=Math.min(2,globalThis.devicePixelRatio||1)}={}){
   if(!canvas||!player)return;
   const rect=canvas.getBoundingClientRect?.(),w=Math.round(rect?.width||canvas.width),h=Math.round(rect?.height||canvas.height);
   if(!w||!h)return;
   const outW=Math.round(w*dpr),outH=Math.round(h*dpr);
   if(canvas.width!==outW||canvas.height!==outH){canvas.width=outW;canvas.height=outH;}
-  const c=canvas.getContext('2d');const v=mapView(w,h,player,full,districtZoom);
+  const buddy=teammate(),goal=isEnfer?careerGoal():null;
+  const important=[player,buddy,goal,search,tracked].filter(p=>p&&Number.isFinite(p.x+p.y));
+  const overview=full&&zoom==='city',c=canvas.getContext('2d');
+  const v=mapView(w,h,player,full,zoom,important);
   const ux=w*.5-v.x*v.scale,uy=h*.5-v.y*v.scale,px=x=>x*v.scale+ux,py=y=>y*v.scale+uy;
   c.setTransform(dpr,0,0,dpr,0,0);
   c.fillStyle=mapPalette.land;c.fillRect(0,0,w,h);
   c.save();c.translate(ux,uy);c.scale(v.scale,v.scale);
-  if(full&&!districtZoom){
+  if(overview){
     ensureAtlas();c.drawImage(atlas,landBounds.minX,landBounds.minY,atlas.width/atlasRatio,atlas.height/atlasRatio);
   }else drawLocalMap(c,canvas,v,w,h,dpr);
   c.restore();
@@ -1279,8 +1282,9 @@ export function paintMap(canvas,player,{full=false,districtZoom=false,peers=[],v
     c.setLineDash([4,4]);c.strokeStyle='#a3e1be';c.lineWidth=1.6;c.stroke();c.setLineDash([]);
     circle(x,y,7,'#244a48','#a3e1be');
   }
-  // Keep pickup markers at a fixed screen size and below place names and players.
-  for(const drop of pickups){
+  // The overview only marks a tracked pickup. Individual drops are visible
+  // when looking around the player or in the district view.
+  for(const drop of overview&&isEnfer?[]:pickups){
     const x=px(drop.x),y=py(drop.y),r=full?3.6:4.8;
     if(x<-r||x>w+r||y<-r||y>h+r)continue;
     c.beginPath();c.moveTo(x,y-r);c.lineTo(x+r,y);c.lineTo(x,y+r);c.lineTo(x-r,y);c.closePath();
@@ -1288,15 +1292,28 @@ export function paintMap(canvas,player,{full=false,districtZoom=false,peers=[],v
     c.fillStyle='#42333a';c.fillRect(x-1,y-1,2,2);
   }
   if(full){
-    const labels=destinations.filter(d=>isEnfer||['etoile','maillot','neuilly','arche','concorde','louvre','sector'].includes(d.key));
-    c.font='600 '+(w>450?11:9)+'px system-ui';c.textBaseline='middle';
-    for(const d of labels){
-      if(districtZoom)continue;
-      const x=px(d.x),y=py(d.y),j=['etoile','neuilly','louvre'].includes(d.key)?15:-14;
-      circle(x,y,3.2,'#ffd49e','#3e3442');
-      const label=isEnfer?d.label:d.key==='sector'?d.label:d.key==='arche'?'La Défense':d.key==='etoile'?'Étoile':d.key==='maillot'?'Maillot':d.key==='neuilly'?'Neuilly':d.key==='concorde'?'Concorde':'Louvre';
-      const width=c.measureText(label).width;let lx=clamp(x-width/2,3,w-width-3);
-      c.fillStyle='#2a2633e8';c.fillRect(lx-3,y+j-7,width+6,14);c.fillStyle='#fff0d6';c.fillText(label,lx,y+j);
+    const short={gare:'Avenue de la Gare','trois-ponts':'Trois Arches',arche:'La Défense',etoile:'Étoile',maillot:'Maillot',neuilly:'Neuilly',concorde:'Concorde',louvre:'Louvre'};
+    const visible=destinations.filter(d=>zoom!=='missions'&&(isEnfer||d.key==='sector'||short[d.key]))
+      .map(d=>({x:px(d.x),y:py(d.y),label:short[d.key]||d.label,rail:d.rail}))
+      .filter(p=>p.x>=4&&p.x<=w-4&&p.y>=4&&p.y<=h-4);
+    const reserved=[...important,...police,...parked].map(p=>({x:px(p.x),y:py(p.y),r:9}));
+    const dots=[];
+    for(const pin of visible){
+      // A dot stands for nearby destinations at small scales. The list below
+      // the map still exposes each destination and a closer view separates the pins.
+      if(dots.some(p=>Math.hypot(p.x-pin.x,p.y-pin.y)<6))continue;
+      dots.push(pin);circle(pin.x,pin.y,3.2,pin.rail?'#b6d8f0':'#ffd49e','#3e3442');
+    }
+    const occupied=[...reserved,...dots.map(p=>({...p,r:5}))].map(({x,y,r})=>bounds([[x,y]],r));
+    c.font='600 '+(w>450?13:12)+'px system-ui';c.textBaseline='middle';
+    for(const {x,y,label} of dots){
+      const width=Math.ceil(c.measureText(label).width)+10;
+      for(const [left,top] of [[x+8,y-9],[x-width-8,y-9],[x-width/2,y-27],[x-width/2,y+9]]){
+        const rect={minX:left,minY:top,maxX:left+width,maxY:top+18};
+        if(left<2||top<2||rect.maxX>w-2||rect.maxY>h-2||occupied.some(box=>overlaps(rect,box)))continue;
+        occupied.push(rect);c.fillStyle='#2a2633ed';c.fillRect(left,top,width,18);
+        c.fillStyle='#fff0d6';c.fillText(label,left+5,top+9);break;
+      }
     }
   } else {
     for(const vcar of vehicles){
@@ -1305,7 +1322,7 @@ export function paintMap(canvas,player,{full=false,districtZoom=false,peers=[],v
       c.fillStyle='#f3ccb0';c.save();c.translate(x,y);c.rotate(vcar.angle||0);c.fillRect(-2,-1,4,2);c.restore();
     }
   }
-  if(isEnfer)paintCareerNavigation(c,player,streets,{px,py,w,h,full});
+  if(isEnfer)paintCareerNavigation(c,player,streets,{px,py,w,h,full,overview});
   for(const car of parked){
     const x=px(car.x),y=py(car.y);
     if(x<6||x>w-6||y<6||y>h-6)continue;
@@ -1324,10 +1341,9 @@ export function paintMap(canvas,player,{full=false,districtZoom=false,peers=[],v
     const x=px(p.x),y=py(p.y);
     if(x>=0&&x<=w&&y>=0&&y<=h)circle(x,y,3.5,'#f2a89a',yarnPalette.ink);
   }
-  const buddy=teammate();
   if(buddy&&Number.isFinite(buddy.x+buddy.y)){
     let x=px(buddy.x),y=py(buddy.y);
-    if(!full){x=clamp(x,7,w-7);y=clamp(y,7,h-7);}
+    if(!overview){x=clamp(x,7,w-7);y=clamp(y,7,h-7);}
     circle(x,y,6,'#6fe6f0','#173c48');
     c.save();c.fillStyle='#183841';c.textAlign='center';c.textBaseline='middle';c.font='bold 9px system-ui';c.fillText('D',x,y+.5);c.restore();
   }

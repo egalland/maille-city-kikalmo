@@ -148,6 +148,8 @@
 .gp-mode{display:flex;align-items:center;gap:3px;justify-self:start;background:#191822;border:1px solid #514550;border-radius:7px;padding:3px}
 .gp-mode button{border:0;background:transparent;color:#c4b6c3!important;border-radius:4px;padding:7px 14px;font:700 13px/1.15 var(--ui,system-ui)!important;min-height:33px}
 .gp-mode button[aria-pressed="true"]{background:#414239;color:#f7ddb0!important;box-shadow:inset 0 0 0 1px #736650}
+.gp-local>.gp-mode{margin-bottom:6px}
+.mc-duo-actions small{align-self:center;color:#c8cfbd}
 .gp-local,.gp-atlas{display:grid;gap:12px}
 .gp-stage{height:clamp(215px,40dvh,370px);position:relative;border:1px solid #76665f;border-radius:5px;overflow:hidden;background-color:#e5d4b7;background-image:radial-gradient(#b19c7966 .6px,transparent .7px);background-size:5px 5px}
 .gp-map{display:block;width:100%;height:100%;cursor:crosshair;touch-action:none;user-select:none}.gp-map.gp-can-pan{cursor:grab}.gp-map.gp-can-pan:active{cursor:grabbing}

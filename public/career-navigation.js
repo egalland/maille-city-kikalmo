@@ -33,7 +33,8 @@ export function setCareerGoal(place){
   if(goal?.id===place?.id)return;
   goal=place;route=[];origin=null;
 }
-export function paintCareerNavigation(c,player,streets,{px,py,w,h,full}){
+export function careerGoal(){return goal;}
+export function paintCareerNavigation(c,player,streets,{px,py,w,h,full,overview}){
   if(goal&&(!origin||Math.hypot(player.x-origin.x,player.y-origin.y)>18)){
     route=itinerary(streets,player,goal);
     origin={x:player.x,y:player.y};
@@ -47,7 +48,7 @@ export function paintCareerNavigation(c,player,streets,{px,py,w,h,full}){
     c.lineWidth=full?4:5;c.strokeStyle='#46392f';c.stroke();
     c.lineWidth=full?2.2:3;c.strokeStyle='#ffca65';c.stroke();
   }
-  const localPlaces=[...Object.values(careerPlaces),...airfields];
+  const localPlaces=overview?[]:[...Object.values(careerPlaces),...airfields];
   // At region scale the churches and town halls in the same village coincide.
   if(!full||Math.abs(px(100)-px(0))>=24)localPlaces.push(...heritageWaypoints);
   if(!full||Math.abs(px(100)-px(0))>=20)localPlaces.push(...marketServices,...parkingLots,...neighborhoodShops,...railStations);

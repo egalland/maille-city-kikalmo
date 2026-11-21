@@ -292,9 +292,11 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
     const legends=node('div','mc-map-legends');
     const position=game.getPosition?.();
     const you=position&&Number.isFinite(position.x+position.y)?'Vous · sol à ≈ '+Math.round(terrainHeight(position.x,position.y))+' m':'Vous';
-    [['mc-me',you],['mc-other','Autres joueurs'],['mc-car','Véhicules'],['mc-drop','Arme à trouver']].forEach(([c,value])=>{
+    [['mc-me',you],['mc-other','Autres joueurs'],['mc-car','Véhicules']].forEach(([c,value])=>{
       const line=node('span','mc-map-legend');line.append(node('i',c),node('span','',value));legends.append(line);
     });
+    const dropsLegend=node('span','mc-map-legend');
+    dropsLegend.append(node('i','mc-drop'),node('span','','Arme à trouver'));legends.append(dropsLegend);
     const pursuitLegends=['Zone de recherche','Patrouille'].map((label,i)=>{
       const line=node('span','mc-map-legend');
       line.append(node('i',i?'mc-police-marker':'mc-police-area'),node('span','',label));legends.append(line);
@@ -339,13 +341,18 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
       finder.append(summary,label,field,result,follow);
     }else finder.hidden=true;
     const travel=node('div','mc-travel');
-    const label=fieldLabel(isEnfer?'Destinations de Maille City':'Voyage rapide sur l’axe historique','mc-travel-target');
+    const label=fieldLabel(isEnfer?'Destinations de Maille City · voyage rapide':'Voyage rapide sur l’axe historique','mc-travel-target');
     const row=node('form','mc-travel-row');
     const target=node('select','mc-input');target.id='mc-travel-target';
+    const places=node('optgroup',''),railStops=node('optgroup','');
+    places.label='Quartiers et lieux';railStops.label='Gares ferroviaires';
     for(const destination of coreDestinations){
       const option=node('option','',destination.label);
-      option.value=destination.key;target.append(option);
+      option.value=destination.key;
+      const group=destination.rail?railStops:places;
+      (isEnfer?group:target).append(option);
     }
+    if(isEnfer)target.append(places,railStops);
     const go=node('button','mc-primary','S’y rendre');go.type='submit';
     row.addEventListener('submit',e=>{
       e.preventDefault();
@@ -362,8 +369,19 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
       credit.append(document.createTextNode(' Murs et clôtures · '),osm,document.createTextNode(' · '),layer);
     }
     detail.append(legends,finder,travel,credit);pad.append(detail,regional);sheet.append(pad);
-    let built=false,region=false,zoom=false;
+    let built=false,region=false,zoom='city';
     if(career){
+      const views=node('div','gp-mode');views.setAttribute('role','group');views.setAttribute('aria-label','Cadrage de la carte');
+      const modes=[['city','Toute la ville'],['nearby','Autour de moi'],['missions','Quartier des missions']];
+      for(const [mode,title] of modes){
+        const choice=button(title,'',()=>{
+          zoom=mode;
+          for(const item of views.children)item.setAttribute('aria-pressed',String(item===choice));
+          renderCurrent?.();
+        });
+        choice.setAttribute('aria-pressed',String(mode===zoom));views.append(choice);
+      }
+      map.before(views);
       const tools=node('div','career-map-tools'),selector=node('select','mc-input');selector.id='venue-choice';
       const parking=parkedCars.filter(car=>car.bay ? ['gt','supercar'].includes(car.type) : ['motorbike','estate','flatbed','camper'].includes(car.type)).map(car=>{
         const stop=coreDestinations.find(d=>'car-'+d.key===car.id);
@@ -386,10 +404,7 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
       selector.append(stations,montRenaud,shops,publicLots);
       if(parking.length)selector.append(lots);
       if(monuments.children.length)selector.append(monuments);
-      const focus=button('Voir le quartier des missions','mc-secondary',()=>{
-        zoom=!zoom;focus.textContent=zoom?'Voir toute la ville':'Voir le quartier des missions';renderCurrent?.();
-      });
-      tools.append(focus,fieldLabel('Lieux et stationnements','venue-choice'),selector,button('Guider vers ce lieu','mc-secondary',()=>career.guide(venues.find(p=>p.id===selector.value))));
+      tools.append(fieldLabel('Lieux et stationnements','venue-choice'),selector,button('Tracer un itinéraire','mc-secondary',()=>career.guide(venues.find(p=>p.id===selector.value))));
       map.after(tools);
     }
     function switchMap(mode){
@@ -402,13 +417,14 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
         }});
         built=true;
       }
-      if(!region)game.drawFullMap?.(canvas,zoom);
+      renderCurrent();
     }
-    switchMap('local');
     renderCurrent=()=>{
+      dropsLegend.hidden=isEnfer&&zoom==='city';
       for(const legend of pursuitLegends)legend.hidden=!state().wanted;
       if(!region)game.drawFullMap?.(canvas,zoom);
     };
+    switchMap('local');
     interval=setInterval(()=>renderCurrent?.(),300);
   }
   function keyRows() {
@@ -454,7 +470,7 @@ export function createPanels({game,net,career,partners,editLayout,getSkin,setSki
     const mobile=node('section','mc-guide-section');
     mobile.append(node('h3','','Commandes tactiles'),node('p','','À pied, déplace légèrement le joystick pour marcher, puis pousse-le vers le bord pour courir. Glisse sur le décor pour tourner la caméra. Au volant, braque avec les flèches à gauche et utilise les pédales à droite. Si le bouton Sortir devient Sauter, le véhicule roule assez vite pour que ton personnage parte en roulade. La voiture continue sur sa lancée.'));
     mobile.append(node('p','','Maintiens le bouton de tir pour accrocher une cible devant toi. Un réticule apparaît dessus. Glisse le pouce sur ce bouton pour ajuster la visée, puis relâche pour arrêter de tirer.'));
-    if(isEnfer)mobile.append(node('h3','','Piloter dans Maille City'),node('p','','Sur la carte, choisis le H de l’hélistation ou le A du mât d’amarrage, puis « Guider vers ce lieu ». Monte à bord avec E ou la commande de véhicule. Les touches de direction orientent l’appareil et le font avancer. R fait monter et F fait descendre. Sur écran tactile, maintiens Monter ou Descendre et utilise les flèches pour tourner. Dans les deux appareils, E ou Sauter permet de quitter la cabine en vol. La hauteur et la vitesse comptent à la réception.'));
+    if(isEnfer)mobile.append(node('h3','','Piloter dans Maille City'),node('p','','Sur la carte, choisis le H de l’hélistation ou le A du mât d’amarrage, puis « Tracer un itinéraire ». Monte à bord avec E ou la commande de véhicule. Les touches de direction orientent l’appareil et le font avancer. R fait monter et F fait descendre. Sur écran tactile, maintiens Monter ou Descendre et utilise les flèches pour tourner. Dans les deux appareils, E ou Sauter permet de quitter la cabine en vol. La hauteur et la vitesse comptent à la réception.'));
     const health=node('section','mc-guide-section');
     health.append(node('h3','','Vie et soins'),node('p','','Utilise une trousse avec H ou le bouton de soins. Un ambulancier peut te soigner et remplir ta trousse. À zéro point de vie, un compte à rebours indique quand tu reviens dans le jeu.'));
     const guide=node('a','mc-secondary','Guide du quartier et carnet de version');

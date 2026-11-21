@@ -2588,7 +2588,7 @@ export function createGame({canvas,minimap,net,onState=()=>{},onNotice=()=>{},on
     getRoadMotion(){return paused||incapacitated()?null:roadMotion;},
     getAvailableDrops,
     trackDrop(drop){trackedDrop=drop;sendHud(true);},
-    drawFullMap(target,districtZoom=false){paintMap(target,p,{districtZoom,full:true,peers:net?.peers?.()||remotes,vehicles:cars,parked:myParkedCars(),pickups:getAvailableDrops(),tracked:trackedDrop,...policeMap()});},
+    drawFullMap(target,zoom='city'){paintMap(target,p,{zoom,full:true,peers:net?.peers?.()||remotes,vehicles:cars,parked:myParkedCars(),pickups:getAvailableDrops(),tracked:trackedDrop,...policeMap()});},
     destroy(){isRunning=false;clearAimLock();cancelAnimationFrame(frameId);detachEvent?.();view.dispose();
       window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);window.removeEventListener('blur',resetInputs);document.removeEventListener('visibilitychange',visibility);
       canvas.removeEventListener('pointerdown',pointerDown);canvas.removeEventListener('pointermove',pointerMove);canvas.removeEventListener('pointerup',pointerUp);
