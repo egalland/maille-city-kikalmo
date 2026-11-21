@@ -274,7 +274,7 @@ function eventData(type,raw,now) {
       if (d.cause!=='melee' && d.kind && Number.isFinite(d.started)) {
         const o=d.origin;
         const field=d.unit&&isServiceUnit(d.unit,d.kind)&&[o?.x,o?.y,o?.angle].every(Number.isFinite)
-          ?{unit:d.unit,origin:{x:num(o.x,0,-20_000,20_000),y:num(o.y,0,-20_000,20_000),angle:num(o.angle,0,-7,7),lift:num(o.lift,0,0,64)}}:{};
+          ?{unit:d.unit,...(d.reserve===true?{reserve:true}:{}),origin:{x:num(o.x,0,-20_000,20_000),y:num(o.y,0,-20_000,20_000),angle:num(o.angle,0,-7,7),lift:num(o.lift,0,0,64)}}:{};
         return {...result,...field,id:d.id,started:num(d.started,now,now-120_000,now+2000),level:num(d.level,1,0,5)};
       }
       const state={...result,...vitalityFields(d,now),id:d.id,stunnedUntil:num(d.stunnedUntil,0,0,now+8000)};

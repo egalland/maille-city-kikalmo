@@ -90,3 +90,15 @@ test('the wheel and quick slots contain just the starting equipment and distinct
   assert.deepEqual(ids(['chime','unknown','chime','yarn','pistol']),['fist','pistol','yarn','chime']);
   assert.deepEqual(ids(findableWeaponIds),weaponList.map(item=>item.id));
 });
+
+test('a rocket touching a bumper at ground level registers as a direct hit',()=>{
+  const car={...at('compact',10),hitKind:'vehicle',halfLength:2,halfWidth:.9};
+  const ground={...shot(0,null,7.67),surface:true};
+  const contact=resolveWeaponShot('rocket',0,()=>ground,[car],()=>true,ground);
+  assert.equal(contact.impact.directId,car.id);
+  assert.equal(contact.hits[0].target,car);
+  const wall={...ground,surface:{type:'building'}};
+  const blocked=resolveWeaponShot('rocket',0,()=>wall,[car],()=>false,wall);
+  assert.equal(blocked.impact.directId,undefined);
+  assert.equal(blocked.hits.length,0);
+});

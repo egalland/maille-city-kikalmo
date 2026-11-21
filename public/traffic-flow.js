@@ -404,6 +404,64 @@ export function createTrafficFlow(sample,chooseDetour){
     if(Math.abs(delta)<1.5)car.speed+=(speed-car.speed)*.35;
   }
 
+  function escape(car,bodies,dt,alarms,blockedPose,escapeSurface){
+    if(!escapeSurface||(!alarms.length&&!car.escape))return false;
+    const {pose,body,seed,spec}=car;
+    const threat=alarms.reduce((near,item)=>distanceSquared(pose,item)<Math.min(32,item.radius)**2&&
+      (!near||distanceSquared(pose,item)<distanceSquared(pose,near))?item:near,null);
+    if(!car.escape&&!threat)return false;
+    if(pose.junction&&pose.junction.distance<stopLine+body.length)return false;
+    const allowed=(from,to)=>{
+      const probe={...body};bodyAt(probe,to);
+      return !blockedPose?.(to.x,to.y,to.angle,spec)&&(!escapeSurface||escapeSurface(from,to))&&
+        bodies.every(other=>other===body||!touches(probe,other,.11));
+    };
+    if(!car.escape){
+      const facingDanger=(threat.x-pose.x)*body.c+(threat.y-pose.y)*body.s>2;
+      if(!facingDanger&&car.speed>1.5)return false;
+      car.escape={heading:pose.angle,until:tick+3.6,join:null};
+      releasePermits(seed.id);
+    }
+    const state=car.escape,heading=pose.angle;
+    if(tick>=state.until&&!state.join){
+      const offsets=[8,16,26,38,0,-8,-16];
+      const choices=offsets.map(gap=>({distance:car.distance+gap,pose:sample(seed.routeId,car.distance+gap)}))
+        .filter(entry=>entry.pose&&allowed(pose,entry.pose));
+      choices.sort((a,b)=>distanceSquared(a.pose,pose)-distanceSquared(b.pose,pose));
+      state.join=choices[0]||null;
+      if(!state.join)state.until=tick+1.2;
+    }
+    if(state.join&&distanceSquared(state.join.pose,pose)<.5**2&&allowed(pose,state.join.pose)){
+      const join=state.join;car.escape=null;changeRoute(car,seed.routeId,join.distance,join.pose);return true;
+    }
+    const speed=Math.min(8,seed.cruiseSpeed*.84),step=Math.max(0,dt)*speed;
+    const bearing=state.join?Math.atan2(state.join.pose.y-pose.y,state.join.pose.x-pose.x):heading;
+    const turns=[0,.62,-.62,1.18,-1.18,1.75,-1.75,2.4,-2.4,Math.PI];
+    let chosen=null,rank=-Infinity;
+    for(const turn of turns){
+      const angle=bearing+turn;
+      const next={x:pose.x+Math.cos(angle)*step,y:pose.y+Math.sin(angle)*step,angle};
+      const preview={x:pose.x+Math.cos(angle)*2.6,y:pose.y+Math.sin(angle)*2.6,angle};
+      if(!allowed(pose,next)||!allowed(next,preview))continue;
+      const score=state.join?-distanceSquared(preview,state.join.pose)*.06:
+        (threat?(distanceSquared(preview,threat)-distanceSquared(pose,threat))*.052:0);
+      const stability=1.25*Math.cos(angle-state.heading);
+      if(score+stability>rank){rank=score+stability;chosen=angle;}
+    }
+    let moved=false;
+    if(chosen!=null){
+      state.heading=chosen;
+      const turn=Math.atan2(Math.sin(chosen-heading),Math.cos(chosen-heading));
+      const angle=heading+clamp(turn,-2.35*dt,2.35*dt),scale=Math.max(.34,1-Math.abs(turn)*.47);
+      const next={x:pose.x+Math.cos(angle)*step*scale,y:pose.y+Math.sin(angle)*step*scale,angle};
+      if(allowed(pose,next)){car.pose=next;bodyAt(body,next);moved=true;car.speed=speed*scale;}
+    }
+    if(!moved)car.speed=0;
+    car.target=car.speed;
+    body.vx=body.c*car.speed;body.vy=body.s*car.speed;
+    if(chosen==null&&state.join){state.join=null;state.until=tick+.5;}
+    return true;
+  }
   function advance(car,bodies,dt,blockedPose,onVehicleContact){
     const adjust=clamp(car.correction*.8,-2.25,2.25);
     let target=car.target+adjust;
@@ -441,7 +499,7 @@ export function createTrafficFlow(sample,chooseDetour){
     return true;
   }
 
-  function step(seeds,{dt=0,epoch=Date.now(),blockers=[],observer=null,excluded=new Set(),checkpoints=[],blockedPose,onVehicleContact,recycleAfter=0,alarms=[]}={}){
+  function step(seeds,{dt=0,epoch=Date.now(),blockers=[],observer=null,excluded=new Set(),checkpoints=[],blockedPose,onVehicleContact,recycleAfter=0,alarms=[],escapeSurface}={}){
     const actualDt=clamp(dt,0,.5);
     const established=observer&&lastObserver&&distanceSquared(observer,lastObserver)<110**2;
     lastObserver=observer?{x:observer.x,y:observer.y}:null;
@@ -467,7 +525,7 @@ export function createTrafficFlow(sample,chooseDetour){
     const bodies=[...fixed,...Array.from(cars.values(),c=>c.body)];
     for(const check of remote.values()){
       const car=cars.get(check.id);
-      if(car)reconcile(car,check,bodies,epoch,observer,blockedPose);
+      if(car&&!car.escape)reconcile(car,check,bodies,epoch,observer,blockedPose);
     }
     for(const seed of [...candidates.values()].sort(byId)){
       if(cars.has(seed.id)||refused.has(seed.id))continue;
@@ -490,12 +548,13 @@ export function createTrafficFlow(sample,chooseDetour){
       const elapsed=actualDt/steps;tick+=elapsed;planIn-=elapsed;
       if(planIn<=0){
         planIn=planPeriod;
-        for(const car of states)if(cars.has(car.seed.id))considerDetour(car,bodies,blockedPose);
+        for(const car of states)if(cars.has(car.seed.id)&&!car.escape)considerDetour(car,bodies,blockedPose);
         planJunctions(states,bodies,epoch);
         for(const car of states)if(cars.has(car.seed.id))car.target=planSpeed(car,bodies,blockedPose,activeAlarms);
       }
       for(const car of states){
         if(!cars.has(car.seed.id))continue;
+        if(escape(car,bodies,elapsed,activeAlarms,blockedPose,escapeSurface))continue;
         const advanced=advance(car,bodies,elapsed,blockedPose,onVehicleContact);
         if(car.speed<.32&&car.target<.42)car.stalledSince??=tick;
         else car.stalledSince=null;
@@ -513,7 +572,7 @@ export function createTrafficFlow(sample,chooseDetour){
       }
     }
     return states.filter(c=>cars.has(c.seed.id)).map(c=>({...c.seed,...c.pose,isCar:true,
-      routeDistance:c.distance,routeLength:c.pose.routeLength||c.seed.routeLength,
+      offRoute:!!c.escape,routeDistance:c.distance,routeLength:c.pose.routeLength||c.seed.routeLength,
       moving:c.speed>.07,move:c.speed>.07,speed:c.speed,brake:c.target<c.speed-.25||c.target<.45,waitingAtSignal:c.waitingAtSignal,
       ...(observer?{distanceSq:distanceSquared(observer,c.pose)}:{})}));
   }

@@ -37,7 +37,10 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
   }
   let state=null,pending=false,lastRead=-Infinity,lastIssue='',manual=null,lastPanelKey='',panelBody=null,staged=null;
   let nextAction=null,transferAmount=25,incident=null,incidentReadDue=0;
-  net.onEvent?.(e=>{if(e.type==='districtUpdate'||e.type==='cash')incidentReadDue=0;});
+  net.onEvent?.(e=>{
+    if(e.type==='districtUpdate'||e.type==='cash')incidentReadDue=0;
+    if(e.type==='cash'&&e.player===net.id&&e.data.amount>0)notify('Liasse ramassée · +'+money(e.data.amount));
+  });
   function eventObjective(){
     if(state?.mission||manual&&manual!=='district-event')return null;
     const pos=game.getPosition();
@@ -194,13 +197,6 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
         pin.setAttribute('aria-label',target.name);
       }
     }else pin.hidden=true;
-    const cashDrop=!life.inVehicle&&!life.passenger&&life.lifeState!=='down'&&!pos.airborne&&!pos.swimming&&
-      drops.filter(drop=>reach(pos,drop)<2.65).sort((a,b)=>reach(pos,a)-reach(pos,b))[0];
-    if(cashDrop&&!vendor){
-      overlay.hidden=false;pin.hidden=true;instruction.textContent='Liasse · '+money(cashDrop.amount);
-      detail.textContent='Approche-toi pour ramasser';action.hidden=false;action.disabled=pending;
-      action.textContent='Ramasser (G)';nextAction=()=>send('collectCash',{drop:cashDrop.id});
-    }
     if(vendor){
       overlay.hidden=false;pin.hidden=true;
       instruction.textContent=vendor.name;
@@ -227,7 +223,7 @@ export function createCareerUI({game,net,getState,notify,open,close,modalOpen}){
       action.textContent=(order?'Retirer les courses':'Commander')+' (G)';
       nextAction=order?()=>send('collectDrive'):()=>{staged='drive';open();};
     }
-    if(atelier&&!vendor&&!s&&!localEvent&&!eventGoal&&!bay&&!cashDrop&&life.lifeState!=='down'&&
+    if(atelier&&!vendor&&!s&&!localEvent&&!eventGoal&&!bay&&life.lifeState!=='down'&&
       (life.inVehicle||atelier!==careerPlaces.garage)){
       overlay.hidden=false;pin.hidden=true;instruction.textContent=atelier.name;
       detail.textContent=life.inVehicle?'Arrête ton véhicule pour le personnaliser':'Véhicules à vendre et atelier';

@@ -26,7 +26,7 @@ export function cleanTrafficPacket(packet,now){
   return {at:Math.min(packet.at,now),cars};
 }
 export function packTraffic(vehicles,observer,followers,epoch){
-  const nearby=vehicles.filter(v=>Number.isInteger(v.routeIndex)&&v.routeId&&!followers.has(v.id)&&distance(v,observer)<=SHARE_RADIUS);
+  const nearby=vehicles.filter(v=>!v.offRoute&&Number.isInteger(v.routeIndex)&&v.routeId&&!followers.has(v.id)&&distance(v,observer)<=SHARE_RADIUS);
   nearby.sort((a,b)=>distance(a,observer)-distance(b,observer));
   const cars=nearby.slice(0,MAX_SHARED_CARS).map(v=>{
     const origin=v.originRouteId??v.routeId;

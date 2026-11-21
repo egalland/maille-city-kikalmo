@@ -32,6 +32,13 @@ export function coneContact(shot,target,aperture,reach,padding=0){
   if(along<-.15||along>reach+padding||side>width)return null;
   return {distance:Math.hypot(dx,dy),weight:1-.64*Math.min(1,side/width)};
 }
+export function touchesVehicleBlast(target,impact){
+  if(target.hitKind!=='vehicle'||!impact||!target.halfLength||!target.halfWidth)return false;
+  const angle=target.angle||0,c=Math.cos(angle),s=Math.sin(angle),dx=impact.x-target.x,dy=impact.y-target.y;
+  const x=Math.max(0,Math.abs(dx*c+dy*s)-(target.halfLength||0));
+  const y=Math.max(0,Math.abs(dy*c-dx*s)-(target.halfWidth||0));
+  return Math.hypot(x,y)<=.78;
+}
 const radians=(from,to)=>Math.atan2(to.y-from.y,to.x-from.x);
 const distance=(from,to)=>Math.hypot(to.x-from.x,to.y-from.y);
 function tip(ray){return {x:ray.origin.x+Math.cos(ray.angle)*ray.length,y:ray.origin.y+Math.sin(ray.angle)*ray.length};}
@@ -77,6 +84,14 @@ export function resolveWeaponShot(kind,angle,trace,targets=[],visible,firstRay=n
   // Start visibility just outside the sampled impact surface, on the incoming side.
   const splashSight=isHeavyShot(kind)&&primary.surface?tip({...primary,length:Math.max(0,primary.length-.35)}):null;
   const impact=mode.area?{...origin,radius:mode.area}:null;
+  if(impact&&isHeavyShot(kind)&&primary.hit?.hitKind==='vehicle')impact.directId=primary.hit.id;
+  if(impact&&isHeavyShot(kind)&&!primary.hit&&primary.surface===true&&typeof visible==='function'){
+    const touching=targets.filter(target=>touchesVehicleBlast(target,origin)&&
+      (!Number.isFinite(primary.origin.z)||!Number.isFinite(target.z)||Math.abs(primary.origin.z+primary.slope*primary.length-target.z)<1.45))
+      .sort((a,b)=>distance(origin,a)-distance(origin,b));
+    const contact=touching.find(target=>visible(splashSight||origin,target,sourceId));
+    if(contact){impact.directId=contact.id;add(contact,weaponDamageAt(kind,primary.length));}
+  }
   if(typeof visible!=='function'||(mode.chain&&!primary.hit))return {rays,hits,impact};
   for(let i=0;i<mode.limit;i++){
     const reach=mode.area||mode.chain;

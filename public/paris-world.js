@@ -1159,6 +1159,11 @@ export function trafficVehicleAt(originRouteId,index,routeId=originRouteId){
   return {id:'v'+originRouteId+'-'+index,originRouteId,routeId,routeIndex:index,routeLength:active.length,routeLoop:active.closed,
     type,kind:type,regional:!!route.regional,color:tintedCars[(route.key+slot)%tintedCars.length],speed:cruiseSpeed,cruiseSpeed,moving:true};
 }
+function sparsePopulation(x,y){
+  if(!isEnfer||inMarketDistrict(x,y))return false;
+  const district=enferDistrict(x,y);
+  return district!=='Les Vieilles Mailles'&&district!=='La Filature';
+}
 export function routeAgents(x,y,radius=140,epochMs=Date.now()){
   const actors=[],cars=[],r2=radius*radius,sec=epochMs*.001;
   const consider=(list,entity)=>{
@@ -1173,6 +1178,7 @@ export function routeAgents(x,y,radius=140,epochMs=Date.now()){
       if(!car)continue;
       const routeDistance=wrap(elapsed,route.length),p=sampleRoadRoute(route,routeDistance);
       if(sq(x-p.x)+sq(y-p.y)>r2)continue;
+      if((slot+route.key)%3===1&&sparsePopulation(p.x,p.y))continue;
       const spec=vehicleSpec(car.type);
       if(testPose(p.x,p.y,{angle:p.angle,halfLength:spec.halfLength,halfWidth:spec.halfWidth},false))continue;
       consider(cars,{...p,...car,routeDistance});
@@ -1191,6 +1197,7 @@ export function routeAgents(x,y,radius=140,epochMs=Date.now()){
       const pose=sampleRoadRoute(route,d);
       if(!pose||sq(x-pose.x)+sq(y-pose.y)>r2)continue;
       const car=trafficVehicleAt(route.id,index);
+      if((slot+route.key)%5===1&&enferDistrict(pose.x,pose.y)!=='Vallée des Aulnes'&&sparsePopulation(pose.x,pose.y))continue;
       if(car)consider(cars,{...pose,...car,routeDistance:d});
     }
   }
@@ -1204,6 +1211,7 @@ export function routeAgents(x,y,radius=140,epochMs=Date.now()){
       };
       if(!trip)continue;
       const pos=alongPath(route,trip.distance);
+      if((route.key+i)%3!==0&&sparsePopulation(pos.x,pos.y))continue;
       if(trip.returning)pos.angle+=Math.PI;
       const n=(route.key+i*3)>>>0, type=isEnfer?'human':flocks[n%flocks.length];
       consider(actors,{...pos,id:'n'+route.id+'-'+i,type,kind:type,variant:n%8,color:tintedPeds[n%tintedPeds.length],
@@ -1212,7 +1220,7 @@ export function routeAgents(x,y,radius=140,epochMs=Date.now()){
   }
   for(const signal of nearbySignals(x,y,radius)){
     const n=hash(signal.id),arm=signal.arms[n%signal.arms.length];
-    if((hour<6||hour>=22)&&n%3)continue;
+    if(((hour<6||hour>=22)||sparsePopulation(signal.x,signal.y))&&n%3)continue;
     consider(actors,{...crossingWalker(arm,signal,epochMs),id:'n-cross-'+signal.id,
       type:'human',kind:'human',variant:n%8,color:tintedPeds[n%tintedPeds.length],walk:sec*5});
   }

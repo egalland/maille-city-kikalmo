@@ -122,7 +122,7 @@ export function createNet(options={}) {
       lifetimeChats.add(e.seq);
       if (lifetimeChats.size>1000) lifetimeChats.delete(lifetimeChats.values().next().value);
       onChat({seq:e.seq,player:e.player,name:e.name,text:d.text,at:e.at});
-    } else if (e.player!==id || e.type==='propDamage' || e.type==='vehicle' || e.type==='vehicleRetired' || e.type==='vehicleDamage' || (e.type==='npc' && Number.isFinite(d.damage))) {
+    } else if (e.player!==id || e.type==='cash' || e.type==='propDamage' || e.type==='vehicle' || e.type==='vehicleRetired' || e.type==='vehicleDamage' || (e.type==='npc' && Number.isFinite(d.damage))) {
       for (const fn of listeners) fn(e);
     }
   }

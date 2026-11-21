@@ -117,7 +117,7 @@ test('the Mont Renaud garage installs a part once and keeps it on the next deliv
   assert.equal(next.vehicle.tune,part.bit);
 });
 
-test('a defeated player drops part of their wallet and the cash can be collected once',async t=>{
+test('defeated players and NPCs drop cash which passing players collect once',async t=>{
   const {DB,active,who,b,post,drive,tick}=await harness(t);
   const spot=careerPlaces.market;
   await active(who,'state');await active(b,'state');
@@ -143,6 +143,14 @@ test('a defeated player drops part of their wallet and the cash can be collected
   const npc=(await active(who,'state')).state.cashDrops[0];
   assert.ok(npc.id.startsWith('npc:civilian:'));
   assert.ok(npc.amount>=7&&npc.amount<=17);
+  const before={x:spot.x-7,y:spot.y},after={x:spot.x+7,y:spot.y};
+  tick(140);await post('sync',who,{state:drive(before,{lift:4})});
+  tick(140);await post('sync',who,{state:drive(before)});
+  tick(140);const passed=await post('sync',who,{state:drive(after)});
+  assert.ok(passed.events.some(e=>e.type==='cash'&&e.player===who.id&&e.data.amount===npc.amount));
+  tick(140);await post('sync',who,{state:drive(before)});
+  const wallet=(await active(who,'state')).state;
+  assert.equal(wallet.cash,54+npc.amount);assert.equal(wallet.cashDrops.length,0);
 });
 test('retail checks the correct counter, debits once and retains purchases across reconnects',async t=>{
   const {active,who,pose,post,drive,actor}=await harness(t);

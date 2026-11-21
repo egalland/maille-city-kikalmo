@@ -261,3 +261,13 @@ test('a long vehicle clears two close successive junctions before its tail leave
   assert.ok(frames.at(-1)[0].routeDistance>35);
   assert.ok(frames.every(([bus])=>bus.speed>6));
 });
+
+test('drivers escape across open ground and keep solid obstacles clear',()=>{
+  const alarm={x:0,y:1.5,radius:65,until:origin+3500};
+  const wall=(x,y)=>x>-15&&Math.abs(y-1.5)<2.2;
+  const frames=run(createTrafficFlow(straight),[seed('escape','east',-23)],3.6,{
+    alarms:[alarm],escapeSurface:()=>true,blockedPose:wall
+  }).flat();
+  assert.ok(frames.some(car=>car.offRoute&&Math.abs(car.y-1.5)>2.5));
+  assert.ok(frames.every(car=>!wall(car.x,car.y)));
+});
